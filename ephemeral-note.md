@@ -1,25 +1,28 @@
 # Runs finished: 0 / 6
 
-Current activity: prelaunch checks passed; the three all-on workflows are next.
-Measured on-versus-off token reduction: not available; no run in this comparison
-has finished yet. User expectation of roughly 50% is not a measured result.
+Last sampled: 2026-09-17T17:31:15.272114+00:00.
+Current activity: on-01, on-02, on-03 running.
+Measured on-versus-off reduction: pending complete six-run measurement verification.
+The expected roughly 50% difference is not a result.
 
-This is the standalone tool's six-run validation, not the old Work Leaf task
-counter. [Fixed experiment protocol](experiments/on-off-20260917/PROTOCOL.md).
+This is the standalone tool's six-run validation, separate from Work Leaf's old
+research task counter. [Fixed protocol](experiments/on-off-20260917/PROTOCOL.md).
 
 | Run | All nine switches | State | Observed raw tokens |
 | --- | --- | --- | --- |
-| on-01 | On | Ready | — |
-| on-02 | On | Ready | — |
-| on-03 | On | Ready | — |
-| off-01 | Off | Waiting for first batch | — |
-| off-02 | Off | Waiting for first batch | — |
-| off-03 | Off | Waiting for first batch | — |
+| on-01 | On | Feature 1: text selection / review 1 | 1,657,270 (partial) |
+| on-02 | On | Feature 1: text selection / implementation | 847,059 (partial) |
+| on-03 | On | Feature 1: text selection / implementation | 1,908,085 (partial) |
+| off-01 | Off | Waiting | — |
+| off-02 | Off | Waiting | — |
+| off-03 | Off | Waiting | — |
 
-“Finished” counts terminal attempts, including failures, not successful or fully
-measured runs. Each workflow retains its own checkout and evidence. No automatic
-replacement is authorized. Raw tokens are input plus output, including cached
-input only once; partial totals are not complete benchmark measurements.
+Finished counts terminal attempts, including failures—not successful, fully measured
+benchmarks. All checkouts and outcomes are retained; no automatic replacement.
+Raw tokens are input plus output, with cached input included only once.
+
+[Live status](runs/on-off-20260917/monitor-current.json) updates every 30 seconds;
+all samples remain in runs/on-off-20260917/monitor-samples.jsonl.
 
 ## Activity, retained in time order
 
@@ -37,3 +40,30 @@ input only once; partial totals are not complete benchmark measurements.
   GPT-5.5/xhigh. Starting commit, disk/memory capacity and program hashes checked.
   Per-workflow limits are frozen at 90 minutes / 60M observed raw / 600 turns,
   identically in both groups; requested concurrency is three complete workflows.
+- 2026-09-17 17:18:08 UTC: on-01, on-02 and on-03 start concurrently. Owning
+  tool sessions are 62533, 87102 and 82642; runner PIDs are 1089149, 1089160
+  and 1089150 respectively. All three reach the first author without a setup
+  failure. No off workflow is launched early and no prompt/source is changed.
+- 2026-09-17 17:21 UTC: all three actual provider configuration hashes match
+  preflight. The incremental observer starts in session 46620 and retains a
+  sample every 30 seconds without regenerating or changing benchmark input.
+  The first two manual checks were 17:19:08 and 17:21:15 (a 127-second gap,
+  exceeding the planned operator interval while the observer was prepared).
+  The runner's independent limits remained active. Continuous 30-second
+  sampling replaces that manual gap; no outcome or limit is changed.
+- 2026-09-17 17:27 UTC: the startup warning is identical in all three clones.
+  Their tracked `.codex/config.toml` contains only approval, sandbox and network
+  defaults, not model/task instructions; the runner supplies its explicit
+  per-role settings. The actual provider identities match preflight. The older
+  local command rules concern Docker/shell operations. No trust, login, prompt
+  or permission setting is changed after admission. Project-local settings
+  being skipped is documented in the [official configuration guide](https://learn.chatgpt.com/docs/config-file/config-basic).
+  Keep this environment detail in the comparison rather than suppressing the warning.
+- 2026-09-17 17:27 UTC: the incremental observer is checked against the retained
+  real-agent protocol record: it reproduces 63,381 raw and does not count the
+  same input twice. No new model invocation belongs to this observer check.
+- 2026-09-17 17:31 UTC: on-01 reaches the first independent review. The other
+  two authors remain active on text selection. Provider-free scoring is prepared
+  using the exact earlier three fixtures; it waits until all six measured
+  workflows stop, so it does not create unequal CPU load during the off batch.
+  [Post-run check details](experiments/on-off-20260917/POST-RUN-CHECKS.md).
