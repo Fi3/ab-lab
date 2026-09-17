@@ -1,27 +1,32 @@
-# Benchmark attempts ended: 6 | Successful full benchmarks: 0
+# Benchmark attempts ended: 9 | Successful full benchmarks: 0
 
-Current approved batch: **0 / 6 ended**; **0 passed**, **0 failed**, **3 running**.
-Accounting repair and actual Git-history rewrite both passed real-agent verification.
-Both earlier batches retain three failed attempts and three unstarted slots each.
+Current approved batch: **3 / 6 ended**; **0 passed**, **3 failed/stopped**, **0 running**.
+The three all-off attempts are unstarted after a shared token-accounting defect.
+All prior batches and this batch remain retained; there are no automatic replacements.
 
-Last sampled: 2026-09-17T20:57:41.172401+00:00.
-Current activity: Approved workflows are running; source, settings and limits remain frozen.
-Measured on-versus-off reduction: NOT AVAILABLE until the complete comparison is verified.
-The expected roughly 50% difference is not a result.
+Last updated: 2026-09-17 21:24 UTC.
+Current activity: retained-data recovery and evidence checks are complete. The failure report is saved; nested-call and no-commit qualification remain unresolved. No model generation or observer is running.
+The real Git-rewrite check passed. The full comparison failed a different path:
+a nested Codex command generated 167,250 raw tokens absent from the runner's own total, using GPT-6 Astra/max instead of GPT-5.5/xhigh.
+Run 2 also completed its second-feature stage without making the required commit.
+Runs 1 and 3 were stopped under the frozen shared-accounting-failure rule.
+Their last cancellation tails remain incomplete; prior returned turns have no coverage gap.
+Measured on-versus-off reduction: NOT AVAILABLE. Roughly 50% is not established by this batch.
 [Current protocol](experiments/on-off-20260917-r3/PROTOCOL.md) · [Real-agent qualification](experiments/on-off-20260917-r3/QUALIFICATION.md).
-Git-rewrite verification used 191,320 raw tokens; the earlier accounting check used 76,865. Neither is a benchmark observation.
 
-| Current run | All nine switches | State | Observed raw tokens | Missing response counts |
+| Current run | All nine switches | Outcome | Runner-observed raw tokens | Incomplete returned counts |
 | --- | --- | --- | ---: | ---: |
-| on-01 | On | Feature 1: text selection / repair 1 | 3,648,874 | 0 |
-| on-02 | On | Feature 1: text selection / review 2 | 3,013,250 | 0 |
-| on-03 | On | Feature 1: text selection / review 1 | 1,823,758 | 0 |
-| off-01 | Off | Not started | — | 0 |
-| off-02 | Off | Not started | — | 0 |
-| off-03 | Off | Not started | — | 0 |
+| on-01 | On | Stopped during second-feature review after shared accounting defect | 9,950,855 | 1 cancellation |
+| on-02 | On | Failed: second-feature completion produced no commit | 5,413,894 | 0 in main provider; nested usage excluded |
+| on-03 | On | Stopped during second-feature implementation after shared accounting defect | 5,643,268 | 1 cancellation |
+| off-01 | Off | Not started | — | — |
+| off-02 | Off | Not started | — | — |
+| off-03 | Off | Not started | — | — |
 
-Live snapshots: [current status](runs/on-off-20260917-r3/monitor/current.json);
-complete 15-second history: runs/on-off-20260917-r3/monitor/samples.jsonl.
+Runner totals sum to 21,008,017 raw. Adding the recovered 167,250 gives 21,175,267 observed raw; two cancellation tails remain unknown. Run 2's corrected observed total is 5,581,144.
+[Exact failure and next qualification](experiments/on-off-20260917-r3/RESULT.md).
+Final snapshot: [stopped status](runs/on-off-20260917-r3/final-monitor/current.json).
+The 15-second history is retained under runs/on-off-20260917-r3/monitor/.
 This separate tool validation does not change Work Leaf's old research counter.
 
 ## Previous replacement batch — retained failed observations
@@ -338,3 +343,42 @@ That previous observer is stopped; the replacement observer is separate.
   its first repair; on-03 is in review one. These are ordinary measured feature
   iterations, not setup failures or replacement observations. All returned-turn
   coverage checks remain clear; about 569 GiB of disk remains available.
+- 2026-09-17 21:03 UTC: on-01 completes text selection after four reviews
+  and begins slash-command routing. On-02 is in first-feature review three;
+  on-03 makes its second repair. All review/repair usage stays in each workflow.
+  No accounting gap or safety failure is present, and no source or budget changes.
+- 2026-09-17 21:07 UTC: all three workflows complete the first feature's
+  implementation/review loop and implement slash-command routing. Review costs
+  differ across runs and are retained in full. All returned responses remain
+  measured, all processes are alive, and the all-off wave is still unstarted.
+- 2026-09-17 21:10 UTC: on-02 ends after its second-feature author declares
+  completion without proposing an edit. The required-new-commit gate stops it
+  before independent review. Inspecting its command receipt reveals a separate
+  Codex launch/resume conversation omitted from the main usage table.
+- 2026-09-17 21:11:31 UTC: after verifying process ownership and the concrete
+  omitted child, SIGINT on-01/on-03 under the frozen common-accounting-failure
+  rule. Each retains one incomplete cancellation tail. All-off stays unstarted;
+  stop the observer after final samples. No generator remains.
+- 2026-09-17 21:12–21:19 UTC: bounded local-only audit finds ten parent
+  conversations plus one child in the exact three owned checkout directories.
+  All parent counters match their saved native histories. The child uses
+  GPT-6 Astra/max, not pinned GPT-5.5/xhigh, and reports Pro subscription usage.
+  Its exact seven-response charge is 167,250 raw. The initial 184,841 estimate
+  mistakenly added two cumulative CLI reports; their shared first response is
+  counted only once in the corrected native-response calculation. Existing
+  benchmark totals stay untouched; recovery is a separate evidence supplement.
+- 2026-09-17 21:19–21:22 UTC: source inspection identifies the unguarded
+  host-command environment and the no-new-commit completion boundary. The frozen
+  starting source already contains slash-routing code and four passing focused
+  checks; independent feature review did not run on the no-edit outcome. Save
+  exact source/event evidence and current limitations. One documentation patch
+  fails format validation before writing and is retried correctly. No product
+  code, prompt, old outcome, original research counter or new observation changes.
+- 2026-09-17 21:24 UTC: the saved-data query reproduces every value exactly
+  except its expected observation timestamp. All 49 existing local tests pass
+  in 20.373 seconds, compilation and whitespace checks pass, and measured source
+  hashes remain unchanged. These tests do not cover the discovered child-process
+  and no-commit boundaries and do not make the runner ready. The local-only
+  recovery finishes within its 15-minute ceiling; no next generated check is
+  admitted. Preserve reviewed source and seek a small targeted qualification
+  before any further full-benchmark spending.

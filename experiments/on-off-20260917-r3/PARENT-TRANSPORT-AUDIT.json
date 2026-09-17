@@ -1,0 +1,323 @@
+{
+  "generation": "none",
+  "time_utc": "2026-09-17T21:13:06.221530+00:00",
+  "runs": [
+    {
+      "run": "on-01",
+      "status": "failed",
+      "error": "operator interruption",
+      "result_sha256": "81c284ccf9bf9160a8d67eb1fb77f25e2ac1853751ca5d39d158708105111e1c",
+      "transport_sha256": "8c9405f192b5b29e7e5239bf42e885f957a90bc502dc2c22cd7739c5033c0979",
+      "observed_raw_tokens": 9950855,
+      "matches_runner_raw": true,
+      "matches_runner_thread_totals": true,
+      "no_unowned_charged_threads": true,
+      "counter_decreases": [],
+      "measurement_complete": false,
+      "turns": 54,
+      "uncovered_turns": [
+        {
+          "label": "slash-routing-review-1",
+          "thread_id": "01a0b134-2880-7933-8854-2d5283040405",
+          "turn_id": "01a0b134-28b3-75e1-9ef7-63972ff1ee24",
+          "status": "started",
+          "interrupt_reason": null,
+          "message_to_interrupt_ms": 3029.3915271759033,
+          "fresh_counter_updates": 9,
+          "last_message_phase": "commentary"
+        }
+      ],
+      "uncovered_by_interrupt_reason": {
+        "null": 1
+      },
+      "native_histories": [
+        {
+          "thread": "01a0b11a-52e9-7cf3-a942-f031d1ed7adf",
+          "path": "/home/user/.codex/sessions/2026/09/17/rollout-2026-09-17T22-41-27-01a0b11a-52e9-7cf3-a942-f031d1ed7adf.jsonl",
+          "sha256": "e3593dcdde43dbdb5604681b0dbe3b8237fe87fa70a718f122de068f83e9f832",
+          "token_events": 44,
+          "empty_token_events": 0,
+          "numeric_events": 44,
+          "unique_numeric_totals": 44,
+          "last_total": [
+            6116800,
+            43347,
+            5813760
+          ],
+          "matches_transport": true,
+          "message_metadata_keys": [
+            "content_item_kinds",
+            "create_time",
+            "turn_id"
+          ]
+        },
+        {
+          "thread": "01a0b126-439c-72b3-9ca0-67273a6d8a0b",
+          "path": "/home/user/.codex/sessions/2026/09/17/rollout-2026-09-17T22-54-30-01a0b126-439c-72b3-9ca0-67273a6d8a0b.jsonl",
+          "sha256": "f88440b915b0a40883a307a1c36853a54b1b79d9299a71a2abd1e5fe135072c0",
+          "token_events": 21,
+          "empty_token_events": 0,
+          "numeric_events": 21,
+          "unique_numeric_totals": 21,
+          "last_total": [
+            1659758,
+            17573,
+            1447808
+          ],
+          "matches_transport": true,
+          "message_metadata_keys": [
+            "content_item_kinds",
+            "create_time",
+            "turn_id"
+          ]
+        },
+        {
+          "thread": "01a0b12e-5e46-79e0-9083-d178766428dd",
+          "path": "/home/user/.codex/sessions/2026/09/17/rollout-2026-09-17T23-03-21-01a0b12e-5e46-79e0-9083-d178766428dd.jsonl",
+          "sha256": "94c51cdd0ac613059bd9eec0231f516e188d945bb32303e981e2cf1a28756d40",
+          "token_events": 25,
+          "empty_token_events": 0,
+          "numeric_events": 25,
+          "unique_numeric_totals": 25,
+          "last_total": [
+            1828342,
+            18523,
+            1652096
+          ],
+          "matches_transport": true,
+          "message_metadata_keys": [
+            "content_item_kinds",
+            "create_time",
+            "turn_id"
+          ]
+        },
+        {
+          "thread": "01a0b134-2880-7933-8854-2d5283040405",
+          "path": "/home/user/.codex/sessions/2026/09/17/rollout-2026-09-17T23-09-40-01a0b134-2880-7933-8854-2d5283040405.jsonl",
+          "sha256": "81dea117b972ca993f81c09cdaa11d8446f4284a842f5250e862668b5d8d8103",
+          "token_events": 10,
+          "empty_token_events": 0,
+          "numeric_events": 10,
+          "unique_numeric_totals": 9,
+          "last_total": [
+            261689,
+            4823,
+            225664
+          ],
+          "matches_transport": true,
+          "message_metadata_keys": [
+            "content_item_kinds",
+            "create_time",
+            "turn_id"
+          ]
+        }
+      ],
+      "comparison_key": "0561237660eb30399c11509f3f7ba06be5e2c400b25dbe3a49303fbad79f048b",
+      "source_sha256": {
+        "__init__.py": "cd5de7ee4472c1ef8bada6b3b56d56cee36d93dbfab9195d2dcfc0c7d7be13a1",
+        "__main__.py": "0271f5c7bfd985a08c353e0b6e12002bbbabb9a0997bfff879492273f288f1df",
+        "config.py": "0c7c7f6c4446843187f23e819b616bd5ee7197be58aac7d1ffb06ea6d416be16",
+        "host.py": "a81595b8b0742557ea4f4e478fc2dd7813fbfd1d926ebd6da40b20c9d4167f2b",
+        "monitor.py": "2009e3400ee428d82f0290588c96d8f92b7f66b9f5018054149b1072a69d2e8c",
+        "provider.py": "a83a9708d41bd7cd28253f287ba8f2530ed1cba06cd970566b0a12c6bcca7bf3",
+        "workflow.py": "65f95a64172cb15e9a19621668af87c25a6876af5973beabf2fd8f1cb34675cd"
+      },
+      "duration_seconds": 1806.7207963569963
+    },
+    {
+      "run": "on-02",
+      "status": "failed",
+      "error": "initial implementation produced no commit",
+      "result_sha256": "51eae7889be000eceaeb804f16eb6c840290f5ad05537264839212120dd56120",
+      "transport_sha256": "6790a9e93414e4c69bcf82dcfd23eaac65db56aa131f949b5114ae73b71db2e8",
+      "observed_raw_tokens": 5413894,
+      "matches_runner_raw": true,
+      "matches_runner_thread_totals": true,
+      "no_unowned_charged_threads": true,
+      "counter_decreases": [],
+      "measurement_complete": true,
+      "turns": 37,
+      "uncovered_turns": [],
+      "uncovered_by_interrupt_reason": {},
+      "native_histories": [
+        {
+          "thread": "01a0b11a-5312-7032-a8a8-c9236fd54638",
+          "path": "/home/user/.codex/sessions/2026/09/17/rollout-2026-09-17T22-41-27-01a0b11a-5312-7032-a8a8-c9236fd54638.jsonl",
+          "sha256": "c53f9333a163fb9e73315e922d2160dd62860eda48eda4414311143224e172b1",
+          "token_events": 30,
+          "empty_token_events": 0,
+          "numeric_events": 30,
+          "unique_numeric_totals": 30,
+          "last_total": [
+            2243824,
+            43002,
+            2116864
+          ],
+          "matches_transport": true,
+          "message_metadata_keys": [
+            "content_item_kinds",
+            "create_time",
+            "turn_id"
+          ]
+        },
+        {
+          "thread": "01a0b123-5414-7290-aaf9-0e9d90b7346d",
+          "path": "/home/user/.codex/sessions/2026/09/17/rollout-2026-09-17T22-51-17-01a0b123-5414-7290-aaf9-0e9d90b7346d.jsonl",
+          "sha256": "f188aef07f9b816f64a2c9d62479daa1e6e1ad932dfc45e618d70c3744dfc1b0",
+          "token_events": 27,
+          "empty_token_events": 0,
+          "numeric_events": 27,
+          "unique_numeric_totals": 27,
+          "last_total": [
+            2610720,
+            30522,
+            2295936
+          ],
+          "matches_transport": true,
+          "message_metadata_keys": [
+            "content_item_kinds",
+            "create_time",
+            "turn_id"
+          ]
+        },
+        {
+          "thread": "01a0b130-b3a9-7aa3-a387-c974446d0d9e",
+          "path": "/home/user/.codex/sessions/2026/09/17/rollout-2026-09-17T23-05-54-01a0b130-b3a9-7aa3-a387-c974446d0d9e.jsonl",
+          "sha256": "5b839c9645cb76668be8d66431315fbebdae4c9fea502c33ba778cb06bb830ce",
+          "token_events": 10,
+          "empty_token_events": 0,
+          "numeric_events": 10,
+          "unique_numeric_totals": 10,
+          "last_total": [
+            478734,
+            7092,
+            358144
+          ],
+          "matches_transport": true,
+          "message_metadata_keys": [
+            "content_item_kinds",
+            "create_time",
+            "turn_id"
+          ]
+        }
+      ],
+      "comparison_key": "0561237660eb30399c11509f3f7ba06be5e2c400b25dbe3a49303fbad79f048b",
+      "source_sha256": {
+        "__init__.py": "cd5de7ee4472c1ef8bada6b3b56d56cee36d93dbfab9195d2dcfc0c7d7be13a1",
+        "__main__.py": "0271f5c7bfd985a08c353e0b6e12002bbbabb9a0997bfff879492273f288f1df",
+        "config.py": "0c7c7f6c4446843187f23e819b616bd5ee7197be58aac7d1ffb06ea6d416be16",
+        "host.py": "a81595b8b0742557ea4f4e478fc2dd7813fbfd1d926ebd6da40b20c9d4167f2b",
+        "monitor.py": "2009e3400ee428d82f0290588c96d8f92b7f66b9f5018054149b1072a69d2e8c",
+        "provider.py": "a83a9708d41bd7cd28253f287ba8f2530ed1cba06cd970566b0a12c6bcca7bf3",
+        "workflow.py": "65f95a64172cb15e9a19621668af87c25a6876af5973beabf2fd8f1cb34675cd"
+      },
+      "duration_seconds": 1694.0911238120025
+    },
+    {
+      "run": "on-03",
+      "status": "failed",
+      "error": "operator interruption",
+      "result_sha256": "1375549307f0fadf5a596f50725cd8bab468e7c32154792c66b0ce1c47b14126",
+      "transport_sha256": "5bb5425283fe369d72415cf2d41c6d7a48c201bee2ec700ea7bfd919466b4b5e",
+      "observed_raw_tokens": 5643268,
+      "matches_runner_raw": true,
+      "matches_runner_thread_totals": true,
+      "no_unowned_charged_threads": true,
+      "counter_decreases": [],
+      "measurement_complete": false,
+      "turns": 31,
+      "uncovered_turns": [
+        {
+          "label": "slash-routing-implement",
+          "thread_id": "01a0b131-4429-7641-aede-807ba8d2dadd",
+          "turn_id": "01a0b135-538b-73e3-a7b0-ffb1f4f6a6e9",
+          "status": "started",
+          "interrupt_reason": null,
+          "message_to_interrupt_ms": null,
+          "fresh_counter_updates": 0,
+          "last_message_phase": null
+        }
+      ],
+      "uncovered_by_interrupt_reason": {
+        "null": 1
+      },
+      "native_histories": [
+        {
+          "thread": "01a0b11a-52f9-72b3-bf97-50ff1734d3ae",
+          "path": "/home/user/.codex/sessions/2026/09/17/rollout-2026-09-17T22-41-27-01a0b11a-52f9-72b3-bf97-50ff1734d3ae.jsonl",
+          "sha256": "254a4c25cba91a158883aeb6b449a9f82727158d0c551c7dcdadb19f10668d41",
+          "token_events": 29,
+          "empty_token_events": 0,
+          "numeric_events": 29,
+          "unique_numeric_totals": 29,
+          "last_total": [
+            2674512,
+            49299,
+            2404224
+          ],
+          "matches_transport": true,
+          "message_metadata_keys": [
+            "content_item_kinds",
+            "create_time",
+            "turn_id"
+          ]
+        },
+        {
+          "thread": "01a0b127-5101-7c81-a411-4d873c9f3424",
+          "path": "/home/user/.codex/sessions/2026/09/17/rollout-2026-09-17T22-55-39-01a0b127-5101-7c81-a411-4d873c9f3424.jsonl",
+          "sha256": "40ccae6ed3ae121aa619294af6bec672835039af1b9ed46fb1ce07a6ac204e4a",
+          "token_events": 22,
+          "empty_token_events": 0,
+          "numeric_events": 22,
+          "unique_numeric_totals": 22,
+          "last_total": [
+            1771132,
+            26663,
+            1558784
+          ],
+          "matches_transport": true,
+          "message_metadata_keys": [
+            "content_item_kinds",
+            "create_time",
+            "turn_id"
+          ]
+        },
+        {
+          "thread": "01a0b131-4429-7641-aede-807ba8d2dadd",
+          "path": "/home/user/.codex/sessions/2026/09/17/rollout-2026-09-17T23-06-31-01a0b131-4429-7641-aede-807ba8d2dadd.jsonl",
+          "sha256": "9b5f25e6924b0b84706eb214f2dff43bddab358684b99c32e1c62a1dc3bfb337",
+          "token_events": 18,
+          "empty_token_events": 0,
+          "numeric_events": 18,
+          "unique_numeric_totals": 17,
+          "last_total": [
+            1108653,
+            13009,
+            930176
+          ],
+          "matches_transport": true,
+          "message_metadata_keys": [
+            "content_item_kinds",
+            "create_time",
+            "turn_id"
+          ]
+        }
+      ],
+      "comparison_key": "0561237660eb30399c11509f3f7ba06be5e2c400b25dbe3a49303fbad79f048b",
+      "source_sha256": {
+        "__init__.py": "cd5de7ee4472c1ef8bada6b3b56d56cee36d93dbfab9195d2dcfc0c7d7be13a1",
+        "__main__.py": "0271f5c7bfd985a08c353e0b6e12002bbbabb9a0997bfff879492273f288f1df",
+        "config.py": "0c7c7f6c4446843187f23e819b616bd5ee7197be58aac7d1ffb06ea6d416be16",
+        "host.py": "a81595b8b0742557ea4f4e478fc2dd7813fbfd1d926ebd6da40b20c9d4167f2b",
+        "monitor.py": "2009e3400ee428d82f0290588c96d8f92b7f66b9f5018054149b1072a69d2e8c",
+        "provider.py": "a83a9708d41bd7cd28253f287ba8f2530ed1cba06cd970566b0a12c6bcca7bf3",
+        "workflow.py": "65f95a64172cb15e9a19621668af87c25a6876af5973beabf2fd8f1cb34675cd"
+      },
+      "duration_seconds": 1806.6626150770026
+    }
+  ],
+  "observed_raw_sum": 21008017,
+  "all_comparison_keys_match": true,
+  "percentage": null,
+  "percentage_reason": "No completed three-versus-three comparison"
+}

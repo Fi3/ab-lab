@@ -1,5 +1,28 @@
 # Verification
 
+## Current blocking qualification — nested processes
+
+The [third admitted batch](experiments/on-off-20260917-r3/RESULT.md) starts after
+the stricter real Git-history rewrite passes. One author launches a separate
+Codex verification process. Its 167,250 raw tokens are absent from the runner's
+total; its native records specify GPT-6 Astra/max instead of the benchmark's
+GPT-5.5/xhigh. Pro-plan records support subscription use, but the host command
+path does not apply the main provider's credential/model/accounting controls.
+Main-provider completeness is not whole-workflow completeness on this path.
+
+The same workflow sends completion without editing the already-present slash
+command code; the runner's required-new-commit gate fails before independent
+review. The other two workflows stop under the common-accounting-failure rule.
+Observed usage including the recovered child is 21,175,267 raw, with two
+incomplete cancellation tails. Three all-off attempts remain unstarted.
+All failed work is retained; no saving percentage or successful full comparison
+is established. The actual Git rewrite remains a valid narrower pass.
+
+The current 49 tests do not qualify nested real generation or completion without
+a new commit. Required next coverage includes launch/resume child pricing,
+child configuration/authentication boundaries and an already-satisfied feature.
+No source repair or further generated verification is included in this closeout.
+
 ## Full-benchmark measurement status
 
 The standalone tool does not yet have a valid three-all-on versus three-all-off

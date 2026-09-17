@@ -10,17 +10,21 @@ implementation, independent code review, repairs, then final integration.
 The tool measures results; it does not assume that an enabled behavior saves
 tokens or promise a particular saving.
 
-Agent Behavior Lab uses Codex through an existing ChatGPT subscription. It does
-not use API keys or API credits. It is a standalone Python command-line tool;
+The main Codex connection requires an existing ChatGPT subscription and rejects
+API-key authentication. Separate agent-launched commands are not covered by all
+of the same controls; see the validation limitation below. This is a standalone
+Python command-line tool;
 no other agent orchestrator, service, dashboard or third-party Python package
 is required.
 
 **Validation status:** the full all-on/all-off comparison is incomplete.
-Request interruption and complete usage collection pass a small real-agent
-verification. Native Git permissions pass a zero-generation sandbox check;
-a strict real-agent history-rewrite check remains pending. Retained full runs
-failed at that permission boundary before repair. No saving percentage is
-established. See [verification and retained failures](VERIFICATION.md).
+Request interruption, parent-response accounting and actual native Git-history
+rewriting pass their small real-agent checks. A later full attempt reveals that
+separately launched Codex verification processes escape token accounting and the
+pinned model settings. The runner also rejects feature completion without a new
+commit, even when the author checks existing code. The tool is not qualified for
+full token comparisons involving those paths. No saving percentage is established.
+See [verification and retained failures](VERIFICATION.md).
 
 - [How a benchmark runs](#how-a-benchmark-runs)
 - [Quick start](#quick-start)
@@ -515,6 +519,12 @@ partial or failed attempts. `compare` and `interaction` require successful
 complete workflows with no flagged usage gaps. They also require matching
 settings other than the behavior switches: benchmark, starting commit, runner
 code, model, reasoning effort, effective configuration and run limits.
+
+Known limitation: these checks cover the runner's main provider only. A Codex
+process launched inside a verification command can use different settings and
+generate uncounted tokens without setting a missing-usage flag. A successful
+comparison command alone does not establish complete accounting for that path.
+See the [retained nested-call failure](experiments/on-off-20260917-r3/RESULT.md).
 
 ### Comparing two settings
 
