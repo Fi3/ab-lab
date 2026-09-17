@@ -1,0 +1,15 @@
+{
+  "name": "declared-intervening-edit-example",
+  "repo": "../examples/tiny-project",
+  "revision": "HEAD",
+  "features": [
+    {"id": "increment", "request": "Add increment(value), returning value + 1, next to identity() in numbers_demo.py. Preserve identity behavior and add unittest coverage for positive, zero and negative values. Begin by obtaining numbers_demo.py with @standalone read; use the delivered source for your initial edit."}
+  ],
+  "after_read": {
+    "path": "numbers_demo.py",
+    "command": "python3 -c 'from pathlib import Path; p = Path(\"numbers_demo.py\"); p.write_text(p.read_text().replace(\"return value\", \"return value + 0\"))'"
+  },
+  "checks": ["python3 -m unittest discover -s tests -v"],
+  "instructions": "Use only the standard library. Keep the implementation small.",
+  "defer_documentation": true
+}

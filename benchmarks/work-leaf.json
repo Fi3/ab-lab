@@ -1,0 +1,13 @@
+{
+  "name": "original-three-feature-work-leaf",
+  "repo": "~/src/work-leaf",
+  "revision": "c92a0b7060a36eac6db2d869b85e589a7a9480f9",
+  "features": [
+    {"id": "visual-mode", "request": "add vim like visual mode for both panes when I do v I can select the text in focused the panes same keystrokes of vim y Y for copy maiusc V line select block select with ctrl v block select"},
+    {"id": "slash-routing", "request": "when an user prompt start with / and is followed by something without whitespace that is a command for the agent; the orchestrator must send it to the selected backend agent and show that backend response"},
+    {"id": "review-completion", "request": "when review process is done the patch agent chat must be highlighted and ask is this feature done with yes/no; yes closes it, typing again reopens it"}
+  ],
+  "checks": ["cargo fmt --check", "cargo clippy --all-targets --all-features -- -D warnings", "cargo test --all-targets --all-features"],
+  "instructions": "Every UI behavior must have automatic UI-harness coverage. Keep architecture and required behavior intact.",
+  "defer_documentation": true
+}
