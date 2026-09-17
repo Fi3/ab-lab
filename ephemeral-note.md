@@ -1,12 +1,12 @@
 # Benchmark attempts ended: 6 | Successful full benchmarks: 0
 
-Approved replacement batch: **3 / 6 ended**. Accounting repairs verified: **3 / 3**.
-Full-workflow qualification: pending a real Git-history rewrite; the retained batch failed.
-The previous batch remains three partial attempts and three unstarted slots.
+Current approved batch: **0 / 6 ended**, conditional on the small real Git-rewrite check.
+Accounting repairs verified: **3 / 3**. Git-rewrite qualification: admitted, not yet run.
+Both previous batches retain three failed attempts and three unstarted slots each.
 
 Last sampled: 2026-09-17T20:11:42.184547+00:00.
-Last updated: 2026-09-17 20:29 UTC.
-Current activity: local Git-permission fix and all 49 tests pass; all generators are stopped. A stricter real-agent rewrite check needs a new bounded admission before further generation.
+Last updated: 2026-09-17 20:37 UTC.
+Current activity: all 49 local tests and the non-generating subscription check pass. Starting the single approved real Git-rewrite check (four minutes / 200k observed raw / two turns). The six full workflows remain conditional on its verified success.
 On-01/on-03 reached final integration with complete reported usage. On-02's sole incomplete response is the deliberate safety cancellation, not an earlier returned-response gap.
 The real check used 76,865 raw tokens in 37.59 seconds, with six fully measured turns.
 Measured on-versus-off reduction: NOT AVAILABLE; the requested comparison is not complete.
@@ -15,9 +15,12 @@ The expected roughly 50% difference is not a result.
 [Approved continuation](experiments/on-off-20260917-r2/REPAIR-AND-RUN-AUTHORITY.md).
 [Replacement protocol](experiments/on-off-20260917-r2/PROTOCOL.md) · [Repair evidence](experiments/on-off-20260917-r2/QUALIFICATION.md).
 [Replacement result and exact Git failure](experiments/on-off-20260917-r2/RESULT.md).
+[Current conditional admission and frozen source](experiments/on-off-20260917-r3/PROTOCOL.md).
 
 This is the standalone tool's six-run validation, separate from Work Leaf's old
 research task counter. The retained observer sampled response coverage every 15 seconds.
+
+## Previous replacement batch — retained failed observations
 
 <!-- replacement-live-table -->
 | Replacement run | Switches | State | Observed raw tokens | Missing response counts |
@@ -297,3 +300,9 @@ That previous observer is stopped; the replacement observer is separate.
   fix, early preflight and stricter verifier. The source fix is not represented
   as having passed the still-unrun model-backed rewrite. No full-workflow
   replacement or off observation is started.
+- 2026-09-17 20:37 UTC: save the user's conditional restart approval before
+  generation. The required small check must actually rewrite its disposable
+  input history, pass tests and retain complete token counts. One check only:
+  240 seconds / 200,000 observed raw / two turns. On success, the approved new
+  batch is three all-on workflows concurrently followed by three all-off.
+  All earlier failed observations remain intact; no Work Leaf counter changes.
