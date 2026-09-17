@@ -3,6 +3,12 @@
 Project location: `/home/user/src/agent-behavior-lab`.
 Work Leaf code, saved experiments, and research counters are outside this change.
 
+Full-benchmark validation remains incomplete. The retained small integration
+check needed no history rewrite and does not verify native Git writes. The
+Git-permission repair passes real zero-generation sandbox commands and 49 local
+tests; strict model-backed rewriting and the three-on/three-off comparison remain
+pending. [Current evidence and failed attempts](VERIFICATION.md).
+
 ## Build checklist
 
 - [x] Port the J04 exact-edit host and sequential feature/review/repair/integration loop.

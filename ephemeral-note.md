@@ -5,7 +5,7 @@ Full-workflow qualification: pending a real Git-history rewrite; the retained ba
 The previous batch remains three partial attempts and three unstarted slots.
 
 Last sampled: 2026-09-17T20:11:42.184547+00:00.
-Last updated: 2026-09-17 20:27 UTC.
+Last updated: 2026-09-17 20:29 UTC.
 Current activity: local Git-permission fix and all 49 tests pass; all generators are stopped. A stricter real-agent rewrite check needs a new bounded admission before further generation.
 On-01/on-03 reached final integration with complete reported usage. On-02's sole incomplete response is the deliberate safety cancellation, not an earlier returned-response gap.
 The real check used 76,865 raw tokens in 37.59 seconds, with six fully measured turns.
@@ -292,3 +292,8 @@ That previous observer is stopped; the replacement observer is separate.
   save the result and repair without claiming an unrun real-agent rewrite or
   a three-versus-three percentage. Preserve every reviewed checkout for a
   separately authorized, cost-conscious continuation rather than automatic reruns.
+- 2026-09-17 20:29 UTC: commit `5849501` preserves the replacement accounting
+  audit, precise failure report, zero-generation probe, narrow Git permission
+  fix, early preflight and stricter verifier. The source fix is not represented
+  as having passed the still-unrun model-backed rewrite. No full-workflow
+  replacement or off observation is started.
