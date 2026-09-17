@@ -15,6 +15,12 @@ not use API keys or API credits. It is a standalone Python command-line tool;
 no other agent orchestrator, service, dashboard or third-party Python package
 is required.
 
+**Measurement limitation:** the full all-on/all-off validation is incomplete.
+Interrupting after an intermediate host-request message can leave missing token
+reports. Partial totals cannot establish a saving percentage. See the
+[recorded failure and validation status](experiments/on-off-20260917/RESULT.md)
+before starting an expensive comparison.
+
 - [How a benchmark runs](#how-a-benchmark-runs)
 - [Quick start](#quick-start)
 - [Choosing behaviors](#choosing-behaviors)
@@ -375,6 +381,10 @@ Possible token effect: it may avoid further generation before feedback, but if
 the turn would end there anyway, little or nothing may differ. Subsequent agent
 behavior can also differ. **Interruption never refunds already generated
 tokens.** Usage reports arriving after interruption are still collected.
+
+A completed message does not guarantee that its numeric usage is available.
+The retained full-benchmark attempts include missing reports after both early
+interruption and the one-second grace; see the [measurement limitation](experiments/on-off-20260917/RESULT.md).
 
 The trigger is a complete operation in the current agent's own completed
 message, not a partial stream, quoted tool output or another conversation.

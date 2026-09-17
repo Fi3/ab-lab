@@ -1,5 +1,16 @@
 # Verification
 
+## Full-benchmark measurement status
+
+The standalone tool does not yet have a valid three-all-on versus three-all-off
+token comparison. The [2026-09-17 batch](experiments/on-off-20260917/RESULT.md)
+retains three concurrent all-on attempts stopped after 67 completed responses
+lacked final-message usage coverage. The all-off attempts were not started.
+The 41,807,064 observed raw tokens are incomplete; no saving percentage follows.
+The earlier small verification passes below remain retained, but they do not
+cover this real intermediate-message interruption failure. The measured code
+is unchanged and the accounting/monitoring issue remains unresolved.
+
 ## Prospective real-agent smoke scope — 2026-09-17
 
 This is implementation verification, not a new saving experiment or a historical

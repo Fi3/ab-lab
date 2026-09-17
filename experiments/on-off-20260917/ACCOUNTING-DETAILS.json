@@ -1,0 +1,1146 @@
+{
+  "generation": "none",
+  "time_utc": "2026-09-17T18:22:27.354053+00:00",
+  "runs": [
+    {
+      "run": "on-01",
+      "status": "failed",
+      "error": "operator interruption",
+      "result_sha256": "91ae9adf424f96b3c2a889cdec959204ba94379e504c7505510845365bfcef36",
+      "transport_sha256": "6af3ebdfdac81195041d61927582df51016193093ca28c854571924785590614",
+      "observed_raw_tokens": 14911977,
+      "matches_runner_raw": true,
+      "matches_runner_thread_totals": true,
+      "no_unowned_charged_threads": true,
+      "counter_decreases": [],
+      "measurement_complete": false,
+      "turns": 82,
+      "uncovered_turns": [
+        {
+          "label": "slash-routing-implement",
+          "thread_id": "01a0b07c-204d-7693-8f2d-096a311362cc",
+          "turn_id": "01a0b07c-2081-7d21-aaf1-7d79d85ed5ac",
+          "status": "interrupted",
+          "interrupt_reason": "output_resumed",
+          "message_to_interrupt_ms": 0.8223056793212891,
+          "fresh_counter_updates": 0,
+          "last_message_phase": "commentary"
+        },
+        {
+          "label": "slash-routing-implement",
+          "thread_id": "01a0b07c-204d-7693-8f2d-096a311362cc",
+          "turn_id": "01a0b07c-54a3-7433-9635-d2c5f1285f39",
+          "status": "interrupted",
+          "interrupt_reason": "output_resumed",
+          "message_to_interrupt_ms": 1.6984939575195312,
+          "fresh_counter_updates": 0,
+          "last_message_phase": "commentary"
+        },
+        {
+          "label": "slash-routing-implement",
+          "thread_id": "01a0b07c-204d-7693-8f2d-096a311362cc",
+          "turn_id": "01a0b07c-8342-7f93-8ac7-65b1d133c753",
+          "status": "interrupted",
+          "interrupt_reason": "output_resumed",
+          "message_to_interrupt_ms": 0.9834766387939453,
+          "fresh_counter_updates": 0,
+          "last_message_phase": "commentary"
+        },
+        {
+          "label": "slash-routing-implement",
+          "thread_id": "01a0b07c-204d-7693-8f2d-096a311362cc",
+          "turn_id": "01a0b07c-a8de-78b1-bdf0-c43355b95996",
+          "status": "interrupted",
+          "interrupt_reason": "output_resumed",
+          "message_to_interrupt_ms": 1.2755393981933594,
+          "fresh_counter_updates": 0,
+          "last_message_phase": "commentary"
+        },
+        {
+          "label": "slash-routing-implement",
+          "thread_id": "01a0b07c-204d-7693-8f2d-096a311362cc",
+          "turn_id": "01a0b07c-dd47-78c0-86f1-5b438b150a10",
+          "status": "interrupted",
+          "interrupt_reason": "output_resumed",
+          "message_to_interrupt_ms": 1.0919570922851562,
+          "fresh_counter_updates": 0,
+          "last_message_phase": "commentary"
+        },
+        {
+          "label": "slash-routing-implement",
+          "thread_id": "01a0b07c-204d-7693-8f2d-096a311362cc",
+          "turn_id": "01a0b07c-ed35-7bd1-8c23-df7250725be8",
+          "status": "interrupted",
+          "interrupt_reason": "output_resumed",
+          "message_to_interrupt_ms": 1.1801719665527344,
+          "fresh_counter_updates": 0,
+          "last_message_phase": "commentary"
+        },
+        {
+          "label": "slash-routing-implement",
+          "thread_id": "01a0b07c-204d-7693-8f2d-096a311362cc",
+          "turn_id": "01a0b07d-0034-7333-b702-ce5e75e82127",
+          "status": "interrupted",
+          "interrupt_reason": "output_resumed",
+          "message_to_interrupt_ms": 0.7791519165039062,
+          "fresh_counter_updates": 0,
+          "last_message_phase": "commentary"
+        },
+        {
+          "label": "slash-routing-implement",
+          "thread_id": "01a0b07c-204d-7693-8f2d-096a311362cc",
+          "turn_id": "01a0b07d-10d9-7971-8d1b-69be95160e3d",
+          "status": "interrupted",
+          "interrupt_reason": "output_resumed",
+          "message_to_interrupt_ms": 1.0309219360351562,
+          "fresh_counter_updates": 0,
+          "last_message_phase": "commentary"
+        },
+        {
+          "label": "slash-routing-implement",
+          "thread_id": "01a0b07c-204d-7693-8f2d-096a311362cc",
+          "turn_id": "01a0b07d-1f01-7103-896c-6fe7afee3469",
+          "status": "interrupted",
+          "interrupt_reason": "output_resumed",
+          "message_to_interrupt_ms": 0.8642673492431641,
+          "fresh_counter_updates": 0,
+          "last_message_phase": "commentary"
+        },
+        {
+          "label": "slash-routing-implement",
+          "thread_id": "01a0b07c-204d-7693-8f2d-096a311362cc",
+          "turn_id": "01a0b07d-3026-7751-a09a-53be008f3098",
+          "status": "interrupted",
+          "interrupt_reason": "output_resumed",
+          "message_to_interrupt_ms": 1.4615058898925781,
+          "fresh_counter_updates": 0,
+          "last_message_phase": "commentary"
+        },
+        {
+          "label": "slash-routing-implement",
+          "thread_id": "01a0b07c-204d-7693-8f2d-096a311362cc",
+          "turn_id": "01a0b07d-4381-7b61-b9a7-31091321cb1b",
+          "status": "interrupted",
+          "interrupt_reason": "output_resumed",
+          "message_to_interrupt_ms": 1.6427040100097656,
+          "fresh_counter_updates": 0,
+          "last_message_phase": "commentary"
+        },
+        {
+          "label": "slash-routing-implement",
+          "thread_id": "01a0b07c-204d-7693-8f2d-096a311362cc",
+          "turn_id": "01a0b07d-777b-7b71-9e8b-35e29153b1f1",
+          "status": "interrupted",
+          "interrupt_reason": "output_resumed",
+          "message_to_interrupt_ms": 1.617431640625,
+          "fresh_counter_updates": 0,
+          "last_message_phase": "commentary"
+        },
+        {
+          "label": "slash-routing-implement",
+          "thread_id": "01a0b07c-204d-7693-8f2d-096a311362cc",
+          "turn_id": "01a0b07e-16f3-7f21-b0a1-338642b65a44",
+          "status": "interrupted",
+          "interrupt_reason": "output_resumed",
+          "message_to_interrupt_ms": 1.1603832244873047,
+          "fresh_counter_updates": 0,
+          "last_message_phase": "commentary"
+        },
+        {
+          "label": "slash-routing-implement",
+          "thread_id": "01a0b07c-204d-7693-8f2d-096a311362cc",
+          "turn_id": "01a0b07e-23ef-7773-9e21-d0579159f145",
+          "status": "interrupted",
+          "interrupt_reason": "output_resumed",
+          "message_to_interrupt_ms": 0.9679794311523438,
+          "fresh_counter_updates": 0,
+          "last_message_phase": "commentary"
+        },
+        {
+          "label": "slash-routing-implement",
+          "thread_id": "01a0b07c-204d-7693-8f2d-096a311362cc",
+          "turn_id": "01a0b07e-5bf0-7033-add7-cecd019f8350",
+          "status": "interrupted",
+          "interrupt_reason": "output_resumed",
+          "message_to_interrupt_ms": 5.429267883300781,
+          "fresh_counter_updates": 0,
+          "last_message_phase": "commentary"
+        },
+        {
+          "label": "slash-routing-implement",
+          "thread_id": "01a0b07c-204d-7693-8f2d-096a311362cc",
+          "turn_id": "01a0b07e-6ca3-71a1-ba2d-5cd4965c50c4",
+          "status": "interrupted",
+          "interrupt_reason": "output_resumed",
+          "message_to_interrupt_ms": 1.8053054809570312,
+          "fresh_counter_updates": 0,
+          "last_message_phase": "commentary"
+        },
+        {
+          "label": "slash-routing-implement",
+          "thread_id": "01a0b07c-204d-7693-8f2d-096a311362cc",
+          "turn_id": "01a0b07e-c41f-7db0-9fec-e7df84a16f90",
+          "status": "interrupted",
+          "interrupt_reason": "output_resumed",
+          "message_to_interrupt_ms": 0.8819103240966797,
+          "fresh_counter_updates": 0,
+          "last_message_phase": "commentary"
+        },
+        {
+          "label": "slash-routing-implement",
+          "thread_id": "01a0b07c-204d-7693-8f2d-096a311362cc",
+          "turn_id": "01a0b07e-f821-7bd3-bddc-6ed848d85223",
+          "status": "interrupted",
+          "interrupt_reason": "output_resumed",
+          "message_to_interrupt_ms": 1.0895729064941406,
+          "fresh_counter_updates": 0,
+          "last_message_phase": "commentary"
+        },
+        {
+          "label": "slash-routing-implement",
+          "thread_id": "01a0b07c-204d-7693-8f2d-096a311362cc",
+          "turn_id": "01a0b07f-38c2-7851-9012-81573939e567",
+          "status": "interrupted",
+          "interrupt_reason": "output_resumed",
+          "message_to_interrupt_ms": 1.0266304016113281,
+          "fresh_counter_updates": 0,
+          "last_message_phase": "commentary"
+        },
+        {
+          "label": "slash-routing-implement",
+          "thread_id": "01a0b07c-204d-7693-8f2d-096a311362cc",
+          "turn_id": "01a0b080-4c53-7921-bb43-227c812ba25f",
+          "status": "interrupted",
+          "interrupt_reason": "output_resumed",
+          "message_to_interrupt_ms": 0.7085800170898438,
+          "fresh_counter_updates": 0,
+          "last_message_phase": "commentary"
+        },
+        {
+          "label": "slash-routing-implement",
+          "thread_id": "01a0b07c-204d-7693-8f2d-096a311362cc",
+          "turn_id": "01a0b080-61a0-7d90-9ae8-f5ccbd959de1",
+          "status": "interrupted",
+          "interrupt_reason": "output_resumed",
+          "message_to_interrupt_ms": 0.7901191711425781,
+          "fresh_counter_updates": 0,
+          "last_message_phase": "commentary"
+        },
+        {
+          "label": "slash-routing-implement",
+          "thread_id": "01a0b07c-204d-7693-8f2d-096a311362cc",
+          "turn_id": "01a0b080-960d-71a2-9578-cd2e1c706bbe",
+          "status": "interrupted",
+          "interrupt_reason": "output_resumed",
+          "message_to_interrupt_ms": 1.2586116790771484,
+          "fresh_counter_updates": 0,
+          "last_message_phase": "commentary"
+        },
+        {
+          "label": "slash-routing-implement",
+          "thread_id": "01a0b07c-204d-7693-8f2d-096a311362cc",
+          "turn_id": "01a0b080-a369-7900-b9b9-f5408d27b20a",
+          "status": "interrupted",
+          "interrupt_reason": "output_resumed",
+          "message_to_interrupt_ms": 0.9226799011230469,
+          "fresh_counter_updates": 0,
+          "last_message_phase": "commentary"
+        },
+        {
+          "label": "review-completion-review-1",
+          "thread_id": "01a0b094-c536-7732-be9e-2ada1be96c48",
+          "turn_id": "01a0b094-c572-73b3-b576-02c49af4507f",
+          "status": "started",
+          "interrupt_reason": null,
+          "message_to_interrupt_ms": 45611.44423484802,
+          "fresh_counter_updates": 6,
+          "last_message_phase": "commentary"
+        }
+      ],
+      "uncovered_by_interrupt_reason": {
+        "output_resumed": 23,
+        "null": 1
+      },
+      "native_histories": [
+        {
+          "thread": "01a0b060-2c29-77f1-92e0-82cbbf7f030a",
+          "path": "/home/user/.codex/sessions/2026/09/17/rollout-2026-09-17T19-18-07-01a0b060-2c29-77f1-92e0-82cbbf7f030a.jsonl",
+          "sha256": "032ed41e81d907d3e9c8c46787962d9e4d2475a9e5dee58945b5fd32490e7b83",
+          "token_events": 46,
+          "empty_token_events": 0,
+          "numeric_events": 46,
+          "unique_numeric_totals": 44,
+          "last_total": [
+            5369439,
+            37570,
+            5121536
+          ],
+          "matches_transport": true,
+          "message_metadata_keys": [
+            "content_item_kinds",
+            "create_time",
+            "turn_id"
+          ]
+        },
+        {
+          "thread": "01a0b06b-81d4-7a93-90dc-9f3940a39a73",
+          "path": "/home/user/.codex/sessions/2026/09/17/rollout-2026-09-17T19-30-30-01a0b06b-81d4-7a93-90dc-9f3940a39a73.jsonl",
+          "sha256": "592e7e09b7601adcaa0c4ccb8c737294b25004b1d165067ad141366219c0969e",
+          "token_events": 47,
+          "empty_token_events": 0,
+          "numeric_events": 47,
+          "unique_numeric_totals": 47,
+          "last_total": [
+            5146883,
+            41391,
+            4759168
+          ],
+          "matches_transport": true,
+          "message_metadata_keys": [
+            "content_item_kinds",
+            "create_time",
+            "turn_id"
+          ]
+        },
+        {
+          "thread": "01a0b07c-204d-7693-8f2d-096a311362cc",
+          "path": "/home/user/.codex/sessions/2026/09/17/rollout-2026-09-17T19-48-39-01a0b07c-204d-7693-8f2d-096a311362cc.jsonl",
+          "sha256": "89255d293011295d3da8ef15b56663ed7915badbc6d1f2a30636357b5af790f7",
+          "token_events": 23,
+          "empty_token_events": 23,
+          "numeric_events": 0,
+          "unique_numeric_totals": 0,
+          "last_total": [
+            0,
+            0,
+            0
+          ],
+          "matches_transport": true,
+          "message_metadata_keys": [
+            "content_item_kinds",
+            "create_time",
+            "turn_id"
+          ]
+        },
+        {
+          "thread": "01a0b080-d6d6-7502-ac1c-fd2cfd44a34c",
+          "path": "/home/user/.codex/sessions/2026/09/17/rollout-2026-09-17T19-53-48-01a0b080-d6d6-7502-ac1c-fd2cfd44a34c.jsonl",
+          "sha256": "0d92df1dc07ec1ceea7c9e6c64f248ea84a95406c504e5dc75884af5e43929db",
+          "token_events": 17,
+          "empty_token_events": 0,
+          "numeric_events": 17,
+          "unique_numeric_totals": 17,
+          "last_total": [
+            1139937,
+            14053,
+            1037696
+          ],
+          "matches_transport": true,
+          "message_metadata_keys": [
+            "content_item_kinds",
+            "create_time",
+            "turn_id"
+          ]
+        },
+        {
+          "thread": "01a0b085-2ce7-7d33-bccd-611415e2cc9f",
+          "path": "/home/user/.codex/sessions/2026/09/17/rollout-2026-09-17T19-58-32-01a0b085-2ce7-7d33-bccd-611415e2cc9f.jsonl",
+          "sha256": "cde749a230b622adfef5dfd068d193c18740d54bea44a8e687ca4f8f9b85f236",
+          "token_events": 28,
+          "empty_token_events": 0,
+          "numeric_events": 28,
+          "unique_numeric_totals": 28,
+          "last_total": [
+            2957303,
+            52612,
+            2723328
+          ],
+          "matches_transport": true,
+          "message_metadata_keys": [
+            "content_item_kinds",
+            "create_time",
+            "turn_id"
+          ]
+        },
+        {
+          "thread": "01a0b094-c536-7732-be9e-2ada1be96c48",
+          "path": "/home/user/.codex/sessions/2026/09/17/rollout-2026-09-17T20-15-34-01a0b094-c536-7732-be9e-2ada1be96c48.jsonl",
+          "sha256": "116f49bf6aee972b7122343e20f0ca601b3135fb8ce085233089fdb661ee5798",
+          "token_events": 7,
+          "empty_token_events": 0,
+          "numeric_events": 7,
+          "unique_numeric_totals": 6,
+          "last_total": [
+            150627,
+            2162,
+            104704
+          ],
+          "matches_transport": true,
+          "message_metadata_keys": [
+            "content_item_kinds",
+            "create_time",
+            "turn_id"
+          ]
+        }
+      ],
+      "comparison_key": "2644230839fa24747d6ffbc4379b4d7074da83c9c09f933bd898778ff01635c4",
+      "source_sha256": {
+        "__init__.py": "cd5de7ee4472c1ef8bada6b3b56d56cee36d93dbfab9195d2dcfc0c7d7be13a1",
+        "__main__.py": "0271f5c7bfd985a08c353e0b6e12002bbbabb9a0997bfff879492273f288f1df",
+        "config.py": "8795d66abea96358038c9206e71cad0cfadd5b3247f678ac84d402005b089942",
+        "host.py": "a81595b8b0742557ea4f4e478fc2dd7813fbfd1d926ebd6da40b20c9d4167f2b",
+        "provider.py": "9a31e09fde35d70a2cfd770b4275762aa93e21faf3f5ae83d38b94f23ba32fcc",
+        "workflow.py": "fb95c2db7fd2a527605aea0bc6182eb15a3fc3890084a884a2dc2a364812ae11"
+      },
+      "duration_seconds": 3539.3811652189906
+    },
+    {
+      "run": "on-02",
+      "status": "failed",
+      "error": "operator interruption",
+      "result_sha256": "67dba2faa99fc32184500a310d2e79b75b80d93e0f23592fdc17074eaac5298a",
+      "transport_sha256": "f626acb76b505a9096f28e719c6ce251169c1d52d3a1b9be52e124a46b097517",
+      "observed_raw_tokens": 13932504,
+      "matches_runner_raw": true,
+      "matches_runner_thread_totals": true,
+      "no_unowned_charged_threads": true,
+      "counter_decreases": [],
+      "measurement_complete": false,
+      "turns": 84,
+      "uncovered_turns": [
+        {
+          "label": "review-completion-fix-1",
+          "thread_id": "01a0b089-36ba-7403-af2f-f2b0f6199d4c",
+          "turn_id": "01a0b095-3f10-7d10-894b-474388174b36",
+          "status": "started",
+          "interrupt_reason": null,
+          "message_to_interrupt_ms": null,
+          "fresh_counter_updates": 0,
+          "last_message_phase": null
+        }
+      ],
+      "uncovered_by_interrupt_reason": {
+        "null": 1
+      },
+      "native_histories": [
+        {
+          "thread": "01a0b060-2c29-7300-98b8-7181495eb17b",
+          "path": "/home/user/.codex/sessions/2026/09/17/rollout-2026-09-17T19-18-07-01a0b060-2c29-7300-98b8-7181495eb17b.jsonl",
+          "sha256": "9ef0e7770957a879cef8571d0b6f4552cff622856dbd6dbd1ed2b0fcca2f17e8",
+          "token_events": 33,
+          "empty_token_events": 0,
+          "numeric_events": 33,
+          "unique_numeric_totals": 32,
+          "last_total": [
+            2771892,
+            33507,
+            2555904
+          ],
+          "matches_transport": true,
+          "message_metadata_keys": [
+            "content_item_kinds",
+            "create_time",
+            "turn_id"
+          ]
+        },
+        {
+          "thread": "01a0b06e-57d3-7f62-b9c3-1a41e274345f",
+          "path": "/home/user/.codex/sessions/2026/09/17/rollout-2026-09-17T19-33-36-01a0b06e-57d3-7f62-b9c3-1a41e274345f.jsonl",
+          "sha256": "9c9f24aee4fdc37b80ccd461f8846ae5c0e0d122c8aea9a64562ced3f7233c93",
+          "token_events": 21,
+          "empty_token_events": 0,
+          "numeric_events": 21,
+          "unique_numeric_totals": 21,
+          "last_total": [
+            1892381,
+            28571,
+            1621888
+          ],
+          "matches_transport": true,
+          "message_metadata_keys": [
+            "content_item_kinds",
+            "create_time",
+            "turn_id"
+          ]
+        },
+        {
+          "thread": "01a0b078-415e-7e51-8e89-d4401ba65624",
+          "path": "/home/user/.codex/sessions/2026/09/17/rollout-2026-09-17T19-44-26-01a0b078-415e-7e51-8e89-d4401ba65624.jsonl",
+          "sha256": "1c0e74e9027b40af361ed475762066d15057e1be31a4130faf791599f61977dc",
+          "token_events": 34,
+          "empty_token_events": 0,
+          "numeric_events": 34,
+          "unique_numeric_totals": 34,
+          "last_total": [
+            3911525,
+            27253,
+            3682048
+          ],
+          "matches_transport": true,
+          "message_metadata_keys": [
+            "content_item_kinds",
+            "create_time",
+            "turn_id"
+          ]
+        },
+        {
+          "thread": "01a0b07f-36f2-7c72-81d6-b7005f2ea11a",
+          "path": "/home/user/.codex/sessions/2026/09/17/rollout-2026-09-17T19-52-02-01a0b07f-36f2-7c72-81d6-b7005f2ea11a.jsonl",
+          "sha256": "423e92a10649187a27eebd6db73de835316f2d60333508f1a0a169a4d004fec4",
+          "token_events": 31,
+          "empty_token_events": 0,
+          "numeric_events": 31,
+          "unique_numeric_totals": 31,
+          "last_total": [
+            2571295,
+            24091,
+            2301568
+          ],
+          "matches_transport": true,
+          "message_metadata_keys": [
+            "content_item_kinds",
+            "create_time",
+            "turn_id"
+          ]
+        },
+        {
+          "thread": "01a0b089-36ba-7403-af2f-f2b0f6199d4c",
+          "path": "/home/user/.codex/sessions/2026/09/17/rollout-2026-09-17T20-02-57-01a0b089-36ba-7403-af2f-f2b0f6199d4c.jsonl",
+          "sha256": "0b278b81884167a36fe82a9c639d1caf13e9c1d235ee0b5a079e3e8db602bb45",
+          "token_events": 27,
+          "empty_token_events": 0,
+          "numeric_events": 27,
+          "unique_numeric_totals": 26,
+          "last_total": [
+            2101714,
+            30962,
+            1954560
+          ],
+          "matches_transport": true,
+          "message_metadata_keys": [
+            "content_item_kinds",
+            "create_time",
+            "turn_id"
+          ]
+        },
+        {
+          "thread": "01a0b090-6900-77b0-94dd-628240ed8558",
+          "path": "/home/user/.codex/sessions/2026/09/17/rollout-2026-09-17T20-10-49-01a0b090-6900-77b0-94dd-628240ed8558.jsonl",
+          "sha256": "7e0f51023c85b2147a986daa0813de2096cbfb94167270a80f2ce2a02d56f150",
+          "token_events": 10,
+          "empty_token_events": 0,
+          "numeric_events": 10,
+          "unique_numeric_totals": 10,
+          "last_total": [
+            531924,
+            7389,
+            452352
+          ],
+          "matches_transport": true,
+          "message_metadata_keys": [
+            "content_item_kinds",
+            "create_time",
+            "turn_id"
+          ]
+        }
+      ],
+      "comparison_key": "2644230839fa24747d6ffbc4379b4d7074da83c9c09f933bd898778ff01635c4",
+      "source_sha256": {
+        "__init__.py": "cd5de7ee4472c1ef8bada6b3b56d56cee36d93dbfab9195d2dcfc0c7d7be13a1",
+        "__main__.py": "0271f5c7bfd985a08c353e0b6e12002bbbabb9a0997bfff879492273f288f1df",
+        "config.py": "8795d66abea96358038c9206e71cad0cfadd5b3247f678ac84d402005b089942",
+        "host.py": "a81595b8b0742557ea4f4e478fc2dd7813fbfd1d926ebd6da40b20c9d4167f2b",
+        "provider.py": "9a31e09fde35d70a2cfd770b4275762aa93e21faf3f5ae83d38b94f23ba32fcc",
+        "workflow.py": "fb95c2db7fd2a527605aea0bc6182eb15a3fc3890084a884a2dc2a364812ae11"
+      },
+      "duration_seconds": 3539.426976711009
+    },
+    {
+      "run": "on-03",
+      "status": "failed",
+      "error": "operator interruption",
+      "result_sha256": "0657eb13c7d7e3a3316fcff798935958c6d1f3e653f833ea552a3b546a69cab2",
+      "transport_sha256": "3047f573efcbc958a84f15b2059a950a2197454d37f697da9b5d6ce4fee7f7cf",
+      "observed_raw_tokens": 12962583,
+      "matches_runner_raw": true,
+      "matches_runner_thread_totals": true,
+      "no_unowned_charged_threads": true,
+      "counter_decreases": [],
+      "measurement_complete": false,
+      "turns": 124,
+      "uncovered_turns": [
+        {
+          "label": "visual-mode-implement",
+          "thread_id": "01a0b060-2c35-7be1-97e1-3927e1291bdb",
+          "turn_id": "01a0b061-1f04-76b2-91d2-56a26a780536",
+          "status": "interrupted",
+          "interrupt_reason": "grace_expired",
+          "message_to_interrupt_ms": 1003.1161308288574,
+          "fresh_counter_updates": 0,
+          "last_message_phase": "final_answer"
+        },
+        {
+          "label": "slash-routing-implement",
+          "thread_id": "01a0b079-c9f6-79a1-89ee-275939d3d2f9",
+          "turn_id": "01a0b079-ca29-72a0-8aab-77d19d4e2a39",
+          "status": "interrupted",
+          "interrupt_reason": "output_resumed",
+          "message_to_interrupt_ms": 1.0325908660888672,
+          "fresh_counter_updates": 17,
+          "last_message_phase": "commentary"
+        },
+        {
+          "label": "slash-routing-implement",
+          "thread_id": "01a0b079-c9f6-79a1-89ee-275939d3d2f9",
+          "turn_id": "01a0b07b-3dad-7f41-a7cb-26cf80ab87ed",
+          "status": "interrupted",
+          "interrupt_reason": "output_resumed",
+          "message_to_interrupt_ms": 1.4483928680419922,
+          "fresh_counter_updates": 0,
+          "last_message_phase": "commentary"
+        },
+        {
+          "label": "slash-routing-implement",
+          "thread_id": "01a0b079-c9f6-79a1-89ee-275939d3d2f9",
+          "turn_id": "01a0b07b-70a2-70c3-8b04-3758ab1acc26",
+          "status": "interrupted",
+          "interrupt_reason": "output_resumed",
+          "message_to_interrupt_ms": 0.44989585876464844,
+          "fresh_counter_updates": 0,
+          "last_message_phase": "commentary"
+        },
+        {
+          "label": "slash-routing-implement",
+          "thread_id": "01a0b079-c9f6-79a1-89ee-275939d3d2f9",
+          "turn_id": "01a0b07b-a863-76c0-b8df-9e1e1065d3f9",
+          "status": "interrupted",
+          "interrupt_reason": "output_resumed",
+          "message_to_interrupt_ms": 0.9775161743164062,
+          "fresh_counter_updates": 0,
+          "last_message_phase": "commentary"
+        },
+        {
+          "label": "slash-routing-implement",
+          "thread_id": "01a0b079-c9f6-79a1-89ee-275939d3d2f9",
+          "turn_id": "01a0b07b-db5b-7241-bc92-4cfcfd00c672",
+          "status": "interrupted",
+          "interrupt_reason": "output_resumed",
+          "message_to_interrupt_ms": 1.176595687866211,
+          "fresh_counter_updates": 0,
+          "last_message_phase": "commentary"
+        },
+        {
+          "label": "slash-routing-implement",
+          "thread_id": "01a0b079-c9f6-79a1-89ee-275939d3d2f9",
+          "turn_id": "01a0b07c-1080-7c72-816c-e05f06c8bda9",
+          "status": "interrupted",
+          "interrupt_reason": "output_resumed",
+          "message_to_interrupt_ms": 2.6280879974365234,
+          "fresh_counter_updates": 0,
+          "last_message_phase": "commentary"
+        },
+        {
+          "label": "slash-routing-implement",
+          "thread_id": "01a0b079-c9f6-79a1-89ee-275939d3d2f9",
+          "turn_id": "01a0b07c-4333-7e31-b5d2-06bd8f6d75a1",
+          "status": "interrupted",
+          "interrupt_reason": "output_resumed",
+          "message_to_interrupt_ms": 0.5753040313720703,
+          "fresh_counter_updates": 0,
+          "last_message_phase": "commentary"
+        },
+        {
+          "label": "slash-routing-implement",
+          "thread_id": "01a0b079-c9f6-79a1-89ee-275939d3d2f9",
+          "turn_id": "01a0b07d-4de9-7123-8739-60721e22b83f",
+          "status": "interrupted",
+          "interrupt_reason": "output_resumed",
+          "message_to_interrupt_ms": 1.1796951293945312,
+          "fresh_counter_updates": 0,
+          "last_message_phase": "commentary"
+        },
+        {
+          "label": "slash-routing-implement",
+          "thread_id": "01a0b079-c9f6-79a1-89ee-275939d3d2f9",
+          "turn_id": "01a0b07f-8628-7203-a992-0829e244e700",
+          "status": "interrupted",
+          "interrupt_reason": "output_resumed",
+          "message_to_interrupt_ms": 0.8416175842285156,
+          "fresh_counter_updates": 0,
+          "last_message_phase": "commentary"
+        },
+        {
+          "label": "slash-routing-implement",
+          "thread_id": "01a0b079-c9f6-79a1-89ee-275939d3d2f9",
+          "turn_id": "01a0b080-3b17-7732-9b67-8a905f5e7ab1",
+          "status": "interrupted",
+          "interrupt_reason": "output_resumed",
+          "message_to_interrupt_ms": 0.9410381317138672,
+          "fresh_counter_updates": 0,
+          "last_message_phase": "commentary"
+        },
+        {
+          "label": "slash-routing-implement",
+          "thread_id": "01a0b079-c9f6-79a1-89ee-275939d3d2f9",
+          "turn_id": "01a0b080-d18a-7241-bb47-d736fe32320c",
+          "status": "interrupted",
+          "interrupt_reason": "output_resumed",
+          "message_to_interrupt_ms": 1.0752677917480469,
+          "fresh_counter_updates": 0,
+          "last_message_phase": "commentary"
+        },
+        {
+          "label": "slash-routing-implement",
+          "thread_id": "01a0b079-c9f6-79a1-89ee-275939d3d2f9",
+          "turn_id": "01a0b081-1ef5-7c63-8dcf-1b2ccc2f2795",
+          "status": "interrupted",
+          "interrupt_reason": "output_resumed",
+          "message_to_interrupt_ms": 0.9362697601318359,
+          "fresh_counter_updates": 0,
+          "last_message_phase": "commentary"
+        },
+        {
+          "label": "slash-routing-fix-1",
+          "thread_id": "01a0b079-c9f6-79a1-89ee-275939d3d2f9",
+          "turn_id": "01a0b084-531d-78b1-9b4c-953c61049e13",
+          "status": "interrupted",
+          "interrupt_reason": "output_resumed",
+          "message_to_interrupt_ms": 0.5397796630859375,
+          "fresh_counter_updates": 0,
+          "last_message_phase": "commentary"
+        },
+        {
+          "label": "slash-routing-fix-1",
+          "thread_id": "01a0b079-c9f6-79a1-89ee-275939d3d2f9",
+          "turn_id": "01a0b084-8593-7013-a1f4-a85d6319c240",
+          "status": "interrupted",
+          "interrupt_reason": "output_resumed",
+          "message_to_interrupt_ms": 1.3248920440673828,
+          "fresh_counter_updates": 0,
+          "last_message_phase": "commentary"
+        },
+        {
+          "label": "slash-routing-fix-1",
+          "thread_id": "01a0b079-c9f6-79a1-89ee-275939d3d2f9",
+          "turn_id": "01a0b084-9371-7242-95be-557c04642f7b",
+          "status": "interrupted",
+          "interrupt_reason": "output_resumed",
+          "message_to_interrupt_ms": 0.8363723754882812,
+          "fresh_counter_updates": 0,
+          "last_message_phase": "commentary"
+        },
+        {
+          "label": "slash-routing-fix-1",
+          "thread_id": "01a0b079-c9f6-79a1-89ee-275939d3d2f9",
+          "turn_id": "01a0b084-c7ef-7832-85f9-753b4ef53a23",
+          "status": "interrupted",
+          "interrupt_reason": "output_resumed",
+          "message_to_interrupt_ms": 0.61798095703125,
+          "fresh_counter_updates": 0,
+          "last_message_phase": "commentary"
+        },
+        {
+          "label": "slash-routing-fix-1",
+          "thread_id": "01a0b079-c9f6-79a1-89ee-275939d3d2f9",
+          "turn_id": "01a0b085-12e6-7643-b52e-3f1d7f248c64",
+          "status": "interrupted",
+          "interrupt_reason": "output_resumed",
+          "message_to_interrupt_ms": 12.525081634521484,
+          "fresh_counter_updates": 0,
+          "last_message_phase": "commentary"
+        },
+        {
+          "label": "slash-routing-fix-1",
+          "thread_id": "01a0b079-c9f6-79a1-89ee-275939d3d2f9",
+          "turn_id": "01a0b085-2825-73b1-b3d2-a6deacc6b772",
+          "status": "interrupted",
+          "interrupt_reason": "output_resumed",
+          "message_to_interrupt_ms": 1.1038780212402344,
+          "fresh_counter_updates": 0,
+          "last_message_phase": "commentary"
+        },
+        {
+          "label": "review-completion-implement",
+          "thread_id": "01a0b085-ee21-7bf3-9656-c75e5996789f",
+          "turn_id": "01a0b085-ee55-7d41-adb9-57e7792a6ccb",
+          "status": "interrupted",
+          "interrupt_reason": "output_resumed",
+          "message_to_interrupt_ms": 0.7901191711425781,
+          "fresh_counter_updates": 0,
+          "last_message_phase": "commentary"
+        },
+        {
+          "label": "review-completion-implement",
+          "thread_id": "01a0b085-ee21-7bf3-9656-c75e5996789f",
+          "turn_id": "01a0b086-22a3-7583-bc56-acc43472c714",
+          "status": "interrupted",
+          "interrupt_reason": "output_resumed",
+          "message_to_interrupt_ms": 2.3398399353027344,
+          "fresh_counter_updates": 10,
+          "last_message_phase": "commentary"
+        },
+        {
+          "label": "review-completion-implement",
+          "thread_id": "01a0b085-ee21-7bf3-9656-c75e5996789f",
+          "turn_id": "01a0b088-abe6-7d03-827f-44aef5b668eb",
+          "status": "interrupted",
+          "interrupt_reason": "output_resumed",
+          "message_to_interrupt_ms": 1.4238357543945312,
+          "fresh_counter_updates": 0,
+          "last_message_phase": "commentary"
+        },
+        {
+          "label": "review-completion-implement",
+          "thread_id": "01a0b085-ee21-7bf3-9656-c75e5996789f",
+          "turn_id": "01a0b089-d30a-7e52-a045-8e7cf0ef4e9a",
+          "status": "interrupted",
+          "interrupt_reason": "output_resumed",
+          "message_to_interrupt_ms": 0.6406307220458984,
+          "fresh_counter_updates": 0,
+          "last_message_phase": "commentary"
+        },
+        {
+          "label": "review-completion-implement",
+          "thread_id": "01a0b085-ee21-7bf3-9656-c75e5996789f",
+          "turn_id": "01a0b089-df4b-7740-99cf-c9d485d308e4",
+          "status": "interrupted",
+          "interrupt_reason": "output_resumed",
+          "message_to_interrupt_ms": 1.2423992156982422,
+          "fresh_counter_updates": 0,
+          "last_message_phase": "commentary"
+        },
+        {
+          "label": "review-completion-implement",
+          "thread_id": "01a0b085-ee21-7bf3-9656-c75e5996789f",
+          "turn_id": "01a0b08b-2301-7aa3-a422-8886d27b10f6",
+          "status": "interrupted",
+          "interrupt_reason": "output_resumed",
+          "message_to_interrupt_ms": 0.7593631744384766,
+          "fresh_counter_updates": 0,
+          "last_message_phase": "commentary"
+        },
+        {
+          "label": "review-completion-implement",
+          "thread_id": "01a0b085-ee21-7bf3-9656-c75e5996789f",
+          "turn_id": "01a0b08b-5fc1-71e2-8f7e-6e1af2c14515",
+          "status": "interrupted",
+          "interrupt_reason": "output_resumed",
+          "message_to_interrupt_ms": 0.9016990661621094,
+          "fresh_counter_updates": 0,
+          "last_message_phase": "commentary"
+        },
+        {
+          "label": "review-completion-implement",
+          "thread_id": "01a0b085-ee21-7bf3-9656-c75e5996789f",
+          "turn_id": "01a0b08b-b937-7e43-8b89-657486be011d",
+          "status": "interrupted",
+          "interrupt_reason": "output_resumed",
+          "message_to_interrupt_ms": 1.5797615051269531,
+          "fresh_counter_updates": 0,
+          "last_message_phase": "commentary"
+        },
+        {
+          "label": "review-completion-implement",
+          "thread_id": "01a0b085-ee21-7bf3-9656-c75e5996789f",
+          "turn_id": "01a0b08b-eadb-7400-b145-74e0697b9659",
+          "status": "interrupted",
+          "interrupt_reason": "output_resumed",
+          "message_to_interrupt_ms": 1.5633106231689453,
+          "fresh_counter_updates": 0,
+          "last_message_phase": "commentary"
+        },
+        {
+          "label": "review-completion-implement",
+          "thread_id": "01a0b085-ee21-7bf3-9656-c75e5996789f",
+          "turn_id": "01a0b08d-7d00-7850-9d29-961c7a21f049",
+          "status": "interrupted",
+          "interrupt_reason": "output_resumed",
+          "message_to_interrupt_ms": 1.260519027709961,
+          "fresh_counter_updates": 0,
+          "last_message_phase": "commentary"
+        },
+        {
+          "label": "review-completion-implement",
+          "thread_id": "01a0b085-ee21-7bf3-9656-c75e5996789f",
+          "turn_id": "01a0b090-b85b-78a2-9c62-21cbce1de7a5",
+          "status": "interrupted",
+          "interrupt_reason": "output_resumed",
+          "message_to_interrupt_ms": 0.7390975952148438,
+          "fresh_counter_updates": 0,
+          "last_message_phase": "commentary"
+        },
+        {
+          "label": "review-completion-implement",
+          "thread_id": "01a0b085-ee21-7bf3-9656-c75e5996789f",
+          "turn_id": "01a0b091-9b91-7f93-963a-fe480f7e1450",
+          "status": "interrupted",
+          "interrupt_reason": "output_resumed",
+          "message_to_interrupt_ms": 1.196146011352539,
+          "fresh_counter_updates": 0,
+          "last_message_phase": "commentary"
+        },
+        {
+          "label": "review-completion-implement",
+          "thread_id": "01a0b085-ee21-7bf3-9656-c75e5996789f",
+          "turn_id": "01a0b091-efd7-74e3-b69c-f054395886ab",
+          "status": "interrupted",
+          "interrupt_reason": "output_resumed",
+          "message_to_interrupt_ms": 0.4591941833496094,
+          "fresh_counter_updates": 0,
+          "last_message_phase": "commentary"
+        },
+        {
+          "label": "review-completion-implement",
+          "thread_id": "01a0b085-ee21-7bf3-9656-c75e5996789f",
+          "turn_id": "01a0b092-8fd1-7410-af8d-3c90cd7cdbef",
+          "status": "interrupted",
+          "interrupt_reason": "output_resumed",
+          "message_to_interrupt_ms": 0.6973743438720703,
+          "fresh_counter_updates": 0,
+          "last_message_phase": "commentary"
+        },
+        {
+          "label": "review-completion-implement",
+          "thread_id": "01a0b085-ee21-7bf3-9656-c75e5996789f",
+          "turn_id": "01a0b093-15b2-7602-9a5d-b1e1c30dfe54",
+          "status": "interrupted",
+          "interrupt_reason": "output_resumed",
+          "message_to_interrupt_ms": 0.9605884552001953,
+          "fresh_counter_updates": 0,
+          "last_message_phase": "commentary"
+        },
+        {
+          "label": "review-completion-implement",
+          "thread_id": "01a0b085-ee21-7bf3-9656-c75e5996789f",
+          "turn_id": "01a0b093-a157-7491-a8cb-7ca7fda90814",
+          "status": "interrupted",
+          "interrupt_reason": "output_resumed",
+          "message_to_interrupt_ms": 0.9753704071044922,
+          "fresh_counter_updates": 0,
+          "last_message_phase": "commentary"
+        },
+        {
+          "label": "review-completion-implement",
+          "thread_id": "01a0b085-ee21-7bf3-9656-c75e5996789f",
+          "turn_id": "01a0b093-d859-7ad2-b945-29be9c724f29",
+          "status": "interrupted",
+          "interrupt_reason": "output_resumed",
+          "message_to_interrupt_ms": 1.04522705078125,
+          "fresh_counter_updates": 0,
+          "last_message_phase": "commentary"
+        },
+        {
+          "label": "review-completion-implement",
+          "thread_id": "01a0b085-ee21-7bf3-9656-c75e5996789f",
+          "turn_id": "01a0b094-0d1a-7391-9199-8c8f3a6542fc",
+          "status": "interrupted",
+          "interrupt_reason": "output_resumed",
+          "message_to_interrupt_ms": 1.2745857238769531,
+          "fresh_counter_updates": 0,
+          "last_message_phase": "commentary"
+        },
+        {
+          "label": "review-completion-implement",
+          "thread_id": "01a0b085-ee21-7bf3-9656-c75e5996789f",
+          "turn_id": "01a0b094-1d89-75b1-aa45-d1b6c16414ac",
+          "status": "interrupted",
+          "interrupt_reason": "output_resumed",
+          "message_to_interrupt_ms": 1.2052059173583984,
+          "fresh_counter_updates": 0,
+          "last_message_phase": "commentary"
+        },
+        {
+          "label": "review-completion-implement",
+          "thread_id": "01a0b085-ee21-7bf3-9656-c75e5996789f",
+          "turn_id": "01a0b094-7b30-7291-a210-fb315893ddd9",
+          "status": "interrupted",
+          "interrupt_reason": "output_resumed",
+          "message_to_interrupt_ms": 1.1093616485595703,
+          "fresh_counter_updates": 0,
+          "last_message_phase": "commentary"
+        },
+        {
+          "label": "review-completion-implement",
+          "thread_id": "01a0b085-ee21-7bf3-9656-c75e5996789f",
+          "turn_id": "01a0b094-990e-7d13-b208-12499eb8d40b",
+          "status": "interrupted",
+          "interrupt_reason": "output_resumed",
+          "message_to_interrupt_ms": 0.5142688751220703,
+          "fresh_counter_updates": 0,
+          "last_message_phase": "commentary"
+        },
+        {
+          "label": "review-completion-implement",
+          "thread_id": "01a0b085-ee21-7bf3-9656-c75e5996789f",
+          "turn_id": "01a0b094-ad8f-7842-9450-2511665182ba",
+          "status": "interrupted",
+          "interrupt_reason": "output_resumed",
+          "message_to_interrupt_ms": 0.5269050598144531,
+          "fresh_counter_updates": 0,
+          "last_message_phase": "commentary"
+        },
+        {
+          "label": "review-completion-implement",
+          "thread_id": "01a0b085-ee21-7bf3-9656-c75e5996789f",
+          "turn_id": "01a0b094-ead5-7061-ae81-48f791dc20d7",
+          "status": "interrupted",
+          "interrupt_reason": "output_resumed",
+          "message_to_interrupt_ms": 0.9682178497314453,
+          "fresh_counter_updates": 0,
+          "last_message_phase": "commentary"
+        },
+        {
+          "label": "review-completion-implement",
+          "thread_id": "01a0b085-ee21-7bf3-9656-c75e5996789f",
+          "turn_id": "01a0b095-30bb-70b0-933e-9b0d564de833",
+          "status": "interrupted",
+          "interrupt_reason": "output_resumed",
+          "message_to_interrupt_ms": 0.9186267852783203,
+          "fresh_counter_updates": 0,
+          "last_message_phase": "commentary"
+        },
+        {
+          "label": "review-completion-implement",
+          "thread_id": "01a0b085-ee21-7bf3-9656-c75e5996789f",
+          "turn_id": "01a0b095-e0b1-7661-9f12-89aa4503e11c",
+          "status": "interrupted",
+          "interrupt_reason": "output_resumed",
+          "message_to_interrupt_ms": 1.3332366943359375,
+          "fresh_counter_updates": 0,
+          "last_message_phase": "commentary"
+        },
+        {
+          "label": "review-completion-implement",
+          "thread_id": "01a0b085-ee21-7bf3-9656-c75e5996789f",
+          "turn_id": "01a0b095-f82e-7641-8b59-a2419ded9c3e",
+          "status": "started",
+          "interrupt_reason": null,
+          "message_to_interrupt_ms": null,
+          "fresh_counter_updates": 0,
+          "last_message_phase": null
+        }
+      ],
+      "uncovered_by_interrupt_reason": {
+        "grace_expired": 1,
+        "output_resumed": 43,
+        "null": 1
+      },
+      "native_histories": [
+        {
+          "thread": "01a0b060-2c35-7be1-97e1-3927e1291bdb",
+          "path": "/home/user/.codex/sessions/2026/09/17/rollout-2026-09-17T19-18-07-01a0b060-2c35-7be1-97e1-3927e1291bdb.jsonl",
+          "sha256": "2149b3ec3b0e84822356554695ce02a836d3745708b429805fcb74ea45383936",
+          "token_events": 77,
+          "empty_token_events": 0,
+          "numeric_events": 77,
+          "unique_numeric_totals": 74,
+          "last_total": [
+            8573060,
+            48049,
+            8396544
+          ],
+          "matches_transport": true,
+          "message_metadata_keys": [
+            "content_item_kinds",
+            "create_time",
+            "turn_id"
+          ]
+        },
+        {
+          "thread": "01a0b06f-1348-7db3-b0d4-6163b23092b5",
+          "path": "/home/user/.codex/sessions/2026/09/17/rollout-2026-09-17T19-34-24-01a0b06f-1348-7db3-b0d4-6163b23092b5.jsonl",
+          "sha256": "91f97c1d4f8c809d4a3416a908f518fae483fa04a5b1cd82d27d4c937eb9d8bf",
+          "token_events": 21,
+          "empty_token_events": 0,
+          "numeric_events": 21,
+          "unique_numeric_totals": 21,
+          "last_total": [
+            1769506,
+            23989,
+            1520512
+          ],
+          "matches_transport": true,
+          "message_metadata_keys": [
+            "content_item_kinds",
+            "create_time",
+            "turn_id"
+          ]
+        },
+        {
+          "thread": "01a0b079-c9f6-79a1-89ee-275939d3d2f9",
+          "path": "/home/user/.codex/sessions/2026/09/17/rollout-2026-09-17T19-46-06-01a0b079-c9f6-79a1-89ee-275939d3d2f9.jsonl",
+          "sha256": "0b77c2babf59b17da806b339f0e2aef5c3c29c65776937227dd20aae5daf8d3d",
+          "token_events": 35,
+          "empty_token_events": 0,
+          "numeric_events": 35,
+          "unique_numeric_totals": 17,
+          "last_total": [
+            874397,
+            3487,
+            796032
+          ],
+          "matches_transport": true,
+          "message_metadata_keys": [
+            "content_item_kinds",
+            "create_time",
+            "turn_id"
+          ]
+        },
+        {
+          "thread": "01a0b081-554e-79e2-943d-1dc49499cb3c",
+          "path": "/home/user/.codex/sessions/2026/09/17/rollout-2026-09-17T19-54-21-01a0b081-554e-79e2-943d-1dc49499cb3c.jsonl",
+          "sha256": "39f3948f9f43f4701e0ce9a4e0a11a21879a691917f668cd26db6c1e73b0a0c2",
+          "token_events": 21,
+          "empty_token_events": 0,
+          "numeric_events": 21,
+          "unique_numeric_totals": 21,
+          "last_total": [
+            1112649,
+            11445,
+            976768
+          ],
+          "matches_transport": true,
+          "message_metadata_keys": [
+            "content_item_kinds",
+            "create_time",
+            "turn_id"
+          ]
+        },
+        {
+          "thread": "01a0b085-ee21-7bf3-9656-c75e5996789f",
+          "path": "/home/user/.codex/sessions/2026/09/17/rollout-2026-09-17T19-59-22-01a0b085-ee21-7bf3-9656-c75e5996789f.jsonl",
+          "sha256": "2d0665946d27c5e6a0b9e713b98886ed3eab069ae057ea717f14c2221eb62c41",
+          "token_events": 36,
+          "empty_token_events": 1,
+          "numeric_events": 35,
+          "unique_numeric_totals": 10,
+          "last_total": [
+            541203,
+            4798,
+            471808
+          ],
+          "matches_transport": true,
+          "message_metadata_keys": [
+            "content_item_kinds",
+            "create_time",
+            "turn_id"
+          ]
+        }
+      ],
+      "comparison_key": "2644230839fa24747d6ffbc4379b4d7074da83c9c09f933bd898778ff01635c4",
+      "source_sha256": {
+        "__init__.py": "cd5de7ee4472c1ef8bada6b3b56d56cee36d93dbfab9195d2dcfc0c7d7be13a1",
+        "__main__.py": "0271f5c7bfd985a08c353e0b6e12002bbbabb9a0997bfff879492273f288f1df",
+        "config.py": "8795d66abea96358038c9206e71cad0cfadd5b3247f678ac84d402005b089942",
+        "host.py": "a81595b8b0742557ea4f4e478fc2dd7813fbfd1d926ebd6da40b20c9d4167f2b",
+        "provider.py": "9a31e09fde35d70a2cfd770b4275762aa93e21faf3f5ae83d38b94f23ba32fcc",
+        "workflow.py": "fb95c2db7fd2a527605aea0bc6182eb15a3fc3890084a884a2dc2a364812ae11"
+      },
+      "duration_seconds": 3539.428268788004
+    }
+  ],
+  "observed_raw_sum": 41807064,
+  "all_comparison_keys_match": true,
+  "percentage": null,
+  "percentage_reason": "No completed three-versus-three comparison"
+}

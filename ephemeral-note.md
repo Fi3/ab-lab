@@ -1,28 +1,32 @@
-# Runs finished: 0 / 6
+# Runs finished: 3 / 6
 
-Last sampled: 2026-09-17T17:49:45.539049+00:00.
-Current activity: on-01, on-02, on-03 running.
-Measured on-versus-off reduction: pending complete six-run measurement verification.
+Last sampled: 2026-09-17T18:17:45.924037+00:00.
+Last updated: 2026-09-17 18:26 UTC.
+Current activity: STOPPED for missing token measurements; saved-data audit complete. No generation running.
+Successfully completed full benchmarks: 0 / 6. Three partial attempts ended; three were not started.
+Measured on-versus-off reduction: NOT AVAILABLE; the requested comparison is not complete.
 The expected roughly 50% difference is not a result.
+[Result and exact failure](experiments/on-off-20260917/RESULT.md).
 
 This is the standalone tool's six-run validation, separate from Work Leaf's old
 research task counter. [Fixed protocol](experiments/on-off-20260917/PROTOCOL.md).
 
 | Run | All nine switches | State | Observed raw tokens |
 | --- | --- | --- | --- |
-| on-01 | On | Feature 2: slash commands / implementation | 10,595,283 (partial) |
-| on-02 | On | Feature 2: slash commands / implementation | 5,563,244 (partial) |
-| on-03 | On | Feature 2: slash commands / implementation | 11,292,488 (partial) |
-| off-01 | Off | Waiting | — |
-| off-02 | Off | Waiting | — |
-| off-03 | Off | Waiting | — |
+| on-01 | On | Finished; failed (Feature 3: completion prompt / review 1) | 14,911,977 (partial) |
+| on-02 | On | Finished; failed (Feature 3: completion prompt / repair 1) | 13,932,504 (partial) |
+| on-03 | On | Finished; failed (Feature 3: completion prompt / implementation) | 12,962,583 (partial) |
+| off-01 | Off | Not started: accounting failure in first group | — |
+| off-02 | Off | Not started: accounting failure in first group | — |
+| off-03 | Off | Not started: accounting failure in first group | — |
 
 Finished counts terminal attempts, including failures—not successful, fully measured
 benchmarks. All checkouts and outcomes are retained; no automatic replacement.
 Raw tokens are input plus output, with cached input included only once.
 
-[Live status](runs/on-off-20260917/monitor-current.json) updates every 30 seconds;
-all samples remain in runs/on-off-20260917/monitor-samples.jsonl.
+[Saved status](runs/on-off-20260917/monitor-current.json) and the complete
+30-second sample history remain in runs/on-off-20260917/monitor-samples.jsonl.
+The observer is stopped because no benchmark is running.
 
 ## Activity, retained in time order
 
@@ -85,3 +89,59 @@ all samples remain in runs/on-off-20260917/monitor-samples.jsonl.
   feature's implementation/review loop and are implementing slash-command
   routing. Their differing first-feature costs remain recorded, not averaged
   with incomplete later stages or treated as final benchmark totals.
+- 2026-09-17 17:55 UTC: all three on workflows reach review of the second
+  feature. No workflow has terminated or reached its fixed limit. The three
+  off observations remain unstarted, preserving the requested two-wave schedule.
+- 2026-09-17 18:03 UTC: all three on workflows finish the second feature's
+  implementation/review loop and start the third feature. The continuous
+  sample history retains all intervening observations, including long responses
+  during which no new token total is delivered.
+- 2026-09-17 18:14 UTC: on-02 is repairing its third feature after the first
+  review; on-01 and on-03 remain in implementation. All three owned runner
+  processes are alive, with no terminal failure or counter-decrease warning.
+  No measured source, switch, prompt or limit is changed.
+- 2026-09-17 18:15–18:17 UTC: a completed-response coverage audit finds
+  missing reports in on-01 and on-03. Empty counter-decrease warnings did not
+  mean complete usage: the live observer tracked cumulative totals, but omitted
+  the runner's per-response missing-usage flags. Earlier updates stating no
+  failures were based on that insufficient live check. This monitoring gap is
+  retained explicitly; it does not erase the missing responses.
+- 2026-09-17 18:17:04 UTC: after checking the exact owned runner identities,
+  send SIGINT to all three under the frozen common-accounting-failure rule.
+  Each closes with its usage-drain path and saved partial result; no provider
+  process remains. No off workflow starts. On-01/on-02/on-03 retain
+  14,911,977 / 13,932,504 / 12,962,583 observed raw respectively, all incomplete.
+  The operator stop adds one unfinished response per run; earlier missing
+  completed responses are a separate issue, not caused by that final stop.
+- 2026-09-17 18:18 UTC: begin a bounded local-only recovery check, at most
+  15 minutes, using saved transport and the three runs' native histories.
+  No model call, authentication change, source repair, new observation or
+  replacement is permitted in this check. Determine whether later counters
+  or saved response metadata supply the missing usage before recommending
+  another benchmark admission. Official app-server documentation describes
+  interruption and usage notifications separately and supplies no missing
+  numeric values for these observations.
+- 2026-09-17 18:22 UTC: the saved-data audit identifies 67 earlier completed
+  responses without final-message usage coverage: 23 in on-01, none in on-02,
+  and 44 in on-03. Sixty-six end in an intermediate host-request message and
+  are interrupted after 0.45–12.53 milliseconds; one further final-answer gap
+  remains after the full one-second grace. The final operator cancellations
+  add one separate unfinished response per run. All 17 native histories match
+  already-counted transport totals and supply no additional total. The exact
+  recorded sum is 41,807,064 raw, still incomplete. The saved audit is local
+  only and ends well before its 15-minute ceiling.
+- 2026-09-17 18:25 UTC: save the failure report, reproducible audit and detailed
+  counter/timing evidence. All 35 existing tests pass, but do not qualify this
+  failed real-agent path. README and VERIFICATION describe the unresolved
+  measurement limitation. No measured program or input hash changes. No
+  external feature scoring is applied to a partial checkout. Off runs remain
+  unstarted; fixing and re-admitting replacement observations needs a new
+  prospective admission, not silent reuse of failed attempts.
+- 2026-09-17 18:26 UTC: replaying the local audit reproduces all saved values
+  after normal JSON serialization. The first comparison assertion treated a
+  Python null dictionary key differently from its serialized JSON key; only
+  the comparison expression was corrected, with no evidence change. All
+  native metadata key checks, source pins, 35 unit tests, Python compilation
+  and whitespace checks pass. The actual benchmark measurement remains
+  failed, not green. Both groups require the same repaired frozen code before
+  any newly approved replacement comparison; no new model call occurs here.
