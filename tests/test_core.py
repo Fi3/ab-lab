@@ -128,11 +128,11 @@ class AccountingTests(unittest.TestCase):
                 "last": {"inputTokens": i, "outputTokens": 10}}})
         self.assertTrue(usage.uncertain)
 
-    def test_interrupt_grace_and_natural_finish(self):
+    def test_interrupt_requires_usage_and_disabled_waits(self):
         enabled = InterruptGate(True)
         enabled.directive(10)
         self.assertIsNone(enabled.reason(10.5))
-        self.assertEqual(enabled.reason(11.1), "grace_expired")
+        self.assertIsNone(enabled.reason(11.1))
         enabled = InterruptGate(True)
         enabled.directive(10)
         enabled.fresh_usage = True

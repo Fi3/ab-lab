@@ -59,11 +59,11 @@ class Usage:
 
 
 class InterruptGate:
-    def __init__(self, enabled, grace=1.0):
-        self.enabled, self.grace = enabled, grace
+    """Only a priced response boundary permits discretionary cancellation."""
+    def __init__(self, enabled):
+        self.enabled = enabled
         self.at = None
         self.fresh_usage = False
-        self.resumed = False
 
     def directive(self, now):
         if self.at is None:
@@ -74,10 +74,8 @@ class InterruptGate:
             return None
         if self.fresh_usage:
             return "usage_received"
-        if self.resumed:
-            return "output_resumed"
-        if now - self.at >= self.grace:
-            return "grace_expired"
+        # A complete intermediate message or elapsed time is not a complete
+        # model response. Cancelling there can lose its numeric usage report.
         return None
 
 
@@ -244,18 +242,14 @@ class Codex:
                     text = params["item"]["text"]
                     replies.append(text)
                     last_output = now
-                    if selected is not None:
-                        gate.resumed = True
-                    elif host_request:
+                    gate.fresh_usage = False
+                    if selected is None and host_request:
                         try:
                             if len(parse_operations(text)) == 1:
                                 selected = text
                                 gate.directive(now)
                         except Rejected:
                             pass
-                elif method.startswith("item/") and (method.endswith("/delta") or method in ("item/started", "item/completed")):
-                    if gate.at is not None:
-                        gate.resumed = True
                 elif method == "turn/completed":
                     status = params["turn"].get("status")
                     row.update(status=status, interrupt_reason=interrupted)
@@ -263,13 +257,21 @@ class Codex:
                         raise Fatal(f"agent turn ended unexpectedly: {status}; {params['turn'].get('error')}")
                     break
             # Drain late usage even after cancellation. Never execute late text.
-            end = time.monotonic()+1.0
+            minimum_end = time.monotonic()+1.0
+            end = minimum_end+4.0
             while time.monotonic() < end:
+                if priced and last_usage >= last_output and time.monotonic() >= minimum_end:
+                    break
                 message = self.incoming(min(0.1, end-time.monotonic()))
                 if message:
                     p = message.get("params", {})
                     if p.get("threadId") == thread and p.get("turnId") == turn_id and message.get("_fresh_usage"):
                         priced, last_usage = True, time.monotonic()
+                    elif (p.get("threadId") == thread and p.get("turnId") == turn_id
+                          and message.get("method") == "item/completed"
+                          and p.get("item", {}).get("type") == "agentMessage"):
+                        replies.append(p["item"]["text"])
+                        last_output = time.monotonic()
                     else:
                         self.pending.append(message)
             if not priced or last_output > last_usage:
@@ -300,6 +302,10 @@ class Codex:
             raise
         finally:
             save_json(folder / "result.json", row)
+            with (self.artifacts / "coverage.jsonl").open("a") as journal:
+                journal.write(json.dumps({"turn_id": turn_id, "label": label,
+                    "status": row["status"], "error": row.get("error"),
+                    "usage_observed_after_last_message": row.get("usage_observed_after_last_message", False)})+"\n")
             self.active = None
 
     def report(self):

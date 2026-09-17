@@ -1,12 +1,17 @@
-# Runs finished: 3 / 6
+# Benchmark attempts ended: 3 | Successful full benchmarks: 0
+
+Approved replacement batch: **0 / 6 ended**. Repairs verified: **3 / 3**.
+The previous batch remains three partial attempts and three unstarted slots.
 
 Last sampled: 2026-09-17T18:17:45.924037+00:00.
-Last updated: 2026-09-17 18:26 UTC.
-Current activity: STOPPED for missing token measurements; saved-data audit complete. No generation running.
-Successfully completed full benchmarks: 0 / 6. Three partial attempts ended; three were not started.
+Last updated: 2026-09-17 19:02 UTC.
+Current activity: repair and real verification passed; freezing and launching the six replacement workflows.
+The real check used 76,865 raw tokens in 37.59 seconds, with six fully measured turns.
 Measured on-versus-off reduction: NOT AVAILABLE; the requested comparison is not complete.
 The expected roughly 50% difference is not a result.
 [Result and exact failure](experiments/on-off-20260917/RESULT.md).
+[Approved continuation](experiments/on-off-20260917-r2/REPAIR-AND-RUN-AUTHORITY.md).
+[Replacement protocol](experiments/on-off-20260917-r2/PROTOCOL.md) · [Repair evidence](experiments/on-off-20260917-r2/QUALIFICATION.md).
 
 This is the standalone tool's six-run validation, separate from Work Leaf's old
 research task counter. [Fixed protocol](experiments/on-off-20260917/PROTOCOL.md).
@@ -145,3 +150,36 @@ The observer is stopped because no benchmark is running.
   and whitespace checks pass. The actual benchmark measurement remains
   failed, not green. Both groups require the same repaired frozen code before
   any newly approved replacement comparison; no new model call occurs here.
+- 2026-09-17 18:51 UTC: record the user's explicit repair/small-test/fresh-six
+  approval. Reread the supervising contract, live records, operator policy and
+  previous failure protocol. The repair targets cancellation only after fresh
+  request-covering usage, immediate workflow failure on missing coverage, and
+  visible live coverage flags. No task instructions or model changes are planned.
+  Three repair obligations and the small real verification are recorded before
+  implementation; the six full workflows wait for their qualification gate.
+- 2026-09-17 18:54 UTC: all eight new regressions fail before the fix
+  (five failed assertions, three missing observer/journal errors). The stream
+  example demonstrates cancellation with zero reported raw before its later
+  110-token report. The workflow example incorrectly accepts an unmeasured
+  author's edit before repair. These are local tests, not new model observations.
+- 2026-09-17 18:56 UTC: all eight new tests and all 43 total tests pass after
+  the repair. Cancellation requires request-covering fresh usage; neither
+  resumed output nor elapsed grace is enough. The post-completion collection
+  window may extend from one to five seconds if usage is missing. A missing
+  measurement stops the workflow before another host operation or agent turn.
+  Incremental live monitoring reads a per-turn coverage journal and explicitly
+  reports the retained first batch's 24/1/45 gaps (including final cancellations).
+- 2026-09-17 18:58 UTC: non-generating readback confirms the same Codex 0.154.0,
+  ChatGPT login, GPT-5.5/xhigh and effective configuration hash. Start exactly
+  one small real verification under `runs/on-off-20260917-r2/real-usage-001`:
+  240 seconds / 150,000 observed raw / eight turns. It must demonstrate an
+  actual priced interruption, intermediate request, compact stale-edit recovery,
+  real check, natural-finish mode and completion with no missing usage.
+- 2026-09-17 19:00–19:02 UTC: real verification passes in 37.59 seconds with
+  76,865 raw, five priced interruptions and one natural finish. All six turns
+  have final-message usage coverage; compact refresh, corrected edit, real
+  Python tests and completion pass. The verified program hashes are exactly
+  the current hashes. All 320 valid author-prompt combinations remain byte
+  identical. Record qualification of all three repairs, retain the first-batch
+  failures, and freeze the six replacement attempts before generation. Available
+  memory is about 36 GiB and free disk space about 572 GiB.

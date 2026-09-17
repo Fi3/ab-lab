@@ -11,7 +11,7 @@ FACTORS = {
     "C16": ("Structured edit format", "exact-context structured patches", "standard unified diffs"),
     "C17": ("Host-owned edits and commits", "host applies, commits and reports actual results", "agent edits, checks and commits with native tools"),
     "C20": ("Next-action guidance", "command results include next-action guidance", "command results contain facts only"),
-    "C25": ("Bound generation at a host request", "interrupt after complete request with usage grace", "let the turn finish before executing the same request"),
+    "C25": ("Bound generation at a host request", "interrupt after request-covering usage arrives", "let the turn finish before executing the same request"),
     "C38": ("Completion guidance", "explicitly hand over when required work is ready", "no extra finishing reminder"),
 }
 

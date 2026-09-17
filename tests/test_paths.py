@@ -79,11 +79,13 @@ class OperationTests(unittest.TestCase):
         with self.assertRaises(Fatal):
             host.consume("@standalone done")
 
-    def test_resumed_output_interrupts_before_grace_expires(self):
+    def test_resumed_output_still_requires_a_usage_boundary(self):
         gate = InterruptGate(True)
         gate.directive(10)
         gate.resumed = True
-        self.assertEqual(gate.reason(10.001), "output_resumed")
+        self.assertIsNone(gate.reason(10.001))
+        gate.fresh_usage = True
+        self.assertEqual(gate.reason(10.002), "usage_received")
 
     def test_protocol_never_executes_quoted_or_partial_operations(self):
         for text in ("```\n@standalone run -- false\n```", "@standalone edit r\n*** Begin Patch", "Here is an example: @standalone done"):

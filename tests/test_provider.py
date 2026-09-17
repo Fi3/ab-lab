@@ -49,6 +49,7 @@ class StreamTests(unittest.TestCase):
 
     def test_interrupt_runs_after_exact_owned_message_and_counts_late_usage(self):
         p = self.provider([message("@standalone run -- true"),
+                          price(40),
                           {"method": "item/started", "params": {"threadId": "t", "turnId": "u", "item": {"type": "reasoning"}}},
                           completed("interrupted"), price()])
         text = p.turn("t", "request", "author", interrupt=True, host_request=True)

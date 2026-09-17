@@ -3,13 +3,43 @@
 ## Full-benchmark measurement status
 
 The standalone tool does not yet have a valid three-all-on versus three-all-off
-token comparison. The [2026-09-17 batch](experiments/on-off-20260917/RESULT.md)
+token comparison. The [first 2026-09-17 batch](experiments/on-off-20260917/RESULT.md)
 retains three concurrent all-on attempts stopped after 67 completed responses
 lacked final-message usage coverage. The all-off attempts were not started.
 The 41,807,064 observed raw tokens are incomplete; no saving percentage follows.
-The earlier small verification passes below remain retained, but they do not
-cover this real intermediate-message interruption failure. The measured code
-is unchanged and the accounting/monitoring issue remains unresolved.
+The earlier small verification passes below remain retained, but did not cover
+that real intermediate-message interruption failure.
+
+## Usage-boundary repair verification — 2026-09-17
+
+The [approved repair and replacement scope](experiments/on-off-20260917-r2/REPAIR-AND-RUN-AUTHORITY.md)
+requires a priced interruption, immediate incomplete-measurement stop and visible
+live coverage flags before six replacement benchmarks.
+
+- Eight new regressions fail before repair: five assertions and three missing
+  journal/observer errors. All eight pass after repair; all 43 total tests pass.
+- `runs/on-off-20260917-r2/real-usage-001/result.json` passes in 37.59 seconds,
+  using 76,865 raw tokens in six turns. Its first operation is an intermediate
+  host-request message and an actual interruption after fresh usage arrives.
+  Five turns end interrupted with `usage_received`; one finishes naturally
+  with interruption disabled. Every turn has complete final-message coverage.
+- The same real conversation reads a file, encounters a controlled stale edit,
+  receives a compact refresh, submits an accepted correction, runs a real
+  Python test and completes. No missing report, counter reset or replacement
+  observation is hidden. Authentication is the existing ChatGPT subscription,
+  Codex 0.154.0 / GPT-5.5/xhigh, with unchanged effective configuration.
+- The observer reports the earlier failed runs' 24/1/45 coverage gaps, including
+  their final operator cancellations. Local tests show missing live coverage
+  without waiting for a whole-workflow result and without double counting.
+- Author prompts are byte-identical for all 320 valid switch combinations.
+  Review/integration instructions and host edit/feedback logic are unchanged.
+  Cancellation waits for a fresh usage boundary instead of cutting an unpriced
+  response at an intermediate message or elapsed grace. This is the explicit
+  repaired C25 behavior, not an unchanged historical interruption policy.
+
+These are functional and measurement checks, not evidence of a saving percentage.
+The failed first batch remains unchanged; replacement observations use separate
+directories and the same repaired code in both groups.
 
 ## Prospective real-agent smoke scope — 2026-09-17
 

@@ -123,7 +123,10 @@ def run(benchmark, factors, output, seconds, max_raw, max_turns,
             result["stages"].append({"stage": label, "thread_id": thread, "started_at_unix": time.time()})
             with (output / "progress.jsonl").open("a") as out:
                 out.write(json.dumps(result["stages"][-1])+"\n")
-            return provider.turn(thread, prompt, label, **options)
+            reply = provider.turn(thread, prompt, label, **options)
+            if not provider.report().get("measurement_complete"):
+                raise Fatal("incomplete token measurement; stop before further host work or agent generation")
+            return reply
 
         for feature in benchmark["features"]:
             name = feature["id"]

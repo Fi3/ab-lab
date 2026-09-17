@@ -15,11 +15,10 @@ not use API keys or API credits. It is a standalone Python command-line tool;
 no other agent orchestrator, service, dashboard or third-party Python package
 is required.
 
-**Measurement limitation:** the full all-on/all-off validation is incomplete.
-Interrupting after an intermediate host-request message can leave missing token
-reports. Partial totals cannot establish a saving percentage. See the
-[recorded failure and validation status](experiments/on-off-20260917/RESULT.md)
-before starting an expensive comparison.
+**Validation status:** the full all-on/all-off comparison is incomplete.
+Request interruption and complete usage collection pass a small real-agent
+verification. Missing measurements stop a run and cannot establish a saving
+percentage. See [verification and retained failures](VERIFICATION.md).
 
 - [How a benchmark runs](#how-a-benchmark-runs)
 - [Quick start](#quick-start)
@@ -365,10 +364,11 @@ This asks: **after the agent has supplied a complete request for the host, shoul
 it keep generating before receiving that operation's result?**
 
 - **On:** after recognizing a complete request in a completed agent message,
-  allow up to one second for a usage report. Interrupt sooner if fresh usage
-  arrives or generation resumes; otherwise interrupt at the end of that wait.
-  If the turn ends naturally first, an interruption is unnecessary. Once the
-  turn closes, collect late usage and process the request.
+  wait for fresh usage covering that message, then interrupt further work.
+  An intermediate message, continued output or elapsed time alone cannot
+  trigger cancellation. The current model response may keep generating until
+  its usage arrives. If the turn ends naturally first, no interruption is
+  necessary. Once the turn closes, collect late usage and process the request.
 - **Off:** wait for the entire agent turn to finish naturally, collect late
   usage, then process the same selected request.
 
@@ -383,8 +383,12 @@ behavior can also differ. **Interruption never refunds already generated
 tokens.** Usage reports arriving after interruption are still collected.
 
 A completed message does not guarantee that its numeric usage is available.
-The retained full-benchmark attempts include missing reports after both early
-interruption and the one-second grace; see the [measurement limitation](experiments/on-off-20260917/RESULT.md).
+Whole-run safety limits still apply while waiting. After completion or
+cancellation, collect late usage for at least one second, extending to at most
+five seconds when final-message coverage is missing. If the measurement remains
+incomplete, stop the workflow before another host operation or agent turn.
+The [retained first-batch failure](experiments/on-off-20260917/RESULT.md) records
+why a message boundary or fixed short wait is insufficient.
 
 The trigger is a complete operation in the current agent's own completed
 message, not a partial stream, quoted tool output or another conversation.
@@ -559,9 +563,22 @@ conversation's cumulative usage counter is counted once; repeated notifications
 do not count as new usage.
 
 Missing final usage reports and decreasing counters are flagged, not treated as
-zero usage. `measurement_complete` means that the tool detected no missing
+zero usage. A returned incomplete measurement stops the workflow before another
+host operation or agent turn. `measurement_complete` means that the tool detected no missing
 turn-end usage or counter problem. It does **not** guarantee that the provider
 reported every internal response. Saved raw messages permit a deeper audit.
+
+Watch explicitly named run directories without starting an agent:
+
+```sh
+python3 -m lab.monitor runs/first runs/second runs/third --output runs/monitor
+```
+
+The observer saves a current snapshot and an append-only sample history every
+15 seconds. It reports missing per-response coverage as well as counter resets
+and terminal failures. It does not launch, stop or replace runs. Add `--once`
+for one saved sample. Per-turn coverage is retained in `provider/coverage.jsonl`;
+that journal is operator data, never additional text sent to a measured agent.
 
 `factor_activations` records some executed host events, such as a changed-file
 refresh or an accepted edit. It is not a complete checklist of instruction
@@ -580,6 +597,7 @@ required background for using the tool.
 | Supported switches, dependencies and author instructions | [lab/config.py](lab/config.py): `settings`, `policy_blocks`, `author_policy` |
 | Conflict text, edit formats, real operation results and reminders | [lab/host.py](lab/host.py): `refresh_text`, `Host.refresh`, `plan_edit`, `plan_unified`, `Host.consume` |
 | Subscription connection, interruption and usage accounting | [lab/provider.py](lab/provider.py): `Codex`, `InterruptGate`, `Usage` |
+| Incremental operator monitoring, including missing response coverage | [lab/monitor.py](lab/monitor.py): `sample` |
 | Feature/review/repair sequence, controlled file change, integration and comparisons | [lab/workflow.py](lab/workflow.py): `run`, `after_read_fixture`, `integration_prompts`, `compare`, `interaction` |
 | Commands and preset settings | [lab/__main__.py](lab/__main__.py): `main`, `factors_from` |
 
