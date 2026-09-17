@@ -27,6 +27,14 @@ The first tiny qualification failure (143,950 raw, no child generation) remains
 retained. It is not counted as successful verification. The full comparison is
 still pending; these functional checks establish no saving percentage.
 
+Performance review flag: `NestedUsage.refresh` scans active-day candidate file
+names, and `NestedUsage.report` summarizes retained child turns at each poll.
+Each poll is linear in those collections, but cumulative work can become
+quadratic when both the number of child calls and the number of polls grow
+together. The bounded current study has few child verification calls; the
+observer is not presented as a scalable all-history index. This flag concerns
+the new observer, not the coding agents' measured algorithms.
+
 ## Retained third-batch failures — nested processes
 
 The [third admitted batch](experiments/on-off-20260917-r3/RESULT.md) starts after

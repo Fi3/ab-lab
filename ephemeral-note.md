@@ -5,7 +5,7 @@ The user authorizes repairs and completion of the requested comparison; reuse an
 valid complete observation. None of the last three all-on attempts completed.
 [Current authority](experiments/on-off-20260918-r4/AUTHORITY.md).
 
-Last updated: 2026-09-17 22:53 UTC.
+Last updated: 2026-09-17 23:14 UTC.
 Current activity: three all-on full workflows run concurrently. All three pass
 Git-write preflight and match the frozen model, subscription, configuration and
 source hashes. The all-off wave follows after these three finish.
@@ -17,9 +17,9 @@ Measured on-versus-off reduction: NOT AVAILABLE until the full comparison ends.
 <!-- r4-live-table -->
 | Current run | Switches | Stage / outcome | Observed raw tokens | Missing returned counts |
 | --- | --- | --- | ---: | ---: |
-| on-01 | All on | Feature 1: text selection, author | 443,601 | 0 |
-| on-02 | All on | Feature 1: text selection, author | 449,066 | 0 |
-| on-03 | All on | Feature 1: text selection, author | 596,992 | 0 |
+| on-01 | All on | Feature 2: slash commands, author | 6,143,450 | 0 |
+| on-02 | All on | Feature 2: slash commands, author | 7,632,988 | 0 |
+| on-03 | All on | Feature 1: text selection, review 2 | 4,238,571 | 0 |
 | off-01 | All off | Not started | — | — |
 | off-02 | All off | Not started | — | — |
 | off-03 | All off | Not started | — | — |
@@ -98,6 +98,18 @@ Raw tokens are input plus output, with cached input included only once.
 That previous observer is stopped; the replacement observer is separate.
 
 ## Activity log, with earlier entries retained
+
+- 2026-09-17 23:14 UTC: on-01 and on-02 finish the text-selection
+  author/review loop and start slash-command routing. On-03 is in text-selection
+  review two. No run is terminal; all returned responses have coverage, with no
+  model mismatch or source change. Repair and review costs remain included.
+
+- 2026-09-17 23:06 UTC: two all-on workflows reach independent review of
+  text selection; the third is finishing implementation. Actual author edits,
+  rejected proposals, checks and repairs remain in the totals. The independent
+  final audit reproduces the tiny qualification exactly, and all three external
+  scoring-fixture hashes match. No benchmark code, prompt, settings or limits
+  change. The 15-second observer shows no returned-usage gap or model mismatch.
 
 - 2026-09-17 22:47:55–22:48 UTC: observer starts, then all three all-on
   workflows launch concurrently from commit 3f54c08. All actual provider
