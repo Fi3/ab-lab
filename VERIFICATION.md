@@ -10,6 +10,38 @@ The 41,807,064 observed raw tokens are incomplete; no saving percentage follows.
 The earlier small verification passes below remain retained, but did not cover
 that real intermediate-message interruption failure.
 
+The [replacement batch](experiments/on-off-20260917-r2/RESULT.md) has two
+fully priced failed integration attempts and one operator-stopped third-feature
+repair: 57,157,285 observed raw combined, with one incomplete cancellation tail.
+Its shared failure is native Git metadata being read-only, not another earlier
+missing-response problem. All-off is unstarted. The saved small integration
+record below does **not** verify native Git writes: its input already had the
+required final commit count and needed no rewrite.
+
+## Native Git permission verification — 2026-09-17
+
+The original workspace-only policy fails a real local Codex `command/exec`
+commit with an index-lock read-only error. Adding only the owned clone's `.git`
+directory to writable roots makes the same command create a commit. Two local
+probes use zero model turns and zero raw tokens; the second exercises the actual
+repaired policy helper and zero-generation preflight. Raw evidence:
+`runs/on-off-20260917-r2/git-command-probe-001` and `git-command-probe-002`.
+
+Five initial regressions run before repair: two assertions fail, two missing
+methods/guards error, and the read-only restriction remains green. The repaired
+tests cover exact writable roots, unchanged read-only roles, preflight failure
+before any model work and rejection of a no-op integration verification. A
+positive check also verifies acceptance of actual history collapse.
+All 49 Python tests pass in 20.37 seconds; Python compilation and the whitespace
+check pass. The two local native-sandbox probes complete in about 0.3 seconds
+each. They are actual backend command checks, not model-generated workflows.
+
+The real-agent integration verifier requires an extra disposable input commit
+to be collapsed and checks that HEAD changed. It refuses an existing output
+directory. **This stricter model-backed scenario has not been run or admitted.**
+Native sandbox command execution is verified; full agent workflow readiness and
+a valid all-on/all-off comparison remain unverified. No automatic rerun follows.
+
 ## Usage-boundary repair verification — 2026-09-17
 
 The [approved repair and replacement scope](experiments/on-off-20260917-r2/REPAIR-AND-RUN-AUTHORITY.md)
@@ -38,8 +70,8 @@ live coverage flags before six replacement benchmarks.
   repaired C25 behavior, not an unchanged historical interruption policy.
 
 These are functional and measurement checks, not evidence of a saving percentage.
-The failed first batch remains unchanged; replacement observations use separate
-directories and the same repaired code in both groups.
+The failed first batch remains unchanged. Replacement observations use separate
+directories; their off group never starts after the shared Git-permission failure.
 
 ## Prospective real-agent smoke scope — 2026-09-17
 
@@ -109,15 +141,19 @@ It cannot convert the earlier capped run into a complete experimental result.
   patch, receives a compact diff, corrects its patch, runs real tests through the
   host and completes. Five turns actually end interrupted; all have late/final
   usage retained. Total observed raw: 63,381.
-- `runs/real-integration-001/result.json`: PASS. The exact reviewed source from the
+- `runs/real-integration-001/result.json`: retained shape/test PASS, not a verified
+  native history rewrite. The exact reviewed source from the
   capped full run reaches a plan and acceptance in one new real conversation;
   history has two final commits and the Python suite passes. Total observed raw:
-  128,488. There is no author/reviewer repeat.
+  128,488. There is no author/reviewer repeat. The input already contained those
+  two commits, and the agent made no Git-history change; it did not exercise the
+  permission required by the later three-feature integrations.
 - Total observed raw across implementation verification: 501,697. No API credits
   are used. The readback is non-generating; local tests use no model.
 
 These records verify actual host feedback, real interruption, same-conversation
-continuation, review and final integration. The uninterrupted two-feature full
+continuation and review. Native final history rewriting is not verified by the
+retained no-op integration scenario. The uninterrupted two-feature full
 smoke did **not** pass its declared budget. Do not advertise it as a completed
 benchmark or derive a saving percentage from these checks. The final fixture
 dispatcher and defensive failure-path fixes additionally have fail-first local

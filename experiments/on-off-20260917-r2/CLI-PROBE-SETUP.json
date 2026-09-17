@@ -1,0 +1,27 @@
+{
+  "purpose": "Retained non-generating CLI setup outcomes before the app-server proof",
+  "generation": "none",
+  "attempts": [
+    {
+      "command": "codex sandbox linux --help",
+      "exit_code": 101,
+      "error": "Failed to execvp linux: No such file or directory; installed CLI takes commands directly"
+    },
+    {
+      "kind": "workspace_only_legacy_flags",
+      "chunk_id": "230d81",
+      "wall_time_seconds": 0.000003907,
+      "exit_code": 2,
+      "original_token_count": 56,
+      "output": "error: the following required arguments were not provided:\n  --permission-profile <NAME>\n\nUsage: codex sandbox --permission-profile <NAME> --cd <DIR> --config <key=value> <COMMAND>...\n\nFor more information, try '--help'.\n"
+    },
+    {
+      "kind": "explicit_git_root_legacy_flags",
+      "chunk_id": "85927f",
+      "wall_time_seconds": 0.000005431,
+      "exit_code": 2,
+      "original_token_count": 56,
+      "output": "error: the following required arguments were not provided:\n  --permission-profile <NAME>\n\nUsage: codex sandbox --permission-profile <NAME> --cd <DIR> --config <key=value> <COMMAND>...\n\nFor more information, try '--help'.\n"
+    }
+  ]
+}

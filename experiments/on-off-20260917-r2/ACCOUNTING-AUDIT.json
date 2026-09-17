@@ -1,0 +1,510 @@
+{
+  "generation": "none",
+  "time_utc": "2026-09-17T20:17:35.350007+00:00",
+  "runs": [
+    {
+      "run": "on-01",
+      "status": "failed",
+      "error": "final history must be linear with exactly one commit per feature",
+      "result_sha256": "b3d93b4ccc16eb072f91c04793aab1613b89fbfbd5f0b7be1d53a42525c2815d",
+      "transport_sha256": "533602d3f25622a8a77553096bc06f141eaaa9d59061eadeb74929e150bbee2d",
+      "observed_raw_tokens": 18364740,
+      "matches_runner_raw": true,
+      "matches_runner_thread_totals": true,
+      "no_unowned_charged_threads": true,
+      "counter_decreases": [],
+      "measurement_complete": true,
+      "turns": 96,
+      "uncovered_turns": [],
+      "uncovered_by_interrupt_reason": {},
+      "native_histories": [
+        {
+          "thread": "01a0b0c1-be76-7d52-9ef3-09b072191d15",
+          "path": "/home/user/.codex/sessions/2026/09/17/rollout-2026-09-17T21-04-42-01a0b0c1-be76-7d52-9ef3-09b072191d15.jsonl",
+          "sha256": "71bdc0523302c712da4aa2a46165d44197d36a2cd001433a93471551bf6c9798",
+          "token_events": 48,
+          "empty_token_events": 0,
+          "numeric_events": 48,
+          "unique_numeric_totals": 47,
+          "last_total": [
+            5992001,
+            48618,
+            5655168
+          ],
+          "matches_transport": true,
+          "message_metadata_keys": [
+            "content_item_kinds",
+            "create_time",
+            "turn_id"
+          ]
+        },
+        {
+          "thread": "01a0b0cb-79d1-7112-a734-6828fcccd3d2",
+          "path": "/home/user/.codex/sessions/2026/09/17/rollout-2026-09-17T21-15-20-01a0b0cb-79d1-7112-a734-6828fcccd3d2.jsonl",
+          "sha256": "ac4561b199e2a882e2dd79808777e5086fd92999148367c767eb4f0318ac71b6",
+          "token_events": 32,
+          "empty_token_events": 0,
+          "numeric_events": 32,
+          "unique_numeric_totals": 32,
+          "last_total": [
+            3375666,
+            34048,
+            3063808
+          ],
+          "matches_transport": true,
+          "message_metadata_keys": [
+            "content_item_kinds",
+            "create_time",
+            "turn_id"
+          ]
+        },
+        {
+          "thread": "01a0b0dc-2118-7cb2-a26d-1b37db787041",
+          "path": "/home/user/.codex/sessions/2026/09/17/rollout-2026-09-17T21-33-31-01a0b0dc-2118-7cb2-a26d-1b37db787041.jsonl",
+          "sha256": "3fde254d605e3ea6675c3322883b87046dc8fbed00af133aec7e0130772c326d",
+          "token_events": 30,
+          "empty_token_events": 0,
+          "numeric_events": 30,
+          "unique_numeric_totals": 30,
+          "last_total": [
+            2990694,
+            18406,
+            2746624
+          ],
+          "matches_transport": true,
+          "message_metadata_keys": [
+            "content_item_kinds",
+            "create_time",
+            "turn_id"
+          ]
+        },
+        {
+          "thread": "01a0b0e1-139a-7ec0-b38e-3316d8256e3b",
+          "path": "/home/user/.codex/sessions/2026/09/17/rollout-2026-09-17T21-38-55-01a0b0e1-139a-7ec0-b38e-3316d8256e3b.jsonl",
+          "sha256": "5b61223c913ad60ac36459b76a5099c498cd73d8bf04ee73c7f63cf117c9c4f6",
+          "token_events": 21,
+          "empty_token_events": 0,
+          "numeric_events": 21,
+          "unique_numeric_totals": 21,
+          "last_total": [
+            1116878,
+            16942,
+            961408
+          ],
+          "matches_transport": true,
+          "message_metadata_keys": [
+            "content_item_kinds",
+            "create_time",
+            "turn_id"
+          ]
+        },
+        {
+          "thread": "01a0b0e7-e5ac-7693-b112-58ea1ffc89dd",
+          "path": "/home/user/.codex/sessions/2026/09/17/rollout-2026-09-17T21-46-22-01a0b0e7-e5ac-7693-b112-58ea1ffc89dd.jsonl",
+          "sha256": "2cb7310537677674b1692144e136e0622d5e6a96a6565fbe3662b86d8c125a9c",
+          "token_events": 27,
+          "empty_token_events": 0,
+          "numeric_events": 27,
+          "unique_numeric_totals": 27,
+          "last_total": [
+            2387486,
+            43473,
+            2232448
+          ],
+          "matches_transport": true,
+          "message_metadata_keys": [
+            "content_item_kinds",
+            "create_time",
+            "turn_id"
+          ]
+        },
+        {
+          "thread": "01a0b0f3-7e73-7f91-9b5f-7cded97fe64b",
+          "path": "/home/user/.codex/sessions/2026/09/17/rollout-2026-09-17T21-59-02-01a0b0f3-7e73-7f91-9b5f-7cded97fe64b.jsonl",
+          "sha256": "af844aa6869301bdd58bd9e7edd166799dfacb7c02a06f0ba82f4b64c1ff3294",
+          "token_events": 17,
+          "empty_token_events": 0,
+          "numeric_events": 17,
+          "unique_numeric_totals": 17,
+          "last_total": [
+            1101368,
+            14613,
+            936320
+          ],
+          "matches_transport": true,
+          "message_metadata_keys": [
+            "content_item_kinds",
+            "create_time",
+            "turn_id"
+          ]
+        },
+        {
+          "thread": "01a0b0f9-7d20-70d2-a40e-a6c3cb9cceaa",
+          "path": "/home/user/.codex/sessions/2026/09/17/rollout-2026-09-17T22-05-35-01a0b0f9-7d20-70d2-a40e-a6c3cb9cceaa.jsonl",
+          "sha256": "6e76d98d0d5ea54d92912517596a54fca3375c6fb3f54aab4555371cfb618a97",
+          "token_events": 17,
+          "empty_token_events": 0,
+          "numeric_events": 17,
+          "unique_numeric_totals": 17,
+          "last_total": [
+            1209328,
+            15219,
+            1034624
+          ],
+          "matches_transport": true,
+          "message_metadata_keys": [
+            "content_item_kinds",
+            "create_time",
+            "turn_id"
+          ]
+        }
+      ],
+      "comparison_key": "3fbe23b0fc0c357256f14f275395c4586ecc8755da735b938db28a70e50f9d41",
+      "source_sha256": {
+        "__init__.py": "cd5de7ee4472c1ef8bada6b3b56d56cee36d93dbfab9195d2dcfc0c7d7be13a1",
+        "__main__.py": "0271f5c7bfd985a08c353e0b6e12002bbbabb9a0997bfff879492273f288f1df",
+        "config.py": "0c7c7f6c4446843187f23e819b616bd5ee7197be58aac7d1ffb06ea6d416be16",
+        "host.py": "a81595b8b0742557ea4f4e478fc2dd7813fbfd1d926ebd6da40b20c9d4167f2b",
+        "monitor.py": "2009e3400ee428d82f0290588c96d8f92b7f66b9f5018054149b1072a69d2e8c",
+        "provider.py": "ac76a6a74a864dbe843812e025a34bce93f242a0724edda121f52bddf1141f20",
+        "workflow.py": "c24441f5713f35b3a1ce97b95ed8ca35a274d37197d7b86b7cd8f930dd7946a6"
+      },
+      "duration_seconds": 3958.596871725007
+    },
+    {
+      "run": "on-02",
+      "status": "failed",
+      "error": "operator interruption",
+      "result_sha256": "fc3c271cdd1ac38e5b1f94397f8aa0700db39dc72575b105b76715c02c7102f9",
+      "transport_sha256": "b87710dce281d2c931a2f83b9fe2e82fa95c39a072316392109cbcd49ec1d52c",
+      "observed_raw_tokens": 19452278,
+      "matches_runner_raw": true,
+      "matches_runner_thread_totals": true,
+      "no_unowned_charged_threads": true,
+      "counter_decreases": [],
+      "measurement_complete": false,
+      "turns": 90,
+      "uncovered_turns": [
+        {
+          "label": "review-completion-fix-1",
+          "thread_id": "01a0b0ef-2ffe-7f90-afde-d66a7546d23f",
+          "turn_id": "01a0b0fe-1aed-7493-9121-c04ee533e7d8",
+          "status": "started",
+          "interrupt_reason": null,
+          "message_to_interrupt_ms": null,
+          "fresh_counter_updates": 0,
+          "last_message_phase": null
+        }
+      ],
+      "uncovered_by_interrupt_reason": {
+        "null": 1
+      },
+      "native_histories": [
+        {
+          "thread": "01a0b0c1-be5a-70c1-83b9-e974781ecddb",
+          "path": "/home/user/.codex/sessions/2026/09/17/rollout-2026-09-17T21-04-42-01a0b0c1-be5a-70c1-83b9-e974781ecddb.jsonl",
+          "sha256": "ad42b399e37a9ec3d2cd0b44e145c524792c340d4791f6d619c11a63db1024dc",
+          "token_events": 43,
+          "empty_token_events": 0,
+          "numeric_events": 43,
+          "unique_numeric_totals": 43,
+          "last_total": [
+            4197296,
+            52766,
+            4019328
+          ],
+          "matches_transport": true,
+          "message_metadata_keys": [
+            "content_item_kinds",
+            "create_time",
+            "turn_id"
+          ]
+        },
+        {
+          "thread": "01a0b0cb-313b-70e2-9322-4b3f4eb41580",
+          "path": "/home/user/.codex/sessions/2026/09/17/rollout-2026-09-17T21-15-01-01a0b0cb-313b-70e2-9322-4b3f4eb41580.jsonl",
+          "sha256": "4a3cf382dc573f054ded39f713f318158331538280283b75c0d9d6dc0b3ab9a3",
+          "token_events": 33,
+          "empty_token_events": 0,
+          "numeric_events": 33,
+          "unique_numeric_totals": 33,
+          "last_total": [
+            3738364,
+            34058,
+            3372416
+          ],
+          "matches_transport": true,
+          "message_metadata_keys": [
+            "content_item_kinds",
+            "create_time",
+            "turn_id"
+          ]
+        },
+        {
+          "thread": "01a0b0dc-de54-7531-a34b-bb478f0c19c6",
+          "path": "/home/user/.codex/sessions/2026/09/17/rollout-2026-09-17T21-34-19-01a0b0dc-de54-7531-a34b-bb478f0c19c6.jsonl",
+          "sha256": "6593d01c5f86deec9e8f48bc4a99b516165253fd8537d44b33779e7123b67afc",
+          "token_events": 36,
+          "empty_token_events": 0,
+          "numeric_events": 36,
+          "unique_numeric_totals": 36,
+          "last_total": [
+            4066079,
+            25630,
+            3781120
+          ],
+          "matches_transport": true,
+          "message_metadata_keys": [
+            "content_item_kinds",
+            "create_time",
+            "turn_id"
+          ]
+        },
+        {
+          "thread": "01a0b0e4-3b50-7ea0-bd21-56cd29884832",
+          "path": "/home/user/.codex/sessions/2026/09/17/rollout-2026-09-17T21-42-22-01a0b0e4-3b50-7ea0-bd21-56cd29884832.jsonl",
+          "sha256": "6de96822641222f368c62f2abb6aa165c194cfb6fe32de7ee3782eb404b729e2",
+          "token_events": 27,
+          "empty_token_events": 0,
+          "numeric_events": 27,
+          "unique_numeric_totals": 27,
+          "last_total": [
+            2317604,
+            23711,
+            2024576
+          ],
+          "matches_transport": true,
+          "message_metadata_keys": [
+            "content_item_kinds",
+            "create_time",
+            "turn_id"
+          ]
+        },
+        {
+          "thread": "01a0b0ef-2ffe-7f90-afde-d66a7546d23f",
+          "path": "/home/user/.codex/sessions/2026/09/17/rollout-2026-09-17T21-54-20-01a0b0ef-2ffe-7f90-afde-d66a7546d23f.jsonl",
+          "sha256": "c0da054c57470a2fd1d924468604e45173498c2265c7e176b3623ee7a173d0ef",
+          "token_events": 32,
+          "empty_token_events": 0,
+          "numeric_events": 32,
+          "unique_numeric_totals": 31,
+          "last_total": [
+            3582439,
+            34560,
+            3184256
+          ],
+          "matches_transport": true,
+          "message_metadata_keys": [
+            "content_item_kinds",
+            "create_time",
+            "turn_id"
+          ]
+        },
+        {
+          "thread": "01a0b0f8-c7f3-7cc1-ac14-2d9c54045002",
+          "path": "/home/user/.codex/sessions/2026/09/17/rollout-2026-09-17T22-04-49-01a0b0f8-c7f3-7cc1-ac14-2d9c54045002.jsonl",
+          "sha256": "9b6258b30bf68013db97a29439690b97bc13e6062c31a9ef765c21c836051c71",
+          "token_events": 18,
+          "empty_token_events": 0,
+          "numeric_events": 18,
+          "unique_numeric_totals": 18,
+          "last_total": [
+            1365192,
+            14579,
+            1262336
+          ],
+          "matches_transport": true,
+          "message_metadata_keys": [
+            "content_item_kinds",
+            "create_time",
+            "turn_id"
+          ]
+        }
+      ],
+      "comparison_key": "3fbe23b0fc0c357256f14f275395c4586ecc8755da735b938db28a70e50f9d41",
+      "source_sha256": {
+        "__init__.py": "cd5de7ee4472c1ef8bada6b3b56d56cee36d93dbfab9195d2dcfc0c7d7be13a1",
+        "__main__.py": "0271f5c7bfd985a08c353e0b6e12002bbbabb9a0997bfff879492273f288f1df",
+        "config.py": "0c7c7f6c4446843187f23e819b616bd5ee7197be58aac7d1ffb06ea6d416be16",
+        "host.py": "a81595b8b0742557ea4f4e478fc2dd7813fbfd1d926ebd6da40b20c9d4167f2b",
+        "monitor.py": "2009e3400ee428d82f0290588c96d8f92b7f66b9f5018054149b1072a69d2e8c",
+        "provider.py": "ac76a6a74a864dbe843812e025a34bce93f242a0724edda121f52bddf1141f20",
+        "workflow.py": "c24441f5713f35b3a1ce97b95ed8ca35a274d37197d7b86b7cd8f930dd7946a6"
+      },
+      "duration_seconds": 4010.901692701009
+    },
+    {
+      "run": "on-03",
+      "status": "failed",
+      "error": "final history must be linear with exactly one commit per feature",
+      "result_sha256": "c03b3e18d6edb80b84f3faa5152815c634716c17dd4948d6979691a15f64ebaa",
+      "transport_sha256": "d76f98dfc895524d19168f615f2bfb846d58db04e9ceb031c0583fbec4fce947",
+      "observed_raw_tokens": 19340267,
+      "matches_runner_raw": true,
+      "matches_runner_thread_totals": true,
+      "no_unowned_charged_threads": true,
+      "counter_decreases": [],
+      "measurement_complete": true,
+      "turns": 109,
+      "uncovered_turns": [],
+      "uncovered_by_interrupt_reason": {},
+      "native_histories": [
+        {
+          "thread": "01a0b0c1-be76-7783-81ee-ae9c8c2d83dd",
+          "path": "/home/user/.codex/sessions/2026/09/17/rollout-2026-09-17T21-04-42-01a0b0c1-be76-7783-81ee-ae9c8c2d83dd.jsonl",
+          "sha256": "3a20ee6264d04cc44c4685c60bef7b7e024809e7afe2de13da01d64f057c30af",
+          "token_events": 58,
+          "empty_token_events": 0,
+          "numeric_events": 58,
+          "unique_numeric_totals": 56,
+          "last_total": [
+            6625112,
+            61720,
+            6195200
+          ],
+          "matches_transport": true,
+          "message_metadata_keys": [
+            "content_item_kinds",
+            "create_time",
+            "turn_id"
+          ]
+        },
+        {
+          "thread": "01a0b0d3-46ab-7a90-84f2-5a4d00d1bc52",
+          "path": "/home/user/.codex/sessions/2026/09/17/rollout-2026-09-17T21-23-51-01a0b0d3-46ab-7a90-84f2-5a4d00d1bc52.jsonl",
+          "sha256": "2832095c738a2f4b3733ca33fd8f8f5f3ba7aff047559fde4ae87b6d837380bc",
+          "token_events": 30,
+          "empty_token_events": 0,
+          "numeric_events": 30,
+          "unique_numeric_totals": 30,
+          "last_total": [
+            2780488,
+            35719,
+            2355456
+          ],
+          "matches_transport": true,
+          "message_metadata_keys": [
+            "content_item_kinds",
+            "create_time",
+            "turn_id"
+          ]
+        },
+        {
+          "thread": "01a0b0e1-194e-7cb3-aff4-202b74aa20dd",
+          "path": "/home/user/.codex/sessions/2026/09/17/rollout-2026-09-17T21-38-57-01a0b0e1-194e-7cb3-aff4-202b74aa20dd.jsonl",
+          "sha256": "8a24409fbf70e14a5b6d330cb59820f4f15d0e69c0c0add82f4d89985cef760e",
+          "token_events": 16,
+          "empty_token_events": 0,
+          "numeric_events": 16,
+          "unique_numeric_totals": 16,
+          "last_total": [
+            1018709,
+            14944,
+            920576
+          ],
+          "matches_transport": true,
+          "message_metadata_keys": [
+            "content_item_kinds",
+            "create_time",
+            "turn_id"
+          ]
+        },
+        {
+          "thread": "01a0b0e6-04cb-7442-adaf-61dfef037152",
+          "path": "/home/user/.codex/sessions/2026/09/17/rollout-2026-09-17T21-44-19-01a0b0e6-04cb-7442-adaf-61dfef037152.jsonl",
+          "sha256": "7b69007844ed99e2d05ffbed5b234d9901487b0f0a233e9d0f1d67976287d815",
+          "token_events": 12,
+          "empty_token_events": 0,
+          "numeric_events": 12,
+          "unique_numeric_totals": 12,
+          "last_total": [
+            605026,
+            7592,
+            519680
+          ],
+          "matches_transport": true,
+          "message_metadata_keys": [
+            "content_item_kinds",
+            "create_time",
+            "turn_id"
+          ]
+        },
+        {
+          "thread": "01a0b0e8-6d47-7090-ab3d-b4b3100dfe89",
+          "path": "/home/user/.codex/sessions/2026/09/17/rollout-2026-09-17T21-46-57-01a0b0e8-6d47-7090-ab3d-b4b3100dfe89.jsonl",
+          "sha256": "91b3bb783b2979b07764b6ffb053c53ded8fc445ec3d6554ee5e2e61a6372949",
+          "token_events": 37,
+          "empty_token_events": 0,
+          "numeric_events": 37,
+          "unique_numeric_totals": 37,
+          "last_total": [
+            5681459,
+            25372,
+            5367680
+          ],
+          "matches_transport": true,
+          "message_metadata_keys": [
+            "content_item_kinds",
+            "create_time",
+            "turn_id"
+          ]
+        },
+        {
+          "thread": "01a0b0ef-bc7c-7ed0-98a2-157db4536b08",
+          "path": "/home/user/.codex/sessions/2026/09/17/rollout-2026-09-17T21-54-56-01a0b0ef-bc7c-7ed0-98a2-157db4536b08.jsonl",
+          "sha256": "9e1dc1b498c825439b99ecf237b4e9e8abf6ae819e05cf3db1936107a594c646",
+          "token_events": 21,
+          "empty_token_events": 0,
+          "numeric_events": 21,
+          "unique_numeric_totals": 21,
+          "last_total": [
+            1349032,
+            24273,
+            1174400
+          ],
+          "matches_transport": true,
+          "message_metadata_keys": [
+            "content_item_kinds",
+            "create_time",
+            "turn_id"
+          ]
+        },
+        {
+          "thread": "01a0b0f8-699d-7213-9b96-85aa87cc4475",
+          "path": "/home/user/.codex/sessions/2026/09/17/rollout-2026-09-17T22-04-25-01a0b0f8-699d-7213-9b96-85aa87cc4475.jsonl",
+          "sha256": "b0bc832222b6f1211917584eb5ee89b69dd6016fb6baa2daf03cb6e893393922",
+          "token_events": 19,
+          "empty_token_events": 0,
+          "numeric_events": 19,
+          "unique_numeric_totals": 19,
+          "last_total": [
+            1094333,
+            16488,
+            941184
+          ],
+          "matches_transport": true,
+          "message_metadata_keys": [
+            "content_item_kinds",
+            "create_time",
+            "turn_id"
+          ]
+        }
+      ],
+      "comparison_key": "3fbe23b0fc0c357256f14f275395c4586ecc8755da735b938db28a70e50f9d41",
+      "source_sha256": {
+        "__init__.py": "cd5de7ee4472c1ef8bada6b3b56d56cee36d93dbfab9195d2dcfc0c7d7be13a1",
+        "__main__.py": "0271f5c7bfd985a08c353e0b6e12002bbbabb9a0997bfff879492273f288f1df",
+        "config.py": "0c7c7f6c4446843187f23e819b616bd5ee7197be58aac7d1ffb06ea6d416be16",
+        "host.py": "a81595b8b0742557ea4f4e478fc2dd7813fbfd1d926ebd6da40b20c9d4167f2b",
+        "monitor.py": "2009e3400ee428d82f0290588c96d8f92b7f66b9f5018054149b1072a69d2e8c",
+        "provider.py": "ac76a6a74a864dbe843812e025a34bce93f242a0724edda121f52bddf1141f20",
+        "workflow.py": "c24441f5713f35b3a1ce97b95ed8ca35a274d37197d7b86b7cd8f930dd7946a6"
+      },
+      "duration_seconds": 3913.7608980150108
+    }
+  ],
+  "observed_raw_sum": 57157285,
+  "all_comparison_keys_match": true,
+  "percentage": null,
+  "percentage_reason": "No completed three-versus-three comparison"
+}

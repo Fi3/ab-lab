@@ -1,20 +1,42 @@
-# Benchmark attempts ended: 3 | Successful full benchmarks: 0
+# Benchmark attempts ended: 6 | Successful full benchmarks: 0
 
-Approved replacement batch: **0 / 6 ended**. Repairs verified: **3 / 3**.
+Approved replacement batch: **3 / 6 ended**. Accounting repairs verified: **3 / 3**.
+Full-workflow qualification: pending a real Git-history rewrite; the retained batch failed.
 The previous batch remains three partial attempts and three unstarted slots.
 
-Last sampled: 2026-09-17T18:17:45.924037+00:00.
-Last updated: 2026-09-17 19:02 UTC.
-Current activity: repair and real verification passed; freezing and launching the six replacement workflows.
+Last sampled: 2026-09-17T20:11:42.184547+00:00.
+Last updated: 2026-09-17 20:27 UTC.
+Current activity: local Git-permission fix and all 49 tests pass; all generators are stopped. A stricter real-agent rewrite check needs a new bounded admission before further generation.
+On-01/on-03 reached final integration with complete reported usage. On-02's sole incomplete response is the deliberate safety cancellation, not an earlier returned-response gap.
 The real check used 76,865 raw tokens in 37.59 seconds, with six fully measured turns.
 Measured on-versus-off reduction: NOT AVAILABLE; the requested comparison is not complete.
 The expected roughly 50% difference is not a result.
 [Result and exact failure](experiments/on-off-20260917/RESULT.md).
 [Approved continuation](experiments/on-off-20260917-r2/REPAIR-AND-RUN-AUTHORITY.md).
 [Replacement protocol](experiments/on-off-20260917-r2/PROTOCOL.md) · [Repair evidence](experiments/on-off-20260917-r2/QUALIFICATION.md).
+[Replacement result and exact Git failure](experiments/on-off-20260917-r2/RESULT.md).
 
 This is the standalone tool's six-run validation, separate from Work Leaf's old
-research task counter. [Fixed protocol](experiments/on-off-20260917/PROTOCOL.md).
+research task counter. The retained observer sampled response coverage every 15 seconds.
+
+<!-- replacement-live-table -->
+| Replacement run | Switches | State | Observed raw tokens | Missing response counts |
+| --- | --- | --- | --- | --- |
+| on-01 | On | Failed: final Git-history rewrite denied | 18,364,740 | 0 |
+| on-02 | On | Stopped after shared failure; feature 3 repair | 19,452,278 (partial) | 1 cancellation |
+| on-03 | On | Failed: final Git-history rewrite denied | 19,340,267 | 0 |
+| off-01 | Off | Not started: shared Git-permission failure | — | 0 |
+| off-02 | Off | Not started: shared Git-permission failure | — | 0 |
+| off-03 | Off | Not started: shared Git-permission failure | — | 0 |
+<!-- replacement-live-table-end -->
+
+Current 15-second snapshots: [live status](runs/on-off-20260917-r2/monitor/current.json),
+with the full history in `runs/on-off-20260917-r2/monitor/samples.jsonl`.
+The observer and all generators are stopped. Failed totals are not completed-benchmark totals.
+
+## Previous batch — retained failed observations
+
+[First protocol](experiments/on-off-20260917/PROTOCOL.md).
 
 | Run | All nine switches | State | Observed raw tokens |
 | --- | --- | --- | --- |
@@ -31,7 +53,7 @@ Raw tokens are input plus output, with cached input included only once.
 
 [Saved status](runs/on-off-20260917/monitor-current.json) and the complete
 30-second sample history remain in runs/on-off-20260917/monitor-samples.jsonl.
-The observer is stopped because no benchmark is running.
+That previous observer is stopped; the replacement observer is separate.
 
 ## Activity, retained in time order
 
@@ -183,3 +205,90 @@ The observer is stopped because no benchmark is running.
   identical. Record qualification of all three repairs, retain the first-batch
   failures, and freeze the six replacement attempts before generation. Available
   memory is about 36 GiB and free disk space about 572 GiB.
+- 2026-09-17 19:04:41 UTC: launch replacement on-01/on-02/on-03 concurrently
+  after commit `746630e`. Runner PIDs: 1201021/1201012/1201036; owning tool
+  sessions: 41982/24397/28208. All nine switches are on. Separate clones use
+  the frozen base, program, subscription, model and 90-minute/60M/600-turn limits.
+- 2026-09-17 19:07–19:09 UTC: recover the live sessions after context
+  compaction; no duplicate run is launched. Start the 15-second observer in
+  session 37457 at 19:08:25 UTC. There was a four-minute startup gap before
+  this observer began; the runner's immediate missing-coverage stop was active
+  throughout. Its first scan includes all retained events since launch, finding
+  zero coverage gaps or counter warnings. All three are implementing text selection.
+- 2026-09-17 19:15 UTC: replacement on-01 and on-02 reach independent review
+  of text selection; on-03 remains in implementation. All actual provider
+  configuration hashes match the qualification check, and program/input hashes
+  remain frozen. No returned-response coverage gap or counter warning is present.
+- 2026-09-17 19:24 UTC: all replacement workflows reach independent review
+  of the first feature; on-01/on-02 are in their second review after repairs.
+  A direct saved-transport check of on-01 turn 6 shows final message, fresh
+  usage, interruption, then terminal acknowledgement in that order. This
+  supports the repaired boundary for that checked response, not a blanket
+  claim about every internal response. Full retained-data audit follows all six.
+- 2026-09-17 19:34 UTC: replacement on-01 completes the first feature's
+  implementation/review loop and starts slash-command routing. On-02 is in
+  text-selection review 5 and on-03 in review 3. The live coverage gate still
+  reports zero gaps and zero counter warnings; no settings or limits change.
+- 2026-09-17 19:39 UTC: all three replacements complete text selection's
+  implementation/review loop. On-01 reaches slash-command review 1 while
+  on-02/on-03 implement that second feature. All returned-response coverage
+  checks remain clear. Earlier repair rounds and their full token costs remain
+  included; no outcome-dependent changes or early all-off launch occur.
+- 2026-09-17 19:47 UTC: on-01/on-03 finish slash-command routing and start
+  the review-completion prompt, the third feature. On-02 repairs its second
+  feature after review. All three runner processes and the observer remain
+  alive; only this supervising note differs from the frozen committed source.
+  Coverage gaps and counter warnings remain zero.
+- 2026-09-17 19:54 UTC: all replacements have completed slash-command
+  routing and entered the third feature. On-03 is in its first independent
+  review; on-01/on-02 are implementing it. No final-workflow total or saving
+  percentage is declared before review, integration and final checks finish.
+- 2026-09-17 20:04 UTC: on-03 finishes all three feature implementation/
+  review loops and enters final integration planning. On-01 is reviewing the
+  third feature for the second time; on-02 reaches its first third-feature
+  review. Final commit-history acceptance, Rust checks and usage audit still
+  precede any completed-comparison claim. No missing coverage is reported.
+- 2026-09-17 20:10 UTC: on-03, then on-01 fail the final commit-history gate.
+  Both actual integration replies report `.git/index.lock: Read-only file system`.
+  Their source files are writable, but native agent Git metadata writes are not.
+  Both retain complete reported usage; neither reaches final host checks.
+- 2026-09-17 20:11:30 UTC: confirm the shared failure from both saved replies
+  and frozen writable sandbox policy; send SIGINT only to remaining owned
+  runner 1201012. On-02 saves its partial third-feature repair and usage tail.
+  All provider processes exit. No off run is launched; monitor 1206517 is
+  stopped after retaining the final samples. Replacement observed usage is
+  57,157,285 raw, including the incomplete operator-cancelled tail.
+- 2026-09-17 20:14 UTC: the earlier tiny integration verifier's false-positive
+  scope is identified: its input already had exactly two feature commits and
+  its real reply explicitly says no history rewrite was needed. It checked a
+  final shape, not actual native Git writes. Preserve that record, but withdraw
+  it as evidence that history rewriting works. Begin a bounded local-only
+  permission reproduction/repair check, at most 15 minutes and zero model calls.
+  No saved benchmark checkout or measurement will be changed, and no additional
+  generated observation is admitted by this local check.
+- 2026-09-17 20:14–20:16 UTC: CLI-only sandbox probes first hit command-syntax
+  and missing-profile errors, without executing Git or generating model output.
+  The installed protocol schema and official command-execution documentation
+  identify the exact no-generation app-server path using the benchmark's policy.
+  `git-command-probe-001` reproduces exit 128 with the original policy and an
+  actual commit with only `.git` added as a writable root. No benchmark source
+  is modified. The provider records zero model turns and zero raw tokens.
+- 2026-09-17 20:17 UTC: independent accounting audit reproduces all three
+  replacement totals and all 20 native history totals. There are no counter
+  decreases, unowned charges or earlier returned-response gaps. On-02 has only
+  its deliberate cancellation tail. All non-switch comparison keys match.
+- 2026-09-17 20:19–20:22 UTC: five new permission/preflight/verifier tests run
+  before repair: two failed assertions, two missing-method/guard errors and one
+  already-passing read-only invariant. All pass after the narrow repair. The
+  full runner performs a zero-generation Git-write preflight in its own clone;
+  `doctor` remains non-mutating. The real integration fixture requires actual
+  collapse of an extra disposable commit, so a no-op cannot pass again.
+  `git-command-probe-002` exercises the actual repaired helper and preflight,
+  again with zero model calls/tokens. Read-only roles and network policy remain
+  unchanged. Frozen benchmark outcomes and admission files are untouched.
+- 2026-09-17 20:26–20:27 UTC: all 49 local tests, compilation and whitespace
+  checks pass after adding the positive history-collapse case. No model or
+  monitor process remains. The bounded local check ends within 15 minutes;
+  save the result and repair without claiming an unrun real-agent rewrite or
+  a three-versus-three percentage. Preserve every reviewed checkout for a
+  separately authorized, cost-conscious continuation rather than automatic reruns.

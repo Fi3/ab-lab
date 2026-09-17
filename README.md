@@ -17,8 +17,10 @@ is required.
 
 **Validation status:** the full all-on/all-off comparison is incomplete.
 Request interruption and complete usage collection pass a small real-agent
-verification. Missing measurements stop a run and cannot establish a saving
-percentage. See [verification and retained failures](VERIFICATION.md).
+verification. Native Git permissions pass a zero-generation sandbox check;
+a strict real-agent history-rewrite check remains pending. Retained full runs
+failed at that permission boundary before repair. No saving percentage is
+established. See [verification and retained failures](VERIFICATION.md).
 
 - [How a benchmark runs](#how-a-benchmark-runs)
 - [Quick start](#quick-start)
@@ -80,6 +82,13 @@ python3 -m lab doctor --out runs/login-check
 `factors` lists the behavior switches. `doctor` checks the existing subscription
 login and configuration without asking a model to generate a response. Its
 output directory must not already exist.
+
+Each workflow checks native Git index-write access in its fresh clone before
+asking the model to work. The check uses no model tokens and saves
+`provider/git-write-preflight.json`. Writable author and integration turns may
+write only that checkout and its `.git` directory; read-only roles stay read-only
+and command network access stays disabled. `doctor` checks login/configuration
+only and does not refresh a repository's Git index.
 
 For a small example, initialize the included Python project as a Git repository
 once, then inspect the planned run:

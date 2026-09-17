@@ -113,7 +113,8 @@ def run(benchmark, factors, output, seconds, max_raw, max_turns,
         git(checkout, "config", "user.name", "Agent Behavior Lab")
         git(checkout, "config", "user.email", "agent-behavior-lab@example.invalid")
         git(checkout, "config", "commit.gpgSign", "false")
-        provider = backend(checkout, output / "provider", model, effort, deadline, max_raw, max_turns, executable)
+        provider = backend(checkout, output / "provider", model, effort, deadline, max_raw, max_turns, executable,
+                           require_git_write=True)
         invariant = {k: v for k, v in manifest.items() if k not in ("factors", "created_at_unix")}
         invariant["provider"] = provider.identity
         result["comparison_key"] = fingerprint(invariant)

@@ -80,7 +80,7 @@ class InterruptGate:
 
 
 class Codex:
-    def __init__(self, repo, artifacts, model, effort, deadline, max_raw, max_turns, executable="codex"):
+    def __init__(self, repo, artifacts, model, effort, deadline, max_raw, max_turns, executable="codex", *, require_git_write=False):
         self.repo, self.artifacts = Path(repo), Path(artifacts)
         self.artifacts.mkdir(parents=True, exist_ok=False)
         self.deadline, self.max_raw, self.max_turns = deadline, max_raw, max_turns
@@ -120,6 +120,8 @@ class Codex:
                 "auth": "chatgpt", "model": model, "effort": effort,
                 "effective_config_sha256": hashlib.sha256(json.dumps(config, sort_keys=True).encode()).hexdigest()}
             save_json(self.artifacts / "provider.json", self.identity)
+            if require_git_write:
+                self.verify_git_write()
         except BaseException:
             self.close()
             raise
@@ -180,6 +182,25 @@ class Codex:
             self.pending.append(message)
         raise Fatal(f"{method} timed out")
 
+    def writable_policy(self):
+        # Workspace write protects Git metadata unless it is an explicit root.
+        # Workflows own fresh plain clones; no parent or unrelated repository
+        # receives write permission. Read-only roles do not use this policy.
+        return {"type": "workspaceWrite",
+                "writableRoots": [str(self.repo), str(self.repo / ".git")],
+                "networkAccess": False}
+
+    def verify_git_write(self):
+        # Called only for a newly cloned workflow, never by readback/doctor.
+        # Refreshing its clean index changes no source or commit history.
+        params = {"command": ["git", "update-index", "--refresh"],
+                  "cwd": str(self.repo), "sandboxPolicy": self.writable_policy(),
+                  "timeoutMs": 10000}
+        receipt = self.rpc("command/exec", params)
+        save_json(self.artifacts / "git-write-preflight.json", {"request": params, "response": receipt})
+        if receipt.get("exitCode") != 0:
+            raise Fatal("Git-write preflight failed before model generation: "+receipt.get("stderr", "unknown error"))
+
     def start_thread(self, writable=False):
         result = self.rpc("thread/start", {"cwd": str(self.repo), "model": self.model,
             "modelProvider": "openai", "approvalPolicy": "never",
@@ -200,7 +221,7 @@ class Codex:
         self.turns.append(row)
         result = self.rpc("turn/start", {"threadId": thread, "input": [{"type": "text", "text": prompt}],
             "model": self.model, "effort": self.effort, "approvalPolicy": "never",
-            "sandboxPolicy": ({"type": "workspaceWrite", "writableRoots": [str(self.repo)], "networkAccess": False}
+            "sandboxPolicy": (self.writable_policy()
                               if writable else {"type": "readOnly"})})
         turn_id = result["turn"]["id"]
         self.active = thread, turn_id
