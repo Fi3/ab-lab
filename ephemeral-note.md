@@ -1,14 +1,16 @@
-# Benchmark attempts ended: 9 | Successful full benchmarks: 0
+# Benchmark attempts ended: 10 | Successful full benchmarks: 0
 
-Current repair: **2 / 2 obligations verified**. Full comparison: **3 / 6 started; 0 / 6 ended; 3 running**.
+Current repair: **2 / 2 obligations verified**. Full comparison: **3 / 6 started; 1 / 6 ended; 2 running**.
 The user authorizes repairs and completion of the requested comparison; reuse any
 valid complete observation. None of the last three all-on attempts completed.
 [Current authority](experiments/on-off-20260918-r4/AUTHORITY.md).
 
-Last updated: 2026-09-17 23:14 UTC.
-Current activity: three all-on full workflows run concurrently. All three pass
-Git-write preflight and match the frozen model, subscription, configuration and
-source hashes. The all-off wave follows after these three finish.
+Last updated: 2026-09-17 23:56 UTC.
+Current activity: two all-on workflows remain in final integration. All-on 2
+finishes model work and reaches all three host checks; the last test suite fails
+one terminal screen-content assertion. Its complete cost and failed outcome are retained.
+All three pass Git-write preflight and match the frozen model, subscription,
+configuration and source hashes. The all-off wave follows after these three finish.
 Measured on-versus-off reduction: NOT AVAILABLE until the full comparison ends.
 [Current protocol](experiments/on-off-20260918-r4/PROTOCOL.md) ·
 [Current qualification](experiments/on-off-20260918-r4/QUALIFICATION.md) ·
@@ -17,9 +19,9 @@ Measured on-versus-off reduction: NOT AVAILABLE until the full comparison ends.
 <!-- r4-live-table -->
 | Current run | Switches | Stage / outcome | Observed raw tokens | Missing returned counts |
 | --- | --- | --- | ---: | ---: |
-| on-01 | All on | Feature 2: slash commands, author | 6,143,450 | 0 |
-| on-02 | All on | Feature 2: slash commands, author | 7,632,988 | 0 |
-| on-03 | All on | Feature 1: text selection, review 2 | 4,238,571 | 0 |
+| on-01 | All on | Final integration: execution | 21,395,437 | 0 |
+| on-02 | All on | failed: final check 3 failed; no automatic replacement | 22,490,575 | 0 |
+| on-03 | All on | Final integration: execution | 21,451,977 | 0 |
 | off-01 | All off | Not started | — | — |
 | off-02 | All off | Not started | — | — |
 | off-03 | All off | Not started | — | — |
@@ -98,6 +100,36 @@ Raw tokens are input plus output, with cached input included only once.
 That previous observer is stopped; the replacement observer is separate.
 
 ## Activity log, with earlier entries retained
+
+- 2026-09-17 23:53 UTC: on-02 ends at 22,490,575 raw, including 13,093
+  child tokens counted once. Integration has the required three commits and
+  clean checkout; formatting and Clippy pass. The host test suite fails
+  `terminal_app_does_not_run_project_required_checks_outside_agent` because
+  the captured frame does not contain `launch reply`; no timeout or accounting
+  error occurs. The final agent separately reports sandbox restrictions for
+  local TCP and native Codex startup. Preserve the failed result, inspect the
+  exact assertion without changing source, and continue the two active runs.
+  No replacement or extra model turn is admitted. Any provider-free diagnostic
+  repeat must be separate evidence, not an overwrite or automatic pass.
+
+- 2026-09-17 23:41 UTC: on-02 finishes all three author/review loops and
+  enters final integration planning. On-01/on-03 repair their first review of
+  the final feature. No full workflow is complete yet. All source pins match;
+  parent and child coverage remain clear. The three all-off runs remain unstarted.
+
+- 2026-09-17 23:31 UTC: on-02 reviews the third/final feature, on-01
+  implements it, and on-03 is in slash-routing review two. All three full runs
+  have exercised nested Codex verification. Child costs are included once:
+  52,406 / 13,093 / 39,386 raw so far. No child model mismatch, incomplete
+  returned count, terminal failure or source/configuration change is observed.
+
+- 2026-09-17 23:18 UTC: on-02 reaches slash-routing review after actual nested
+  verification. Its 13,093 child raw tokens are included by the observer, with
+  matching model/effort and no incomplete child turn. On-01 is implementing
+  slash routing; on-03 is repairing its third text-selection review. The frozen
+  starting AGENTS.md explicitly documents bounded pre-agent sandbox failures;
+  that limitation remains visible rather than prompting credential copying,
+  permission broadening or repeated native-startup attempts.
 
 - 2026-09-17 23:14 UTC: on-01 and on-02 finish the text-selection
   author/review loop and start slash-command routing. On-03 is in text-selection
