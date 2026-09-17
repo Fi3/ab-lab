@@ -1,6 +1,6 @@
 # Runs finished: 0 / 6
 
-Last sampled: 2026-09-17T17:31:15.272114+00:00.
+Last sampled: 2026-09-17T17:49:45.539049+00:00.
 Current activity: on-01, on-02, on-03 running.
 Measured on-versus-off reduction: pending complete six-run measurement verification.
 The expected roughly 50% difference is not a result.
@@ -10,9 +10,9 @@ research task counter. [Fixed protocol](experiments/on-off-20260917/PROTOCOL.md)
 
 | Run | All nine switches | State | Observed raw tokens |
 | --- | --- | --- | --- |
-| on-01 | On | Feature 1: text selection / review 1 | 1,657,270 (partial) |
-| on-02 | On | Feature 1: text selection / implementation | 847,059 (partial) |
-| on-03 | On | Feature 1: text selection / implementation | 1,908,085 (partial) |
+| on-01 | On | Feature 2: slash commands / implementation | 10,595,283 (partial) |
+| on-02 | On | Feature 2: slash commands / implementation | 5,563,244 (partial) |
+| on-03 | On | Feature 2: slash commands / implementation | 11,292,488 (partial) |
 | off-01 | Off | Waiting | — |
 | off-02 | Off | Waiting | — |
 | off-03 | Off | Waiting | — |
@@ -67,3 +67,21 @@ all samples remain in runs/on-off-20260917/monitor-samples.jsonl.
   using the exact earlier three fixtures; it waits until all six measured
   workflows stop, so it does not create unequal CPU load during the off batch.
   [Post-run check details](experiments/on-off-20260917/POST-RUN-CHECKS.md).
+- 2026-09-17 17:35 UTC: all three on workflows reach independent review of
+  feature 1. On-01 has already completed one repair round and reached review 2;
+  on-02 and on-03 are in review 1. No terminal failure, counter-reset warning
+  or budget stop is recorded. The live table shows within-workflow progress
+  while the finished-workflow count remains 0/6.
+- 2026-09-17 17:45 UTC: on-02 finishes the first feature's author/review loop
+  and starts slash-command routing. On-01 and on-03 remain in text-selection
+  review/repair. A read-only ownership audit finds every usage-report thread
+  was started by its own runner; there are no unrelated charged conversations.
+  Counts are 2/3/2 started-and-charged conversations for on-01/on-02/on-03.
+- 2026-09-17 17:47 UTC: on-02 and on-03 are implementing the second feature;
+  on-01 remains in text-selection review 6. Different amounts of
+  review/repair activity stay inside the original run totals. No response, retry
+  or expensive prefix is removed, and no result-dependent setting is changed.
+- 2026-09-17 17:49 UTC: all three on workflows have finished the first
+  feature's implementation/review loop and are implementing slash-command
+  routing. Their differing first-feature costs remain recorded, not averaged
+  with incomplete later stages or treated as final benchmark totals.
