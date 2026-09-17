@@ -1,12 +1,12 @@
 # Benchmark attempts ended: 6 | Successful full benchmarks: 0
 
-Current approved batch: **0 / 6 ended**, conditional on the small real Git-rewrite check.
-Accounting repairs verified: **3 / 3**. Git-rewrite qualification: admitted, not yet run.
+Current approved batch: **0 / 6 ended**. The required real Git-rewrite check PASSED.
+Accounting repairs verified: **3 / 3**. Both real-agent qualification gates pass.
 Both previous batches retain three failed attempts and three unstarted slots each.
 
 Last sampled: 2026-09-17T20:11:42.184547+00:00.
-Last updated: 2026-09-17 20:37 UTC.
-Current activity: all 49 local tests and the non-generating subscription check pass. Starting the single approved real Git-rewrite check (four minutes / 200k observed raw / two turns). The six full workflows remain conditional on its verified success.
+Last updated: 2026-09-17 20:40 UTC.
+Current activity: the real Git-rewrite check passes with 191,320 fully measured raw tokens, changed history and ten passing tests. Starting three all-on workflows concurrently, with the observer from launch. Three all-off workflows follow after that wave ends.
 On-01/on-03 reached final integration with complete reported usage. On-02's sole incomplete response is the deliberate safety cancellation, not an earlier returned-response gap.
 The real check used 76,865 raw tokens in 37.59 seconds, with six fully measured turns.
 Measured on-versus-off reduction: NOT AVAILABLE; the requested comparison is not complete.
@@ -306,3 +306,13 @@ That previous observer is stopped; the replacement observer is separate.
   240 seconds / 200,000 observed raw / two turns. On success, the approved new
   batch is three all-on workflows concurrently followed by three all-off.
   All earlier failed observations remain intact; no Work Leaf counter changes.
+- 2026-09-17 20:39 UTC: the small real check passes native Git preflight and
+  completes read-only planning without source mutation. It enters its second
+  turn with complete reported usage so far. Owning session 37935, PID 1317323.
+  Admission and preflight are committed as `409f41d`; no full benchmark starts
+  before actual rewrite, tests and final usage are independently checked.
+- 2026-09-17 20:40 UTC: the real agent actually rewrites three input commits
+  into two feature commits. All ten tiny tests pass, both turns have complete
+  token counts, and 191,320 raw tokens stay below the approved threshold.
+  The original source and frozen program hashes are unchanged. The conditional
+  six-workflow gate passes; no further permission pause is needed.

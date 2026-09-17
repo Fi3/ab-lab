@@ -38,9 +38,12 @@ each. They are actual backend command checks, not model-generated workflows.
 
 The real-agent integration verifier requires an extra disposable input commit
 to be collapsed and checks that HEAD changed. It refuses an existing output
-directory. **This stricter model-backed scenario has not been run or admitted.**
-Native sandbox command execution is verified; full agent workflow readiness and
-a valid all-on/all-off comparison remain unverified. No automatic rerun follows.
+directory. The [approved stricter check](experiments/on-off-20260917-r3/QUALIFICATION.md)
+passes with 191,320 raw tokens in two fully measured turns. The real agent
+rewrites its three-commit input to two feature commits; all ten Python tests
+pass, the source is clean, and the original reviewed checkout remains unchanged.
+Native history rewriting is verified. The user's condition for another six-run
+comparison is satisfied; that full token comparison is not yet complete.
 
 ## Usage-boundary repair verification — 2026-09-17
 
