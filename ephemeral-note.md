@@ -1,28 +1,50 @@
 # Benchmark attempts ended: 9 | Successful full benchmarks: 0
 
-Current repair: **2 / 2 obligations verified**. Full comparison: **0 / 6 started**.
+Current repair: **2 / 2 obligations verified**. Full comparison: **3 / 6 started; 0 / 6 ended; 3 running**.
 The user authorizes repairs and completion of the requested comparison; reuse any
 valid complete observation. None of the last three all-on attempts completed.
 [Current authority](experiments/on-off-20260918-r4/AUTHORITY.md).
 
-Last admitted batch: **3 / 6 ended**; **0 passed**, **3 failed/stopped**, **0 running**.
+Last updated: 2026-09-17 22:53 UTC.
+Current activity: three all-on full workflows run concurrently. All three pass
+Git-write preflight and match the frozen model, subscription, configuration and
+source hashes. The all-off wave follows after these three finish.
+Measured on-versus-off reduction: NOT AVAILABLE until the full comparison ends.
+[Current protocol](experiments/on-off-20260918-r4/PROTOCOL.md) ·
+[Current qualification](experiments/on-off-20260918-r4/QUALIFICATION.md) ·
+[15-second live snapshot](runs/on-off-20260918-r4/monitor/current.json).
+
+<!-- r4-live-table -->
+| Current run | Switches | Stage / outcome | Observed raw tokens | Missing returned counts |
+| --- | --- | --- | ---: | ---: |
+| on-01 | All on | Feature 1: text selection, author | 443,601 | 0 |
+| on-02 | All on | Feature 1: text selection, author | 449,066 | 0 |
+| on-03 | All on | Feature 1: text selection, author | 596,992 | 0 |
+| off-01 | All off | Not started | — | — |
+| off-02 | All off | Not started | — | — |
+| off-03 | All off | Not started | — | — |
+<!-- r4-live-table-end -->
+
+Owned runner PID / tool session: on-01 **1429754 / 66262**, on-02
+**1429773 / 30295**, on-03 **1429767 / 45701**. Observer **1429720 / 31103**.
+Launch: 2026-09-17 22:47:56 UTC; observer began one second earlier.
+Frozen implementation commit: `3f54c08`. No program changes during the batch.
+
+## Previous third batch — retained failed observations
+
+Previous batch: **3 / 6 ended**; **0 passed**, **3 failed/stopped**, **0 running**.
 The three all-off attempts are unstarted after a shared token-accounting defect.
 All prior batches and this batch remain retained; there are no automatic replacements.
 
-Last updated: 2026-09-17 22:46 UTC.
-Current activity: the tiny workflow passes, including review, final verification
-commit, ten tests and complete child accounting. Freezing and launching the
-three concurrent all-on workflows, then the three concurrent all-off workflows.
-No benchmark is running. Earlier failures remain unchanged.
 The real Git-rewrite check passed. The full comparison failed a different path:
 a nested Codex command generated 167,250 raw tokens absent from the runner's own total, using GPT-6 Astra/max instead of GPT-5.5/xhigh.
 Run 2 also completed its second-feature stage without making the required commit.
 Runs 1 and 3 were stopped under the frozen shared-accounting-failure rule.
 Their last cancellation tails remain incomplete; prior returned turns have no coverage gap.
 Measured on-versus-off reduction: NOT AVAILABLE. Roughly 50% is not established by this batch.
-[Current protocol](experiments/on-off-20260917-r3/PROTOCOL.md) · [Real-agent qualification](experiments/on-off-20260917-r3/QUALIFICATION.md).
+[Previous protocol](experiments/on-off-20260917-r3/PROTOCOL.md) · [Real-agent qualification](experiments/on-off-20260917-r3/QUALIFICATION.md).
 
-| Current run | All nine switches | Outcome | Runner-observed raw tokens | Incomplete returned counts |
+| Previous run | All nine switches | Outcome | Runner-observed raw tokens | Incomplete returned counts |
 | --- | --- | --- | ---: | ---: |
 | on-01 | On | Stopped during second-feature review after shared accounting defect | 9,950,855 | 1 cancellation |
 | on-02 | On | Failed: second-feature completion produced no commit | 5,413,894 | 0 in main provider; nested usage excluded |
@@ -75,7 +97,13 @@ Raw tokens are input plus output, with cached input included only once.
 30-second sample history remain in runs/on-off-20260917/monitor-samples.jsonl.
 That previous observer is stopped; the replacement observer is separate.
 
-## Activity, retained in time order
+## Activity log, with earlier entries retained
+
+- 2026-09-17 22:47:55–22:48 UTC: observer starts, then all three all-on
+  workflows launch concurrently from commit 3f54c08. All actual provider
+  fingerprints equal the frozen preflight, all program hashes match and all
+  native Git preflights pass. Three authors begin text selection. Process and
+  session identities are recorded above. No off workflow or extra run starts.
 
 - 2026-09-17 22:45–22:46 UTC: qualification 002 passes in 263.54 seconds:
   330,274 parent + 21,927 child = 352,201 raw tokens. Twelve parent turns and
