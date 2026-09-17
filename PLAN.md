@@ -1,7 +1,6 @@
 # Standalone research tool
 
-Requested destination: `/home/user/src/agent-behavior-lab`.
-The current session cannot write to `/home/user/src`; the build is staged here.
+Project location: `/home/user/src/agent-behavior-lab`.
 Work Leaf code, saved experiments, and research counters are outside this change.
 
 ## Build checklist
@@ -53,8 +52,9 @@ original sources and their hashes are recorded in PROVENANCE.json.
 
 ## Placement
 
-Implementation is staged as an independent Git project. The requested sibling
-directory remains unavailable to this session. The archive is exported to
-`/home/user/.codex/agent-behavior-lab-20260917.tar.gz`, including retained smoke
-evidence. Extract it into `/home/user/src` from a writable session. Nothing was
-deleted or moved out of Work Leaf; its existing research records stay there.
+The implementation is an independent Git project at
+`/home/user/src/agent-behavior-lab`, with its retained verification records under
+`runs/`. The original staged project and
+`/home/user/.codex/agent-behavior-lab-20260917.tar.gz` remain as recovery copies of
+the initial implementation and smoke evidence. Work Leaf's existing product and
+research records remain in its own repository.

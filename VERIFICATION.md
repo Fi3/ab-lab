@@ -88,3 +88,11 @@ Work Leaf's Rust sources, tests, examples, Cargo files and architecture are
 unchanged. Its product checks and old research counters are not modified by this
 separate Python project. Python compilation and unittest discovery are the
 applicable local checks.
+
+## Installed-project verification — 2026-09-17
+
+The independent project is at `/home/user/src/agent-behavior-lab`. From that
+directory, all 35 unittest checks, Python compilation and the CLI help check
+pass. The retained real-agent records above remain unchanged, including the
+incomplete full-workflow attempt. Installation uses no additional model
+generation and does not modify Work Leaf.
