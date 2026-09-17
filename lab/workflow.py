@@ -32,14 +32,18 @@ def author_prompt(benchmark, feature, factors, findings=None):
     return f"You are a direct coding agent in this repository.\n\nRequest {feature['id']}:\n{feature['request']}\n\n{action}\nFollow repository instructions except the explicit procedural overrides below. Do not use Work Leaf or extra worktrees. Avoid unrelated refactors.\n{docs}\n{benchmark['instructions']}\n\n{author_policy(factors)}"
 
 
-def review_prompt(benchmark, feature, base, evidence):
+def review_prompt(benchmark, feature, base, evidence, no_changes=False):
     docs = "Documentation is deferred to final integration; do not report deferred prose as missing." if benchmark["defer_documentation"] else "Check required documentation too."
+    if no_changes:
+        return f"You are an independent review agent. Do not modify files.\nThe author reports this feature already exists, with no source changes since {base}. Independently verify the complete requested behavior and its tests; an empty diff alone is not approval. Report missing behavior or tests for this request, not unrelated pre-existing issues.\nRequest {feature['id']}:\n{feature['request']}\n{docs}\n{benchmark['instructions']}\n{evidence}\nIf acceptable, include exactly one standalone marker NO_FINDINGS. Otherwise include exactly one standalone marker FINDINGS followed by concise actionable bullets."
     return f"You are an independent review agent. Do not modify files.\nReview only changes since {base} for request {feature['id']}:\n{feature['request']}\nInspect {base}..HEAD. Report only bugs, regressions or missing tests introduced by this feature. Do not report unrelated pre-existing issues.\n{docs}\n{benchmark['instructions']}\n{evidence}\nIf acceptable, include exactly one standalone marker NO_FINDINGS. Otherwise include exactly one standalone marker FINDINGS followed by concise actionable bullets."
 
 
 def integration_prompts(benchmark, base, checkpoints):
     count = len(benchmark["features"])
     contract = f"Produce exactly {count} final commits rooted at {base}, one per feature. Fold implementation, tests, review repairs, validation fixes and required documentation into the corresponding feature commit. No separate support or documentation-only commits. Preserve all reviewed behavior and follow repository commit-message rules. Do not push or modify other checkouts."
+    if any(item.get("already_satisfied") for item in checkpoints):
+        contract += " A boundary marked already_satisfied was independently verified without source changes. Use an explicitly described verification-only empty commit for that feature; do not invent edits."
     detail = json.dumps(checkpoints, indent=2)
     plan = f"You are the final integration agent for {count} sequentially reviewed features.\n{contract}\nReviewed feature boundaries:\n{detail}\nInspect history and source, identify required documentation, and propose a plan. Do not edit, commit, rewrite history or run the check suite yet. End with your plan and wait for acceptance.\n{benchmark['instructions']}"
     accept = f"Accept the proposed plan and execute it.\n{contract}\nRun these final checks and all additional repository-required checks; repair genuine failures until they pass within the run budget:\n"+"\n".join(benchmark["checks"])+"\nLeave the checkout clean and summarize final commits and actual verification results."
@@ -133,7 +137,8 @@ def run(benchmark, factors, output, seconds, max_raw, max_turns,
             name = feature["id"]
             feature_base = git(checkout, "rev-parse", "HEAD").decode().strip()
             author = provider.start_thread(writable=not factors["C17"])
-            host = Host(checkout, output / (name+"-host"), name, "author", deadline, factors) if factors["C17"] else None
+            host = Host(checkout, output / (name+"-host"), name, "author", deadline, factors,
+                        command_env=getattr(provider, "command_env", None)) if factors["C17"] else None
 
             def implement(prompt, label):
                 nonlocal fixture_fired
@@ -159,13 +164,12 @@ def run(benchmark, factors, output, seconds, max_raw, max_turns,
                     raise Fatal("author left uncommitted source changes")
 
             implement(author_prompt(benchmark, feature, factors), name+"-implement")
-            if (host and not host.accepted_commits) or git(checkout, "rev-parse", "HEAD").decode().strip() == feature_base:
-                raise Fatal("initial implementation produced no commit")
             reviewer = provider.start_thread()
             round_number, evidence = 1, ""
             while True:
                 before = snapshot(checkout)
-                reply = turn(reviewer, review_prompt(benchmark, feature, feature_base, evidence), f"{name}-review-{round_number}")
+                no_changes = git(checkout, "rev-parse", "HEAD").decode().strip() == feature_base
+                reply = turn(reviewer, review_prompt(benchmark, feature, feature_base, evidence, no_changes), f"{name}-review-{round_number}")
                 if snapshot(checkout) != before:
                     raise Fatal("reviewer changed source, index or history")
                 if review_clean(reply):
@@ -182,7 +186,8 @@ def run(benchmark, factors, output, seconds, max_raw, max_turns,
                     evidence = "Author reports completed repairs. Inspect the actual new commits and test results."
                 round_number += 1
             checkpoint = {"feature": name, "request": feature["request"], "base": feature_base,
-                          "reviewed_head": git(checkout, "rev-parse", "HEAD").decode().strip(), "review_rounds": round_number}
+                          "reviewed_head": git(checkout, "rev-parse", "HEAD").decode().strip(), "review_rounds": round_number,
+                          "already_satisfied": no_changes}
             result["checkpoints"].append(checkpoint)
             if host:
                 for key, count in host.activations.items():
@@ -205,7 +210,7 @@ def run(benchmark, factors, output, seconds, max_raw, max_turns,
         for index, command in enumerate(benchmark["checks"], 1):
             folder = output / f"check-{index:02d}"
             folder.mkdir()
-            receipt = execute_child(["/bin/sh", "-c", command], checkout, None, folder / "stdout.txt", folder / "stderr.txt", min(300, deadline-time.monotonic()), clean_env())
+            receipt = execute_child(["/bin/sh", "-c", command], checkout, None, folder / "stdout.txt", folder / "stderr.txt", min(300, deadline-time.monotonic()), getattr(provider, "command_env", clean_env()))
             receipt["command"] = command
             result["checks"].append(receipt)
             save_json(folder / "result.json", receipt)
@@ -215,6 +220,8 @@ def run(benchmark, factors, output, seconds, max_raw, max_turns,
             raise Fatal("final checkout is not clean")
         if source_hashes() != code:
             raise Fatal("runner source changed during execution")
+        if not provider.report().get("measurement_complete"):
+            raise Fatal("incomplete whole-workflow token measurement, including nested verification")
         result.update(status="passed", final_commits=commits)
     except (Exception, KeyboardInterrupt) as exc:
         result["error"] = str(exc) or "operator interruption"

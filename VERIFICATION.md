@@ -1,6 +1,33 @@
 # Verification
 
-## Current blocking qualification — nested processes
+## Nested processes and unchanged features — 2026-09-18
+
+[The real tiny qualification](experiments/on-off-20260918-r4/QUALIFICATION.md)
+passes: existing feature inspection, real child launch/resume, independent review,
+verification-only empty final commit, clean source and all ten Python tests.
+Usage is 352,201 raw in 263.54 seconds, including 21,927 child tokens counted once.
+All twelve parent turns and both child turns are priced; the child's native records
+show GPT-5.5/xhigh and Pro subscription. The original input remains unchanged.
+
+All 59 local tests pass. Fail-first coverage includes unchanged-feature rejection
+and repair, nested model override rejection, resumed cumulative deduplication,
+shell startup credential cleanup, child inclusion in totals/resource checks,
+native assistant-message tail coverage and an invalid plan label. Replaying the
+actual child record through the stricter final-message parser gives the same
+complete 21,927. No additional generation is needed for that observational check.
+
+The real native-command environment probe passes with the guarded Codex path.
+A native-sandbox child launch fails before agent startup because local state is
+read-only; this remains a blocked real-agent smoke, not a green one. A single
+non-generating doctor check confirms stored ChatGPT auth and reachable service.
+No broad sandbox change or credential copy is made. The successfully generated
+child verification above runs through the host-command path.
+
+The first tiny qualification failure (143,950 raw, no child generation) remains
+retained. It is not counted as successful verification. The full comparison is
+still pending; these functional checks establish no saving percentage.
+
+## Retained third-batch failures — nested processes
 
 The [third admitted batch](experiments/on-off-20260917-r3/RESULT.md) starts after
 the stricter real Git-history rewrite passes. One author launches a separate
@@ -18,7 +45,7 @@ incomplete cancellation tails. Three all-off attempts remain unstarted.
 All failed work is retained; no saving percentage or successful full comparison
 is established. The actual Git rewrite remains a valid narrower pass.
 
-The current 49 tests do not qualify nested real generation or completion without
+The then-current 49 tests did not qualify nested real generation or completion without
 a new commit. Required next coverage includes launch/resume child pricing,
 child configuration/authentication boundaries and an already-satisfied feature.
 No source repair or further generated verification is included in this closeout.

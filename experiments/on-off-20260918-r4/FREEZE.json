@@ -1,0 +1,35 @@
+{
+  "created_at_unix": 1789685260.9751961,
+  "source_sha256": {
+    "__init__.py": "cd5de7ee4472c1ef8bada6b3b56d56cee36d93dbfab9195d2dcfc0c7d7be13a1",
+    "__main__.py": "0271f5c7bfd985a08c353e0b6e12002bbbabb9a0997bfff879492273f288f1df",
+    "config.py": "0c7c7f6c4446843187f23e819b616bd5ee7197be58aac7d1ffb06ea6d416be16",
+    "environment.py": "4d6b2e16f873a47a56a7525033d9417de0698b3dc9f086d2181669c8a45130ed",
+    "host.py": "72b7845a29a9129259205d4d0b2007eecb6e874a63e82f8e16fd060a9330eec9",
+    "monitor.py": "cd52d580e17b909f223cebef0d6b3e91ce0a1dc64b09326e606c4d4159dd19f6",
+    "nested.py": "3bd017832047e6eef544bfa472a0b422183b1fa6311d160259b3244bedcdadee",
+    "provider.py": "10f5007025bd380f1c8ed7ebc2bc50266e3fa9ef7f33e8597b1e1ef1a96ae6c7",
+    "workflow.py": "93c058445fbe2fbfd5ddd3def8c90c082ee23fffb274273cc8674b0a88133e9e"
+  },
+  "benchmark_sha256": "beace51ce596f9c5afb6329d0a132e7dddf716b24b47c321b41dcd15c3aa613e",
+  "resolved_base": "c92a0b7060a36eac6db2d869b85e589a7a9480f9",
+  "model": "gpt-5.5",
+  "effort": "xhigh",
+  "auth": "chatgpt",
+  "codex_version": "codex-cli 0.154.0",
+  "effective_config_sha256": "e72a7b12072de84593999d6cab5038e5699ef194806bc6b0c9ed2d2a76147c04",
+  "limits": {
+    "seconds": 5400,
+    "max_raw": 60000000,
+    "parent_turns": 600
+  },
+  "CARGO_BUILD_JOBS": 4,
+  "observations": [
+    "on-01",
+    "on-02",
+    "on-03",
+    "off-01",
+    "off-02",
+    "off-03"
+  ]
+}

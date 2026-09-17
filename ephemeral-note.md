@@ -1,11 +1,19 @@
 # Benchmark attempts ended: 9 | Successful full benchmarks: 0
 
-Current approved batch: **3 / 6 ended**; **0 passed**, **3 failed/stopped**, **0 running**.
+Current repair: **2 / 2 obligations verified**. Full comparison: **0 / 6 started**.
+The user authorizes repairs and completion of the requested comparison; reuse any
+valid complete observation. None of the last three all-on attempts completed.
+[Current authority](experiments/on-off-20260918-r4/AUTHORITY.md).
+
+Last admitted batch: **3 / 6 ended**; **0 passed**, **3 failed/stopped**, **0 running**.
 The three all-off attempts are unstarted after a shared token-accounting defect.
 All prior batches and this batch remain retained; there are no automatic replacements.
 
-Last updated: 2026-09-17 21:24 UTC.
-Current activity: retained-data recovery and evidence checks are complete. The failure report is saved; nested-call and no-commit qualification remain unresolved. No model generation or observer is running.
+Last updated: 2026-09-17 22:46 UTC.
+Current activity: the tiny workflow passes, including review, final verification
+commit, ten tests and complete child accounting. Freezing and launching the
+three concurrent all-on workflows, then the three concurrent all-off workflows.
+No benchmark is running. Earlier failures remain unchanged.
 The real Git-rewrite check passed. The full comparison failed a different path:
 a nested Codex command generated 167,250 raw tokens absent from the runner's own total, using GPT-6 Astra/max instead of GPT-5.5/xhigh.
 Run 2 also completed its second-feature stage without making the required commit.
@@ -68,6 +76,40 @@ Raw tokens are input plus output, with cached input included only once.
 That previous observer is stopped; the replacement observer is separate.
 
 ## Activity, retained in time order
+
+- 2026-09-17 22:45–22:46 UTC: qualification 002 passes in 263.54 seconds:
+  330,274 parent + 21,927 child = 352,201 raw tokens. Twelve parent turns and
+  two child turns are complete. Independent review approves the unchanged
+  feature, integration creates one verification-only empty commit, and all ten
+  final tests pass. A final native-record inspection leads to two fail-first
+  observational guards: assistant-item tail coverage and explicit API/unknown
+  plan rejection. Saved-record replay preserves the exact complete child total;
+  all 59 tests pass. Full benchmark input hash remains unchanged. The closed
+  Work Leaf worktree's pre-existing changes are left untouched.
+
+- 2026-09-17 22:38–22:42 UTC: tiny qualification 001 stops at 143,950 fully
+  measured parent tokens after invalid CLI option placement and an unexpected
+  output file. It generated no child response. Retain the failure and supply
+  exact in-memory launch/resume syntax for qualification 002. Its author repairs
+  a multiline shell representation error, then successfully launches and resumes
+  one GPT-5.5/xhigh child. Both replies are asserted; the live observer includes
+  21,927 child tokens once. No source changes or pricing gap is present.
+  The separate native-sandbox probe fails before agent startup with read-only
+  local-state initialization (zero child generation); a single `codex doctor`
+  reports ChatGPT auth, reachable service and no failed diagnostics. Native
+  sandbox restrictions remain unchanged, and blocked verification is not green.
+
+- 2026-09-17 22:26–22:36 UTC: read the restart contract and all three retained
+  failure reports. None of the latest all-on observations is complete, so none
+  can replace a complete new observation. Six new regressions initially fail
+  (three assertions and three missing-module errors). The repair pins nested
+  Codex model/login, strips API credentials, includes native child histories in
+  totals without counting resumed cumulative usage twice, and sends unchanged
+  features through whole-request review. Rejected unchanged work still requires
+  repair/re-review. The first real zero-generation environment probe detects
+  shell startup restoring an API-key variable; an additional failing regression
+  precedes the fix. Probe 002 passes with ChatGPT/GPT-5.5/xhigh and the guarded
+  command path. No model or API generation has occurred in these probes.
 
 - Earlier implementation verification: 35 local tests; one tiny two-feature
   all-on attempt stopped at its token ceiling; a real conflict/interruption

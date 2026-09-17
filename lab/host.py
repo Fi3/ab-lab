@@ -398,7 +398,9 @@ def render_output(text, _path=None):
 
 
 class Host:
-    def __init__(self, repo, artifact_dir, feature, stage, deadline, factors):
+    def __init__(self, repo, artifact_dir, feature, stage, deadline, factors, *, command_env=None):
+        from .environment import clean_env
+        self.command_env = dict(clean_env(command_env), AGENT_LAB_CHILD="1")
         self.repo = Path(repo).resolve(strict=True)
         self.artifacts = Path(artifact_dir).absolute()
         self.artifacts.mkdir(parents=True, exist_ok=False)
@@ -491,7 +493,7 @@ class Host:
         folder = self.operation_dir()
         save_json(folder / "request.json", {"command": command, "declared_paths": declared})
         seconds = min(COMMAND_SECONDS, self.deadline - time.monotonic())
-        env = dict(os.environ, AGENT_LAB_CHILD="1")
+        env = self.command_env
         receipt = execute_child(["/bin/sh", "-c", command], self.repo, None, folder / "stdout.txt", folder / "stderr.txt", seconds, env)
         after = snapshot(self.repo)
         receipt.update(command=command, declared_paths=declared, before=state_summary(before), after=state_summary(after))

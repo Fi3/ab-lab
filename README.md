@@ -10,20 +10,20 @@ implementation, independent code review, repairs, then final integration.
 The tool measures results; it does not assume that an enabled behavior saves
 tokens or promise a particular saving.
 
-The main Codex connection requires an existing ChatGPT subscription and rejects
-API-key authentication. Separate agent-launched commands are not covered by all
-of the same controls; see the validation limitation below. This is a standalone
+The Codex connection requires an existing ChatGPT subscription and rejects
+API-key authentication. Command-launched Codex uses a run-local launcher with
+the same model, reasoning setting and subscription policy. This is a standalone
 Python command-line tool;
 no other agent orchestrator, service, dashboard or third-party Python package
 is required.
 
 **Validation status:** the full all-on/all-off comparison is incomplete.
 Request interruption, parent-response accounting and actual native Git-history
-rewriting pass their small real-agent checks. A later full attempt reveals that
-separately launched Codex verification processes escape token accounting and the
-pinned model settings. The runner also rejects feature completion without a new
-commit, even when the author checks existing code. The tool is not qualified for
-full token comparisons involving those paths. No saving percentage is established.
+rewriting pass their small real-agent checks. Host-run nested launch/resume and
+independently reviewed no-change completion pass a real tiny workflow with
+complete usage and ten passing feature tests. Native-sandbox child startup has
+an explicit pre-agent filesystem limitation. The three earlier
+full-batch attempts remain failed or partial. No saving percentage is established.
 See [verification and retained failures](VERIFICATION.md).
 
 - [How a benchmark runs](#how-a-benchmark-runs)
@@ -52,6 +52,12 @@ Features run **one after another, not in parallel**. For each feature:
 3. If the reviewer finds problems, the same author repairs them and the same
    reviewer checks again. This continues until review is clean or a run limit
    or execution failure stops the run.
+
+If the requested feature already exists, the author need not invent source
+changes. The independent reviewer checks the complete requested behavior and its
+tests; an empty diff is not approval. A verified unchanged feature receives an
+explicit verification-only empty commit during final integration. It still has
+an author, review, any necessary repairs and the same final checks.
 
 Only then does the next feature begin, with a new author and reviewer. After all
 features pass review, a separate integration agent proposes how to assemble the
@@ -520,11 +526,14 @@ complete workflows with no flagged usage gaps. They also require matching
 settings other than the behavior switches: benchmark, starting commit, runner
 code, model, reasoning effort, effective configuration and run limits.
 
-Known limitation: these checks cover the runner's main provider only. A Codex
-process launched inside a verification command can use different settings and
-generate uncounted tokens without setting a missing-usage flag. A successful
-comparison command alone does not establish complete accounting for that path.
-See the [retained nested-call failure](experiments/on-off-20260917-r3/RESULT.md).
+Nested Codex verification inside the owned checkout is included separately in
+`usage.nested` and in the total. Its model, reasoning setting, native turn
+completion and usage counters are checked. Launch and resume of one conversation
+share a counter; the earlier total is not added again. Contradictory command-line
+model/provider overrides are rejected. A detected child mismatch or incomplete
+child measurement prevents a valid comparison. Commands that deliberately bypass
+the launcher, generate with another product, or generate outside the owned
+checkout are unsupported; this is not a universal process/billing audit.
 
 ### Comparing two settings
 
@@ -581,6 +590,13 @@ are already part of output. Neither is added a second time. Each increase in a
 conversation's cumulative usage counter is counted once; repeated notifications
 do not count as new usage.
 
+The local observer reads native Codex histories whose working directory belongs
+to the run's separate checkout. Parent conversations already priced through the
+main connection are excluded from child totals. Native child records retain
+their source paths, model/effort, reported subscription plan and turn coverage.
+The launcher and environment hooks live outside measured source. They do not
+copy credentials or change the user's global Codex configuration.
+
 Missing final usage reports and decreasing counters are flagged, not treated as
 zero usage. A returned incomplete measurement stops the workflow before another
 host operation or agent turn. `measurement_complete` means that the tool detected no missing
@@ -616,6 +632,7 @@ required background for using the tool.
 | Supported switches, dependencies and author instructions | [lab/config.py](lab/config.py): `settings`, `policy_blocks`, `author_policy` |
 | Conflict text, edit formats, real operation results and reminders | [lab/host.py](lab/host.py): `refresh_text`, `Host.refresh`, `plan_edit`, `plan_unified`, `Host.consume` |
 | Subscription connection, interruption and usage accounting | [lab/provider.py](lab/provider.py): `Codex`, `InterruptGate`, `Usage` |
+| Nested command settings and owned child usage | [lab/nested.py](lab/nested.py): `CommandEnvironment`, `NestedUsage` |
 | Incremental operator monitoring, including missing response coverage | [lab/monitor.py](lab/monitor.py): `sample` |
 | Feature/review/repair sequence, controlled file change, integration and comparisons | [lab/workflow.py](lab/workflow.py): `run`, `after_read_fixture`, `integration_prompts`, `compare`, `interaction` |
 | Commands and preset settings | [lab/__main__.py](lab/__main__.py): `main`, `factors_from` |

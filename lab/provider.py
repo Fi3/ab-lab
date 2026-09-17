@@ -11,12 +11,8 @@ import threading
 import time
 
 from .host import Fatal, Rejected, parse_operations, save_json
-
-
-def clean_env(environment=None):
-    blocked = {"OPENAI_API_KEY", "CODEX_API_KEY", "OPENAI_BASE_URL", "OPENAI_API_BASE",
-               "AZURE_OPENAI_API_KEY", "AZURE_OPENAI_ENDPOINT", "CODEX_CHATGPT_BASE_URL"}
-    return {k: v for k, v in (os.environ if environment is None else environment).items() if k not in blocked}
+from .environment import clean_env
+from .nested import CommandEnvironment, NestedUsage
 
 
 class Usage:
@@ -93,12 +89,16 @@ class Codex:
         self.process = None
         if os.environ.get("AGENT_LAB_CHILD") == "1":
             raise Fatal("recursive benchmark generation is forbidden")
-        argv = [executable, "--disable", "apps", "-c", 'forced_login_method="chatgpt"',
+        self.commands = CommandEnvironment(self.repo, self.artifacts / "commands", model, effort, executable)
+        self.command_env = self.commands.env
+        self.nested = NestedUsage(self.repo, model, effort)
+        self.parent_threads = set()
+        argv = [self.commands.executable, "--disable", "apps", "-c", 'forced_login_method="chatgpt"',
                 "-c", 'model_provider="openai"', "-c", 'model='+json.dumps(model),
                 "-c", 'model_reasoning_effort='+json.dumps(effort),
+                *self.commands.config_arguments(),
                 "app-server", "--listen", "stdio://"]
-        env = clean_env()
-        env["AGENT_LAB_CHILD"] = "1"
+        env = self.command_env
         try:
             self.process = subprocess.Popen(argv, cwd=self.repo, env=env, stdin=subprocess.PIPE,
                 stdout=subprocess.PIPE, stderr=self.stderr, text=True, bufsize=1, start_new_session=True)
@@ -116,9 +116,11 @@ class Codex:
             provider = config.get("model_providers", {}).get("openai", {})
             if provider.get("base_url") or provider.get("env_key") or provider.get("http_headers") or provider.get("env_http_headers"):
                 raise Fatal("custom OpenAI provider endpoint/auth configuration is not admitted")
-            self.identity = {"codex_version": subprocess.check_output([executable, "--version"], text=True).strip(),
+            normalized_config = json.dumps(config, sort_keys=True).replace(str(self.artifacts.resolve()), "<RUN_PROVIDER>")
+            self.identity = {"codex_version": subprocess.check_output([self.commands.executable, "--version"], text=True, env=clean_env()).strip(),
                 "auth": "chatgpt", "model": model, "effort": effort,
-                "effective_config_sha256": hashlib.sha256(json.dumps(config, sort_keys=True).encode()).hexdigest()}
+                "effective_config_sha256": hashlib.sha256(normalized_config.encode()).hexdigest(),
+                "nested_policy": "same-model-subscription-native-history-v1"}
             save_json(self.artifacts / "provider.json", self.identity)
             if require_git_write:
                 self.verify_git_write()
@@ -207,12 +209,27 @@ class Codex:
             "sandbox": "workspace-write" if writable else "read-only",
             "config": {"model_reasoning_effort": self.effort},
             "experimentalRawEvents": False})
+        self.parent_threads.add(result["thread"]["id"])
         return result["thread"]["id"]
+
+    def child_report(self, force=False):
+        if not hasattr(self, "nested"):
+            return {"observed_raw_tokens": 0, "cached_input_tokens": 0,
+                    "measurement_complete": True, "errors": [], "incomplete": []}
+        parents = self.parent_threads | set(self.usage.totals)
+        self.nested.refresh(parents, force=force)
+        return self.nested.report(parents)
+
+    def observed_raw(self):
+        child = self.child_report()
+        if child["errors"]:
+            raise Fatal("nested agent isolation/accounting failure: "+"; ".join(child["errors"]))
+        return self.usage.raw+child["observed_raw_tokens"]
 
     def turn(self, thread, prompt, label, interrupt=False, host_request=False, writable=False):
         if len(self.turns) >= self.max_turns:
             raise Fatal("workflow turn limit reached")
-        if time.monotonic() >= self.deadline or self.usage.raw >= self.max_raw:
+        if time.monotonic() >= self.deadline or self.observed_raw() >= self.max_raw:
             raise Fatal("workflow wall-time/observed-token limit reached")
         folder = self.artifacts / f"turn-{len(self.turns)+1:04d}"
         folder.mkdir()
@@ -236,7 +253,7 @@ class Codex:
                 if stop_at is not None and now-stop_at > 15:
                     raise Fatal("interrupted turn did not close within 15 seconds; retained with unknown tail")
                 if interrupted is None:
-                    budget = now >= self.deadline or self.usage.raw >= self.max_raw
+                    budget = now >= self.deadline or self.observed_raw() >= self.max_raw
                     reason = "budget" if budget else gate.reason(now)
                     if reason:
                         self.counter += 1
@@ -330,9 +347,14 @@ class Codex:
             self.active = None
 
     def report(self):
+        child = self.child_report(force=True)
         return {**self.usage.report(), "turns": self.turns, "unpriced_or_incomplete_turns": self.missing_turns,
-                "measurement_complete": not self.missing_turns and not self.usage.uncertain and bool(self.turns),
-                "qualification": "provider counters and per-turn last-message coverage; not a proof that every internal response was priced"}
+                "parent_observed_raw_tokens": self.usage.raw, "nested": child,
+                "observed_raw_tokens": self.usage.raw+child["observed_raw_tokens"],
+                "cached_input_tokens": self.usage.cached+child["cached_input_tokens"],
+                "measurement_complete": (not self.missing_turns and not self.usage.uncertain and bool(self.turns)
+                                         and child["measurement_complete"]),
+                "qualification": "parent per-turn last-message coverage plus owned native child lifecycle/model/counters; not a proof that every internal response was priced"}
 
     def close(self):
         if self.process is not None and self.process.poll() is None:
