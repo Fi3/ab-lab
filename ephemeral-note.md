@@ -1,24 +1,28 @@
 # Benchmark attempts ended: 6 | Successful full benchmarks: 0
 
-Current approved batch: **0 / 6 ended**. The required real Git-rewrite check PASSED.
-Accounting repairs verified: **3 / 3**. Both real-agent qualification gates pass.
-Both previous batches retain three failed attempts and three unstarted slots each.
+Current approved batch: **0 / 6 ended**; **0 passed**, **0 failed**, **3 running**.
+Accounting repair and actual Git-history rewrite both passed real-agent verification.
+Both earlier batches retain three failed attempts and three unstarted slots each.
 
-Last sampled: 2026-09-17T20:11:42.184547+00:00.
-Last updated: 2026-09-17 20:40 UTC.
-Current activity: the real Git-rewrite check passes with 191,320 fully measured raw tokens, changed history and ten passing tests. Starting three all-on workflows concurrently, with the observer from launch. Three all-off workflows follow after that wave ends.
-On-01/on-03 reached final integration with complete reported usage. On-02's sole incomplete response is the deliberate safety cancellation, not an earlier returned-response gap.
-The real check used 76,865 raw tokens in 37.59 seconds, with six fully measured turns.
-Measured on-versus-off reduction: NOT AVAILABLE; the requested comparison is not complete.
+Last sampled: 2026-09-17T20:57:41.172401+00:00.
+Current activity: Approved workflows are running; source, settings and limits remain frozen.
+Measured on-versus-off reduction: NOT AVAILABLE until the complete comparison is verified.
 The expected roughly 50% difference is not a result.
-[Result and exact failure](experiments/on-off-20260917/RESULT.md).
-[Approved continuation](experiments/on-off-20260917-r2/REPAIR-AND-RUN-AUTHORITY.md).
-[Replacement protocol](experiments/on-off-20260917-r2/PROTOCOL.md) · [Repair evidence](experiments/on-off-20260917-r2/QUALIFICATION.md).
-[Replacement result and exact Git failure](experiments/on-off-20260917-r2/RESULT.md).
-[Current conditional admission and frozen source](experiments/on-off-20260917-r3/PROTOCOL.md).
+[Current protocol](experiments/on-off-20260917-r3/PROTOCOL.md) · [Real-agent qualification](experiments/on-off-20260917-r3/QUALIFICATION.md).
+Git-rewrite verification used 191,320 raw tokens; the earlier accounting check used 76,865. Neither is a benchmark observation.
 
-This is the standalone tool's six-run validation, separate from Work Leaf's old
-research task counter. The retained observer sampled response coverage every 15 seconds.
+| Current run | All nine switches | State | Observed raw tokens | Missing response counts |
+| --- | --- | --- | ---: | ---: |
+| on-01 | On | Feature 1: text selection / repair 1 | 3,648,874 | 0 |
+| on-02 | On | Feature 1: text selection / review 2 | 3,013,250 | 0 |
+| on-03 | On | Feature 1: text selection / review 1 | 1,823,758 | 0 |
+| off-01 | Off | Not started | — | 0 |
+| off-02 | Off | Not started | — | 0 |
+| off-03 | Off | Not started | — | 0 |
+
+Live snapshots: [current status](runs/on-off-20260917-r3/monitor/current.json);
+complete 15-second history: runs/on-off-20260917-r3/monitor/samples.jsonl.
+This separate tool validation does not change Work Leaf's old research counter.
 
 ## Previous replacement batch — retained failed observations
 
@@ -33,9 +37,9 @@ research task counter. The retained observer sampled response coverage every 15 
 | off-03 | Off | Not started: shared Git-permission failure | — | 0 |
 <!-- replacement-live-table-end -->
 
-Current 15-second snapshots: [live status](runs/on-off-20260917-r2/monitor/current.json),
+Retained replacement snapshots: [saved status](runs/on-off-20260917-r2/monitor/current.json),
 with the full history in `runs/on-off-20260917-r2/monitor/samples.jsonl`.
-The observer and all generators are stopped. Failed totals are not completed-benchmark totals.
+That batch's observer and generators are stopped. Failed totals are not completed-benchmark totals.
 
 ## Previous batch — retained failed observations
 
@@ -316,3 +320,21 @@ That previous observer is stopped; the replacement observer is separate.
   token counts, and 191,320 raw tokens stay below the approved threshold.
   The original source and frozen program hashes are unchanged. The conditional
   six-workflow gate passes; no further permission pause is needed.
+- 2026-09-17 20:41:26 UTC: launch on-01/on-02/on-03 concurrently from
+  committed source `2563ea1`; the 15-second observer starts first, at 20:41:25.
+  Runner PIDs are 1320896/1320920/1320906; owning sessions 52740/75945/8150.
+  Observer PID 1320876, session 72660. Each native Git preflight passes before
+  generation; all three actual provider identities and configuration hashes
+  match the approved preflight. No off workflow has started.
+- 2026-09-17 20:52 UTC: on-02 reaches the first independent text-selection
+  review; on-01/on-03 remain in implementation. Several multi-minute model
+  responses leave live totals temporarily unchanged, then return with usage.
+  No failed response, missing returned count or counter decrease is detected.
+  All three source manifests and all-on switch sets match the frozen protocol.
+  The three external scoring fixture hashes also match; scoring waits until
+  generation ends so it does not alter concurrent benchmark resource load.
+- 2026-09-17 20:57 UTC: all three initial implementations reach independent
+  review. On-02 submits its first repair and starts review two; on-01 makes
+  its first repair; on-03 is in review one. These are ordinary measured feature
+  iterations, not setup failures or replacement observations. All returned-turn
+  coverage checks remain clear; about 569 GiB of disk remains available.
