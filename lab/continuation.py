@@ -137,4 +137,6 @@ def continue_native(previous, output, expected_head, *, backend=None, redundant_
     return run(manifest['benchmark'], manifest['factors'], output,
         record['remaining_seconds'], manifest['limits']['observed_raw_tokens'],
         manifest['limits']['turns'], manifest['model'], manifest['effort'],
-        backend=backend or Codex, _prepared=record)
+        backend=backend or Codex, _prepared=record,
+        scb_check=manifest.get('scb_check', {}).get('executable'),
+        scb_seconds=manifest.get('scb_check', {}).get('seconds_per_check', 300))

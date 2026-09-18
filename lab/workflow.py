@@ -1,6 +1,7 @@
 """One isolated, sequential implement/review/repair workflow per invocation."""
 import hashlib
 import json
+import math
 from pathlib import Path
 import subprocess
 import time
@@ -8,6 +9,7 @@ import time
 from .config import author_policy
 from .host import Fatal, Rejected, Host, execute_child, git, save_json, snapshot, parse_operations, relative_path
 from .provider import Codex, clean_env
+from . import scb
 
 
 def fingerprint(value):
@@ -98,9 +100,12 @@ def after_read_fixture(host, fixture, output, deadline):
 
 
 def run(benchmark, factors, output, seconds, max_raw, max_turns,
-        model="gpt-5.5", effort="xhigh", executable="codex", backend=Codex, *, _prepared=None):
+        model="gpt-5.5", effort="xhigh", executable="codex", backend=Codex, *,
+        scb_check=None, scb_seconds=300, _prepared=None):
     if seconds <= 0 or max_raw <= 0 or max_turns <= 0:
         raise ValueError("positive wall-time, observed-token and turn limits are required")
+    if not math.isfinite(scb_seconds) or scb_seconds <= 0:
+        raise ValueError("scb-check needs a positive finite time limit")
     fixture = benchmark.get("after_read")
     if fixture and not factors["C17"]:
         raise ValueError("after_read fixture requires mediated host reads (C17=on)")
@@ -113,6 +118,8 @@ def run(benchmark, factors, output, seconds, max_raw, max_turns,
     provider = None
     result = {"schema": "agent-behavior-lab/v1", "status": "failed", "factors": factors,
               "output": str(output), "stages": [], "checkpoints": [], "checks": [], "factor_activations": {}}
+    if scb_check is not None:
+        result["scb_check"] = scb.pending()
     start = time.monotonic()
     code = source_hashes()
     try:
@@ -122,6 +129,8 @@ def run(benchmark, factors, output, seconds, max_raw, max_turns,
                     "model": model, "effort": effort, "source_sha256": code,
                     "workflow": "sequential-implement-review-repair-then-plan-accept-and-one-commit-per-feature",
                     "transport": "codex-app-server-stdio", "created_at_unix": time.time()}
+        if scb_check is not None:
+            manifest["scb_check"] = {"executable": str(scb_check), "seconds_per_check": scb_seconds}
         if _prepared:
             if factors["C17"] or base != _prepared['manifest']['base_commit']:
                 raise Fatal('continuation must preserve native custody and the original base')
@@ -150,6 +159,29 @@ def run(benchmark, factors, output, seconds, max_raw, max_turns,
         git(checkout, "config", "user.name", "Agent Behavior Lab")
         git(checkout, "config", "user.email", "agent-behavior-lab@example.invalid")
         git(checkout, "config", "commit.gpgSign", "false")
+        quality = result.get("scb_check")
+        if quality is not None:
+            quality["tool"] = scb.prepare(scb_check, output, deadline, scb_seconds)
+
+        def score(phase):
+            if quality is None:
+                return
+            observation = scb.measure(checkout, output, phase, quality["tool"], deadline)
+            quality["measurements"][phase] = observation
+            if observation["status"] != "completed":
+                raise Fatal(f"scb-check {phase}: {observation['error']}")
+            if all(m["status"] == "completed" for m in quality["measurements"].values()):
+                quality["status"] = "completed"
+
+        if quality is not None and _prepared:
+            prior = _prepared["result"].get("scb_check", {})
+            initial = prior.get("measurements", {}).get("before_changes", {})
+            if (prior.get("tool") != quality["tool"] or initial.get("status") != "completed"
+                    or initial.get("commit") != base):
+                raise Fatal("continuation needs the same scb-check tool and original before-changes result")
+            quality["measurements"]["before_changes"] = initial
+        else:
+            score("before_changes")
         provider = backend(checkout, output / "provider", model, effort, deadline, max_raw, max_turns, executable,
                            require_git_write=True)
         if _prepared:
@@ -162,6 +194,8 @@ def run(benchmark, factors, output, seconds, max_raw, max_turns,
                 raise Fatal('continuation did not recover exact prior complete costs')
         invariant = {k: v for k, v in manifest.items() if k not in ("factors", "created_at_unix")}
         invariant["provider"] = provider.identity
+        if quality is not None:
+            invariant["scb_check_tool"] = quality["tool"]
         result["comparison_key"] = fingerprint(invariant)
         save_json(output / "invariants.json", invariant)
 
@@ -237,6 +271,7 @@ def run(benchmark, factors, output, seconds, max_raw, max_turns,
                     result["factor_activations"][key] = result["factor_activations"].get(key, 0)+count
             save_json(output / (name+"-result.json"), {**checkpoint, "factor_activations": host.activations if host else {"C17": "native tools"}})
 
+        score("after_implementation")
         reviewed = git(checkout, "rev-parse", "HEAD").decode().strip()
         git(checkout, "update-ref", "refs/agent-lab/reviewed", reviewed)
         plan, accept = integration_prompts(benchmark, base, result["checkpoints"])
@@ -250,6 +285,7 @@ def run(benchmark, factors, output, seconds, max_raw, max_turns,
         commits = git(checkout, "rev-list", "--reverse", base+"..HEAD").decode().splitlines()
         if len(commits) != len(benchmark["features"]) or git(checkout, "rev-list", "--merges", base+"..HEAD"):
             raise Fatal("final history must be linear with exactly one commit per feature")
+        score("after_assembly")
         for index, command in enumerate(benchmark["checks"], 1):
             folder = output / f"check-{index:02d}"
             folder.mkdir()

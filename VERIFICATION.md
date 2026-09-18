@@ -1,5 +1,29 @@
 # Verification
 
+## Three code-quality checkpoints — 2026-09-18
+
+All 94 local tests, Python compilation and the whitespace check pass. The ten
+scoring tests cover stage order, exact source boundaries, unchanged prompts,
+findings versus execution errors, missing executables, bad reports, timeout,
+source mutation, final functional-test failure, preserved initial scores during
+saved-work continuation, CLI/report output and the actual scb-check executable.
+The initial eight tests fail before implementation and pass afterward.
+
+One tiny real-subscription workflow with scb-check 0.2.0 passes: implement and
+test negation, independent review, integration plan/accept, one final commit,
+the repository test suite and a separate behavior assertion. The three quality
+reports match their saved raw JSON and commit IDs. All return exit 1 (findings),
+which correctly remains a completed observation rather than a failed run.
+The final two scores refer to the same source because integration requires no
+additional edits in this tiny example. Source/history rewriting is separately
+covered by the two-feature automated test, not claimed from this real example.
+
+The real workflow uses 273,303 raw tokens in four completed turns, with complete
+usage and no nested generation, and finishes in 175.98 seconds. The checker
+runs locally with no model calls, and its output never appears in model prompts.
+No previous large benchmark is repeated. Existing staged README edits remain
+separate from this implementation. [Full result and evidence](experiments/scb-check-20260918/RESULT.md).
+
 ## Neutral disabled instructions — 2026-09-18
 
 C13/C14/C15/C16 OFF leave ordinary agent/repository policy intact. All 84 local

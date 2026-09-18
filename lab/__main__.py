@@ -1,4 +1,4 @@
-"""Run with python3 -m lab. No installation or third-party packages required."""
+"""Run with python3 -m lab; scb-check is an external measurement command."""
 import argparse
 import json
 from pathlib import Path
@@ -35,6 +35,8 @@ def main():
         p.add_argument("--off", default="", help="comma-separated C identifiers")
         p.add_argument("--model", default="gpt-5.5")
         p.add_argument("--effort", choices=("minimal", "low", "medium", "high", "xhigh"), default="xhigh")
+        p.add_argument("--scb-check", default="scb-check", help="scb-check executable; required for the three quality measurements")
+        p.add_argument("--scb-seconds", type=float, default=300, help="maximum seconds per quality measurement, within the workflow deadline")
         if name == "run":
             p.add_argument("--out", type=Path, required=True, help="new run directory; must not exist")
             p.add_argument("--seconds", type=int, required=True)
@@ -60,9 +62,13 @@ def main():
             benchmark, factors = load_benchmark(args.benchmark), factors_from(args)
             if args.command == "plan":
                 value = {"benchmark": benchmark, "factors": factors, "model": args.model, "effort": args.effort,
-                         "author_policy": author_policy(factors), "generation": "none"}
+                         "author_policy": author_policy(factors), "generation": "none",
+                         "scb_check": {"executable": args.scb_check, "seconds_per_check": args.scb_seconds,
+                                       "phases": ["before_changes", "after_implementation", "after_assembly"]}}
             else:
-                value = run(benchmark, factors, args.out, args.seconds, args.max_raw, args.max_turns, args.model, args.effort, args.codex)
+                value = run(benchmark, factors, args.out, args.seconds, args.max_raw, args.max_turns,
+                            args.model, args.effort, args.codex,
+                            scb_check=args.scb_check, scb_seconds=args.scb_seconds)
         elif args.command == "doctor":
             provider = Codex(args.repo.resolve(strict=True), args.out, "gpt-5.5", "xhigh", time.monotonic()+30, 1, 1, args.codex)
             try:
@@ -78,7 +84,8 @@ def main():
                 value = interaction(*(read(p) for p in args.results))
             else:
                 value = [{"path": str(p), "status": (r := read(p))["status"], "factors": r["factors"],
-                          "usage": r["usage"], "error": r.get("error")} for p in args.results]
+                          "usage": r["usage"], "scb_check": r.get("scb_check"),
+                          "error": r.get("error")} for p in args.results]
         print(json.dumps(value, indent=2))
         return 1 if isinstance(value, dict) and value.get("status") == "failed" else 0
     except (OSError, ValueError, RuntimeError, Fatal) as exc:

@@ -12,10 +12,10 @@ tokens or promise a particular saving.
 
 The Codex connection requires an existing ChatGPT subscription and rejects
 API-key authentication. Command-launched Codex uses a run-local launcher with
-the same model, reasoning setting and subscription policy. This is a standalone
-Python command-line tool;
-no other agent orchestrator, service, dashboard or third-party Python package
-is required.
+the same model, reasoning setting and subscription policy. The standalone
+Python runner uses only the standard library and invokes `scb-check` as a
+separately installed local program. No other agent orchestrator, service or
+dashboard is required.
 
 **Validation status:** a complete three-all-on versus three-all-off comparison
 is not established. The retained six-run test has two all-off time-limit failures
@@ -30,6 +30,7 @@ nested launch/resume and cost-preserving recovery. See the
 
 - [How a benchmark runs](#how-a-benchmark-runs)
 - [Quick start](#quick-start)
+- [Code-quality measurements](#code-quality-measurements)
 - [Choosing behaviors](#choosing-behaviors)
 - [Every behavior explained](#every-behavior-explained)
 - [Using your own benchmark](#using-your-own-benchmark)
@@ -90,9 +91,23 @@ checkpoint remain preserved. See the [recovery verification](VERIFICATION.md).
 
 ## Quick start
 
-Requirements: Python 3.11 or newer, Git, and the Codex CLI already configured
-with your ChatGPT subscription login. Run the commands below from this
-repository's root directory.
+Requirements: Python 3.11 or newer for the runner, Git, the Codex CLI already
+configured with your ChatGPT subscription login, and the external `scb-check`
+program. The runner uses only Python's standard library; `scb-check` has its own
+Python 3.12+ environment and dependencies. It runs locally without a model or
+API credits. Run the commands below from this repository's root directory.
+
+For example, using a Python 3.12+ interpreter:
+
+```sh
+python3 -m venv .venv
+.venv/bin/python -m pip install scb-check==0.2.0
+. .venv/bin/activate
+```
+
+Alternatively, keep your existing environment and pass
+`--scb-check /absolute/path/to/scb-check` to `run`. Installation never happens
+automatically during a measured workflow.
 
 ```sh
 python3 -m unittest discover -s tests -v
@@ -461,6 +476,38 @@ The completion marker `@standalone done` remains required with C38 off; turning
 off the reminder does not remove the way to finish. Real failures, pending file
 changes and review findings still require handling. The reviewer and final
 integration agent are not skipped.
+
+## Code-quality measurements
+
+Every CLI `run` calls [scb-check](https://github.com/gabeorlanski/scb-check)
+at three points, regardless of behavior-switch settings:
+
+| Result key | Source measured |
+| --- | --- |
+| `before_changes` | The untouched starting commit, before any agent starts |
+| `after_implementation` | All features after their independent reviews and repairs, before final assembly |
+| `after_assembly` | The assembled work with one final commit per feature, before the runner's final test commands |
+
+The three scores measure flagged duplication/patterns and concentration of
+complexity. They **do not measure whether the requested features work**. The
+functional tests and token totals remain separate. Findings are reported even
+when final tests fail; an unfinished phase has `not_run`, not a zero score.
+
+Full JSON reports appear in `result.json` under `scb_check.measurements`, in the
+`run` output and in `python3 -m lab report ...`. Each measurement also retains
+its commit, source-tree identifier, command, elapsed time, stdout and stderr.
+The installed checker version and executable hash are recorded.
+
+Scores are never put in agent prompts or used to demand extra repairs. A report
+with findings is a completed measurement, not a failed benchmark. A missing
+checker, invalid report, timeout or unexpected source modification is an error;
+the run stops with its earlier evidence intact. The initial scan happens before
+subscription usage. Each scan defaults to 300 seconds and must fit the overall
+workflow deadline; `--scb-seconds` selects a different bound.
+
+See [the scoring guide](SCB-CHECK.md) for metric definitions, exact commands,
+supported languages, output layout and limitations. Old results without these
+measurements remain unmodified; `report` displays their `scb_check` as `null`.
 
 ## Using your own benchmark
 

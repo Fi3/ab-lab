@@ -1,0 +1,230 @@
+{
+  "status": "passed",
+  "verification": "one real-subscription tiny workflow; not a savings comparison",
+  "raw_result": "runs/scb-check-20260918/real-01/workflow/result.json",
+  "duration_seconds": 175.98144130400033,
+  "raw_tokens": 273303,
+  "measurement_complete": true,
+  "factors": {
+    "C08": false,
+    "C13": true,
+    "C14": true,
+    "C15": true,
+    "C16": false,
+    "C17": false,
+    "C20": true,
+    "C25": false,
+    "C38": true
+  },
+  "stages": [
+    {
+      "stage": "negate-implement",
+      "thread_id": "01a0b4fc-e2fb-7e13-837e-95158f066b23",
+      "started_at_unix": 1789742867.2422507
+    },
+    {
+      "stage": "negate-review-1",
+      "thread_id": "01a0b4fd-dd19-7b00-a866-5edafbdb0b97",
+      "started_at_unix": 1789742931.2760725
+    },
+    {
+      "stage": "integration-plan",
+      "thread_id": "01a0b4fe-4a24-7e10-b479-1d4cdc4c7b4b",
+      "started_at_unix": 1789742959.190484
+    },
+    {
+      "stage": "integration-accept",
+      "thread_id": "01a0b4fe-4a24-7e10-b479-1d4cdc4c7b4b",
+      "started_at_unix": 1789743014.6152859
+    }
+  ],
+  "final_commits": [
+    "2dcaf71ca38e175dbc5b758a8a3509aa0b370064"
+  ],
+  "checks": [
+    {
+      "argv": [
+        "/bin/sh",
+        "-c",
+        "python3 -m unittest discover -s tests -v"
+      ],
+      "exit_code": 0,
+      "timed_out": false,
+      "cancelled_signal": null,
+      "duration_seconds": 0.06346571099129505,
+      "command": "python3 -m unittest discover -s tests -v"
+    },
+    {
+      "argv": [
+        "/bin/sh",
+        "-c",
+        "python3 -c 'from numbers_demo import identity, negate; assert identity(3) == 3; assert [negate(x) for x in (3, -4, 0)] == [-3, 4, 0]'"
+      ],
+      "exit_code": 0,
+      "timed_out": false,
+      "cancelled_signal": null,
+      "duration_seconds": 0.01563480100594461,
+      "command": "python3 -c 'from numbers_demo import identity, negate; assert identity(3) == 3; assert [negate(x) for x in (3, -4, 0)] == [-3, 4, 0]'"
+    }
+  ],
+  "scb_check": {
+    "status": "completed",
+    "measurements": {
+      "before_changes": {
+        "phase": "before_changes",
+        "status": "completed",
+        "started_at_unix": 1789742866.384957,
+        "artifacts": "/home/user/src/agent-behavior-lab/runs/scb-check-20260918/real-01/workflow/scb-check/before_changes",
+        "commit": "e92cac33aadc10f471794245ea104a1b118c1f8d",
+        "tree": "8687bd607852c8baa594099cc544efdc7fb5b193",
+        "argv": [
+          "/home/user/src/agent-behavior-lab/.venv/bin/scb-check",
+          "check",
+          ".",
+          "--output-format",
+          "json"
+        ],
+        "exit_code": 1,
+        "timed_out": false,
+        "cancelled_signal": null,
+        "duration_seconds": 0.5348700500035193,
+        "report": {
+          "verbosity": 0.2222222222222222,
+          "erosion": 0,
+          "cog_erosion": 0,
+          "files_scanned": 2,
+          "total_loc": 9,
+          "verbosity_flagged_loc": 2,
+          "clone_loc": 0,
+          "ast_grep_flagged_loc": 0,
+          "structural_rule_loc": 2,
+          "structural_rule_findings": 1,
+          "total_functions": 2,
+          "high_cc_functions": 0,
+          "high_cog_functions": 0,
+          "total_mass": 2.8284271247461903,
+          "high_cc_mass": 0,
+          "total_cog_mass": 0,
+          "high_cog_mass": 0,
+          "syntax_tree_count": 2,
+          "syntax_node_count": 83,
+          "syntax_by_language": {
+            "python": {
+              "tree_count": 2,
+              "node_count": 83
+            }
+          }
+        },
+        "findings_present": true
+      },
+      "after_implementation": {
+        "phase": "after_implementation",
+        "status": "completed",
+        "started_at_unix": 1789742958.6030774,
+        "artifacts": "/home/user/src/agent-behavior-lab/runs/scb-check-20260918/real-01/workflow/scb-check/after_implementation",
+        "commit": "2dcaf71ca38e175dbc5b758a8a3509aa0b370064",
+        "tree": "604853abf8aca7e523cec3fe3ccb947c22b050e2",
+        "argv": [
+          "/home/user/src/agent-behavior-lab/.venv/bin/scb-check",
+          "check",
+          ".",
+          "--output-format",
+          "json"
+        ],
+        "exit_code": 1,
+        "timed_out": false,
+        "cancelled_signal": null,
+        "duration_seconds": 0.5294732280017342,
+        "report": {
+          "verbosity": 0.1111111111111111,
+          "erosion": 0,
+          "cog_erosion": 0,
+          "files_scanned": 2,
+          "total_loc": 18,
+          "verbosity_flagged_loc": 2,
+          "clone_loc": 0,
+          "ast_grep_flagged_loc": 0,
+          "structural_rule_loc": 2,
+          "structural_rule_findings": 1,
+          "total_functions": 6,
+          "high_cc_functions": 0,
+          "high_cog_functions": 0,
+          "total_mass": 8.485281374238571,
+          "high_cc_mass": 0,
+          "total_cog_mass": 0,
+          "high_cog_mass": 0,
+          "syntax_tree_count": 2,
+          "syntax_node_count": 194,
+          "syntax_by_language": {
+            "python": {
+              "tree_count": 2,
+              "node_count": 194
+            }
+          }
+        },
+        "findings_present": true
+      },
+      "after_assembly": {
+        "phase": "after_assembly",
+        "status": "completed",
+        "started_at_unix": 1789743041.4919448,
+        "artifacts": "/home/user/src/agent-behavior-lab/runs/scb-check-20260918/real-01/workflow/scb-check/after_assembly",
+        "commit": "2dcaf71ca38e175dbc5b758a8a3509aa0b370064",
+        "tree": "604853abf8aca7e523cec3fe3ccb947c22b050e2",
+        "argv": [
+          "/home/user/src/agent-behavior-lab/.venv/bin/scb-check",
+          "check",
+          ".",
+          "--output-format",
+          "json"
+        ],
+        "exit_code": 1,
+        "timed_out": false,
+        "cancelled_signal": null,
+        "duration_seconds": 0.528963547985768,
+        "report": {
+          "verbosity": 0.1111111111111111,
+          "erosion": 0,
+          "cog_erosion": 0,
+          "files_scanned": 2,
+          "total_loc": 18,
+          "verbosity_flagged_loc": 2,
+          "clone_loc": 0,
+          "ast_grep_flagged_loc": 0,
+          "structural_rule_loc": 2,
+          "structural_rule_findings": 1,
+          "total_functions": 6,
+          "high_cc_functions": 0,
+          "high_cog_functions": 0,
+          "total_mass": 8.485281374238571,
+          "high_cc_mass": 0,
+          "total_cog_mass": 0,
+          "high_cog_mass": 0,
+          "syntax_tree_count": 2,
+          "syntax_node_count": 194,
+          "syntax_by_language": {
+            "python": {
+              "tree_count": 2,
+              "node_count": 194
+            }
+          }
+        },
+        "findings_present": true
+      }
+    },
+    "tool": {
+      "executable": "/home/user/src/agent-behavior-lab/.venv/bin/scb-check",
+      "version": "0.2.0",
+      "executable_sha256": "7eac80c77923128e5e034aedd30a167f263e8c1fa4146346e715699dabfa3bfa",
+      "seconds_per_check": 300,
+      "extra_environment_rules": false,
+      "arguments": [
+        "check",
+        ".",
+        "--output-format",
+        "json"
+      ]
+    }
+  },
+  "automated_tests": 94
+}

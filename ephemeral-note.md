@@ -1,4 +1,26 @@
-# Neutral-format baseline: attempts ended 3 / 3 | Completed 3 / 3 | Running 0
+# Three-point code-quality measurement — verified
+
+Current request, 2026-09-18: include scb-check results before edits, after all
+features complete implementation/review/repair, and after final assembly.
+The checker measures duplication and complexity; feature correctness and token
+accounting remain separate. Scores do not enter agent prompts or cause repairs.
+Current result: all 94 tests pass, including ten dedicated scoring tests and
+the actual scb-check executable. Eight initial regressions failed before the
+implementation. Compilation and whitespace checks pass. The real subscription
+workflow passes implementation, review, final assembly and both final commands;
+all three actual scb-check measurements are complete. Cost: 273,303 raw tokens
+with complete records, four model turns, 175.98 seconds. Scoring itself uses no
+model; its three scans take 1.59 seconds combined. No checker text appears in
+the saved model prompts. Final source is clean and runner hashes are unchanged.
+Current activity: implementation, documentation and verification are complete.
+No model, checker or benchmark process is running.
+[Scope](experiments/scb-check-20260918/PROTOCOL.md) and
+[result](experiments/scb-check-20260918/RESULT.md).
+No large benchmark is running or selected. The earlier three-run result below
+remains intact. Work Leaf product code and research counters are outside scope.
+There is a pre-existing staged README edit; preserve it separately.
+
+## Neutral-format baseline: attempts ended 3 / 3 | Completed 3 / 3 | Running 0
 
 Current request: three parallel complete workflows with C38, C20, C15, C14 and
 C13 ON; C08, C16, C17 and C25 OFF. C16 OFF imposes no edit-format instruction.

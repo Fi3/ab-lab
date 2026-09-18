@@ -19,11 +19,19 @@ pending. [Current evidence and failed attempts](VERIFICATION.md).
 
 ## Constraints
 
-Python standard library, Git and the installed Codex CLI. No Work Leaf runtime,
+Python standard library, Git, the installed Codex CLI and the external scb-check
+executable for code-quality measurements. No Work Leaf runtime,
 API credentials, credential copies, frameworks or automatic experimental batches.
 Every feature retains implementation, independent review and repair/re-review.
 Final integration retains plan/accept, one final commit per feature and full checks.
 Factor settings never remove task requirements, reviewers or final checks.
+
+`lab/scb.py` owns the external checker's version, invocation, JSON validation
+and source-mutation guard. `lab/workflow.py` measures clean checkpoints before
+the first author, after every feature has passed review, and after final
+assembly. Results stay outside model prompts and host feedback. `lab/__main__.py`
+exposes them in run/report output. The checker reports code properties, not
+functional success, and its findings do not request extra agent work.
 
 The new app-server transport is fixed across new comparisons. This is a port,
 not byte-identical replay of the September 13 exec/resume measurement. The
