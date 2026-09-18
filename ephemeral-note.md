@@ -15,12 +15,12 @@ continuation is authorized. All previous outcomes remain below and on disk.
 <!-- baseline-five-neutral-live-table -->
 | Run | State | Recorded raw tokens |
 | --- | --- | ---: |
-| baseline-01 | text selection-review-2; 0/3 features reviewed | 6,389,464 |
-| baseline-02 | text selection-fix-2; 0/3 features reviewed | 7,557,039 |
-| baseline-03 | text selection-fix-1; 0/3 features reviewed | 8,413,229 |
+| baseline-01 | review completion-implement; 2/3 features reviewed | 14,837,285 |
+| baseline-02 | review completion-implement; 2/3 features reviewed | 15,622,624 |
+| baseline-03 | review completion-implement; 2/3 features reviewed | 15,942,020 |
 <!-- baseline-five-neutral-live-table-end -->
 
-Latest manual snapshot: **2026-09-18T12:35:32.935165+00:00**. All earlier snapshots remain in the observer log.
+Latest manual snapshot: **2026-09-18T12:55:48.426838+00:00**. All earlier snapshots remain in the observer log.
 
 Admission commit: `8e874dd`; implementation commit: `4de5b26`. Runner sessions:
 baseline-01 `85569`, baseline-02 `58325`, baseline-03 `99353`; observer `13393`.
