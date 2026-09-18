@@ -214,8 +214,10 @@ pipeline's exit status must preserve a failed run; the script's own exit status
 reports whether it successfully rendered the JSON.
 
 The main table shows status, observed raw tokens, cached input, measurement
-completeness, elapsed time, reviewed features and passed final checks. Separate
-rows show all three code-quality checkpoints. Missing values stay missing;
+completeness, elapsed time, reviewed features and passed final checks. Reviewed
+features counts reviewer approvals, not independent feature acceptance tests
+or guaranteed correctness. Separate rows show all three code-quality
+checkpoints. Missing values stay missing;
 failed runs remain visible. The total includes known usage from failed runs.
 The mean includes only passed, fully measured runs with matching settings and
 says how many runs it includes. No saving percentage is inferred. Supply a
@@ -733,11 +735,19 @@ their source paths, model/effort, reported subscription plan and turn coverage.
 The launcher and environment hooks live outside measured source. They do not
 copy credentials or change the user's global Codex configuration.
 
+The host accepts trailing spaces and tabs on `@standalone done` and
+`@standalone end`. Patch content and command text are not trimmed. Empty or
+whitespace-only trailing messages do not replace the last substantive reply;
+the first accepted host request still takes precedence. Quoted, fenced and
+malformed operations remain rejected.
+
 Missing final usage reports and decreasing counters are flagged, not treated as
 zero usage. A returned incomplete measurement stops the workflow before another
 host operation or agent turn. `measurement_complete` means that the tool detected no missing
 turn-end usage or counter problem. It does **not** guarantee that the provider
 reported every internal response. Saved raw messages permit a deeper audit.
+A response-format failure remains a failed run, but does not imply missing
+usage when the completed turn already has a covering usage report.
 
 Watch explicitly named run directories without starting an agent:
 

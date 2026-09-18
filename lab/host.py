@@ -85,7 +85,7 @@ def parse_operations(text):
         if line.startswith("@standalone edit ") and line[17:].strip():
             reason = line[len("@standalone edit "):]
             body = []
-            while index < len(lines) and lines[index] != "@standalone end":
+            while index < len(lines) and lines[index].rstrip(" \t") != "@standalone end":
                 body.append(lines[index])
                 index += 1
             if index == len(lines):
@@ -115,7 +115,7 @@ def parse_operations(text):
             result.append(("run", paths, command))
         elif line.startswith("@standalone discard ") and line[len("@standalone discard "):].strip():
             result.append(("discard", line[len("@standalone discard "):]))
-        elif line == "@standalone done":
+        elif line.rstrip(" \t") == "@standalone done":
             result.append(("done",))
         else:
             raise Rejected("unknown, mixed, quoted or malformed outer operation")

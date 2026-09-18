@@ -346,7 +346,7 @@ class Codex:
                         self.pending.append(message)
             if not priced or last_output > last_usage:
                 self.missing_turns.append({"thread_id": thread, "turn_id": turn_id, "reason": "no fresh usage covering the last delivered message"})
-            final = selected if selected is not None else (replies[-1] if replies else "")
+            final = selected if selected is not None else next((text for text in reversed(replies) if text.strip()), "")
             (folder / "reply.txt").write_text(final)
             save_json(folder / "messages.json", replies)
             row["usage_observed_after_last_message"] = priced and last_usage >= last_output
@@ -369,7 +369,8 @@ class Codex:
                 except (OSError, Fatal):
                     self.usage.uncertain.append("transport unavailable during cancellation drain")
             row.update(error=str(exc))
-            self.missing_turns.append({"thread_id": thread, "turn_id": turn_id, "reason": "failed/incomplete turn; inspect retained transport"})
+            if not row.get("usage_observed_after_last_message"):
+                self.missing_turns.append({"thread_id": thread, "turn_id": turn_id, "reason": "failed/incomplete turn; inspect retained transport"})
             raise
         finally:
             save_json(folder / "result.json", row)
@@ -742,7 +743,7 @@ class Pi:
 
             if not priced or last_output > last_usage:
                 self.missing_turns.append({"thread_id": thread, "turn_id": turn_id, "reason": "no fresh usage covering the last delivered message"})
-            final = selected if selected is not None else (replies[-1] if replies else "")
+            final = selected if selected is not None else next((text for text in reversed(replies) if text.strip()), "")
             (folder / "reply.txt").write_text(final)
             save_json(folder / "messages.json", replies)
             row["usage_observed_after_last_message"] = priced and last_usage >= last_output
@@ -761,7 +762,8 @@ class Pi:
                 except (OSError, Fatal):
                     self.usage.uncertain.append("transport unavailable during cancellation drain")
             row.update(error=str(exc))
-            self.missing_turns.append({"thread_id": thread, "turn_id": turn_id, "reason": "failed/incomplete turn; inspect retained transport"})
+            if not row.get("usage_observed_after_last_message"):
+                self.missing_turns.append({"thread_id": thread, "turn_id": turn_id, "reason": "failed/incomplete turn; inspect retained transport"})
             raise
         finally:
             save_json(folder / "result.json", row)

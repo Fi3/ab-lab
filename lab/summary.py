@@ -107,7 +107,8 @@ def render(rows):
         main_rows.append([name, row['status'], number(usage.get('observed_raw_tokens')),
             number(usage.get('cached_input_tokens')), complete, duration(row.get('duration_seconds')),
             features, checks])
-    lines += [table(['Run', 'Result', 'Raw tokens', 'Cached input', 'Usage', 'Time', 'Features', 'Checks'], main_rows), '']
+    lines += [table(['Run', 'Result', 'Raw tokens', 'Cached input', 'Usage', 'Time', 'Reviewed features', 'Checks'], main_rows), '',
+              'Reviewed features counts reviewer approvals, not independent feature acceptance tests.', '']
     configurations = [enabled(row) for row in rows]
     if len(set(configurations)) == 1:
         lines += ['Enabled switches: '+cell(configurations[0])+'.', '']

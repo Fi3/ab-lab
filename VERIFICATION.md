@@ -1,5 +1,22 @@
 # Verification
 
+## Completion whitespace and trailing messages — 2026-09-18
+
+All 143 local tests, Python compilation and the whitespace check pass. The nine
+focused regression tests first expose the missing handling, then verify `done`
+and `end` whitespace, unchanged patch/command content, empty trailing messages
+including late delivery, preserved review findings, and response errors kept
+separate from missing usage in both backends. Quoted and malformed operations
+remain rejected. The saved failed run's exact message sequence is reproduced
+without changing its retained result or generating replacement work.
+
+One real ChatGPT-subscription call returns `@standalone done` followed by a
+space and tab. The host accepts completion with complete usage: 11,156 raw
+tokens in 9.24 seconds. Evidence is in
+`runs/response-whitespace-smoke-20260918T203118Z`; this is a protocol check, not
+a benchmark rerun. The table explicitly labels review approvals rather than
+independently verified feature correctness. No factor prompts are changed.
+
 ## Parallel repetitions and result tables — 2026-09-18
 
 All 134 local tests, Python compilation and the whitespace check pass. Three
