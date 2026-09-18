@@ -1,14 +1,15 @@
 # Benchmark attempts ended: 15 | Successful full benchmarks: 2
 
-Current repair: **3 / 3 obligations verified**. Original comparison attempts: **6 / 6 started; 6 / 6 ended**. Saved-work continuations: **3 / 3 started; 0 / 3 ended; 3 running**.
+Current repair: **3 / 3 obligations verified**. Original comparison attempts: **6 / 6 started; 6 / 6 ended**. Saved-work continuations: **3 / 3 started; 1 / 3 ended; 2 running**.
 The user authorizes repairs and completion of the requested comparison; reuse any
 valid complete observation. The earlier third batch had no complete all-on
 observation; the current fourth batch has two passes and one final-check failure.
 [Current authority](experiments/on-off-20260918-r4/AUTHORITY.md).
 
-Last updated: 2026-09-18 01:30 UTC.
-Current activity: all three saved all-off workflows run concurrently from
-independent review. All earlier work and costs remain included. Their valid
+Last updated: 2026-09-18 02:04 UTC.
+Current activity: off-02 has stopped at its original active-time limit during
+the final feature; off-03 reviews that feature and off-01 still implements it.
+All earlier work and costs remain included. Their valid
 first author replies are not regenerated. All-on 1/3 remain passed; all-on 2
 retains its terminal test failure. No all-on result is replaced.
 Measured on-versus-off reduction: NOT AVAILABLE until the full comparison ends.
@@ -19,9 +20,9 @@ Measured on-versus-off reduction: NOT AVAILABLE until the full comparison ends.
 <!-- continuation-live-table -->
 | Saved-work continuation | Current stage / outcome | Cumulative raw tokens | Missing returned counts |
 | --- | --- | ---: | ---: |
-| off-01-continued | visual-mode-review-3 | 18,254,980 | 0 |
-| off-02-continued | visual-mode-review-2 | 21,347,625 | 0 |
-| off-03-continued | visual-mode-review-3 | 19,635,508 | 0 |
+| off-01-continued | review-completion-review-1 | 32,779,681 | 0 |
+| off-02-continued | failed: workflow wall-time/observed-token limit reached | 37,167,934 | 2 |
+| off-03-continued | review-completion-review-1 | 34,828,154 | 0 |
 <!-- continuation-live-table-end -->
 
 Original terminal records before continuation (unchanged):
@@ -120,6 +121,38 @@ Raw tokens are input plus output, with cached input included only once.
 That previous observer is stopped; the replacement observer is separate.
 
 ## Activity log, with earlier entries retained
+
+- 2026-09-18 02:02 UTC: off-02 reaches its original 5,400-second active
+  limit while implementing the final feature. It retains two approved feature
+  checkpoints and unfinished changes in three source files. Observed usage is
+  37,167,934 raw, including 52,391 child tokens. Two diagnostic flags refer to
+  one interrupted parent turn: the final message lacks a later fresh price,
+  and the turn failed at its limit. This is not a complete workflow total.
+  Its original and continued records remain unchanged; no replacement or
+  extra model call is launched. Off-03 has reached final-feature review;
+  off-01 continues implementation. The per-run time stop does not stop peers.
+
+- 2026-09-18 01:52 UTC: all three workflows pass slash-routing review
+  and start the third/final feature. Run 1's native author first reports its
+  successful real-backend smoke in its reply, but native repair feedback sends
+  only a generic completion sentence to the reviewer. The next review asks
+  for durable evidence; the author records that smoke in an empty commit
+  message and the following review accepts it. Both exchanges and all checks
+  stay counted. This saved behavior is visible in continuation turns 9–12;
+  no prompt or feedback format is changed during the admitted comparison.
+
+- 2026-09-18 01:48 UTC: run 3 passes slash-routing review and begins
+  the final review-completion feature. Run 1's reviewer requests actual backend
+  routing verification; its additional child calls finish and are fully counted.
+  Run 2 remains in slash-routing implementation. Complete cumulative totals
+  are 25,314,091 / 30,446,728 / 28,183,096 raw; no source/configuration override,
+  unknown completed price or replacement occurs.
+
+- 2026-09-18 01:37 UTC: all three saved first-feature implementations
+  pass independent review after their recorded repairs. All three workflows
+  proceed to slash-command routing. Cumulative totals are 20,504,542 /
+  24,962,476 / 23,515,067 raw, including all original work and child checks.
+  No returned-response gap, model mismatch or program-source change appears.
 
 - 2026-09-18 01:30 UTC: all three saved workflows remain active with
   complete observed accounting. Runs 1/3 are in their third text-selection
