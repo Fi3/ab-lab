@@ -1,23 +1,30 @@
 # Benchmark attempts ended: 15 | Successful full benchmarks: 2
 
-Current repair: **3 / 3 obligations verified**. Original comparison attempts: **6 / 6 started; 6 / 6 ended**. Saved-work continuations: **0 / 3 started; 0 / 3 ended; 0 running**.
+Current repair: **3 / 3 obligations verified**. Original comparison attempts: **6 / 6 started; 6 / 6 ended**. Saved-work continuations: **3 / 3 started; 0 / 3 ended; 3 running**.
 The user authorizes repairs and completion of the requested comparison; reuse any
 valid complete observation. The earlier third batch had no complete all-on
 observation; the current fourth batch has two passes and one final-check failure.
 [Current authority](experiments/on-off-20260918-r4/AUTHORITY.md).
 
-Last updated: 2026-09-18 01:12 UTC.
-Current activity: all original attempts have ended; no generator is running.
-All three all-off replies contain the required completion marker but were
-rejected because they also contain a summary. All 66 local tests and the real
-subscription resume qualification pass. Freeze the repaired source, then
-continue the three saved workflows together at independent review without
-regenerating their first features. All-on 1/3 remain passed; all-on 2 retains its terminal
-test failure. No all-on result is replaced.
+Last updated: 2026-09-18 01:18 UTC.
+Current activity: all three saved all-off workflows run concurrently from
+independent review. All earlier work and costs remain included. Their valid
+first author replies are not regenerated. All-on 1/3 remain passed; all-on 2
+retains its terminal test failure. No all-on result is replaced.
 Measured on-versus-off reduction: NOT AVAILABLE until the full comparison ends.
 [Current protocol](experiments/on-off-20260918-r4/PROTOCOL.md) ·
 [Current qualification](experiments/on-off-20260918-r4/QUALIFICATION.md) ·
-[15-second live snapshot](runs/on-off-20260918-r4/monitor/current.json).
+[15-second continuation snapshot](runs/on-off-20260918-r4/continuation-monitor/current.json).
+
+<!-- continuation-live-table -->
+| Saved-work continuation | Current stage / outcome | Cumulative raw tokens | Missing returned counts |
+| --- | --- | ---: | ---: |
+| off-01-continued | visual-mode-fix-1 | 14,233,832 | 0 |
+| off-02-continued | visual-mode-fix-1 | 17,705,390 | 0 |
+| off-03-continued | visual-mode-fix-1 | 15,546,119 | 0 |
+<!-- continuation-live-table-end -->
+
+Original terminal records before continuation (unchanged):
 
 <!-- r4-live-table -->
 | Current run | Switches | Stage / outcome | Observed raw tokens | Missing returned counts |
@@ -38,6 +45,12 @@ All-on runner sessions are closed. All-off launch: **2026-09-18 00:08:08 UTC**.
 Original runner PID / tool session: off-01 **1554844 / 16418**, off-02
 **1554830 / 90896**, off-03 **1554857 / 29317**. These runner and observer sessions
 are closed. Continuations have separate artifacts and monitoring.
+Continuation launch: **2026-09-18 01:12:49 UTC**, implementation **196b660**.
+Tool sessions: off-01 **97433**, off-02 **72012**, off-03 **59084**;
+15-second observer **91069**. All configuration-equivalence guards pass before
+generation. Source checkpoints, history bundles and prior native logs are saved.
+Owned PIDs: off-01 **1643075**, off-02 **1643092**, off-03 **1643085**;
+observer **1643053**.
 
 ## Previous third batch — retained failed observations
 
@@ -107,6 +120,22 @@ Raw tokens are input plus output, with cached input included only once.
 That previous observer is stopped; the replacement observer is separate.
 
 ## Activity log, with earlier entries retained
+
+- 2026-09-18 01:17–01:18 UTC: all three first-feature reviews request
+  repairs from their original authors. Returned token counts remain complete.
+  The independent continuation-audit regressions pass after their initial
+  missing-helper failures. All three saved-source/result/allocation links pass;
+  measured prompt functions are structurally identical across the repair,
+  and provider, host, factor configuration, nested launcher and environment
+  modules retain their original hashes. No measured program is edited while
+  generation runs. The source bundle reconstructs the exact first checkpoint.
+
+- 2026-09-18 01:12:49 UTC: launch the three saved all-off continuations
+  concurrently from qualified commit 196b660. All three restore exact earlier
+  costs and start independent review; no implementation response is repeated.
+  The observer starts one second earlier. Actual configuration hashes and the
+  proof of redundant trust metadata match the continuation freeze. Original
+  allocation ceilings remain unchanged; no all-on observation is relaunched.
 
 - 2026-09-18 01:04–01:12 UTC: the real resume check passes with 11,270
   earlier + 11,302 additional = 22,572 cumulative raw, matching the independent

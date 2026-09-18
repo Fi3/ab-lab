@@ -31,6 +31,13 @@ Their explicit continuations start at independent review, preserve every prior
 cost and use only the remaining original allocation. The six-run comparison
 is not yet complete. [Recovery boundaries](experiments/on-off-20260918-r4/NATIVE-CONTINUATION.md).
 
+The provider-free audit has four additional tests; all 70 local tests pass.
+The audit combines original and continued transport records in order, checks
+that saved native histories remain exact prefixes, and rejects changed earlier
+results or benchmark factors. Measured prompt functions and the shared provider,
+host, factor, environment and nested-launcher modules match across the repair.
+This audit does not modify agent inputs or run any model.
+
 ## Nested processes and unchanged features — 2026-09-18
 
 [The real tiny qualification](experiments/on-off-20260918-r4/QUALIFICATION.md)

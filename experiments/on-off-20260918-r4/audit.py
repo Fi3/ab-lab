@@ -1,11 +1,13 @@
 """Independent read-only terminal audit, including command-launched conversations."""
 import argparse
+import ast
 from datetime import datetime, timedelta, timezone
 import hashlib
 import json
 import os
 from pathlib import Path
 import statistics
+import subprocess
 
 
 def read(path):
@@ -20,6 +22,102 @@ def lines(path):
     with path.open() as stream:
         for line in stream:
             yield json.loads(line)
+
+
+def transport_records(paths):
+    for path in paths:
+        yield from lines(path)
+
+
+def function_forms(source, names):
+    functions = {node.name: ast.dump(node, include_attributes=False)
+                 for node in ast.parse(source).body if isinstance(node, ast.FunctionDef)}
+    return {name: functions[name] for name in names}
+
+
+def native_prefix_errors(folder, pins, native):
+    errors = []
+    for thread, expected in pins.items():
+        saved = folder/'prior-native'/(thread+'.jsonl')
+        if sha(saved) != expected:
+            errors.append('archived native boundary changed: '+thread)
+            continue
+        if thread not in native:
+            errors.append('archived conversation absent from final history: '+thread)
+            continue
+        prefix = saved.read_bytes()
+        with Path(native[thread]['path']).open('rb') as stream:
+            if stream.read(len(prefix)) != prefix:
+                errors.append('native history does not preserve original prefix: '+thread)
+    return errors
+
+
+def continuation_context(folder, manifest, freeze, continuation_freeze):
+    paths = [folder/'provider/transport.jsonl']
+    start = manifest['created_at_unix']
+    if not manifest.get('continuation'):
+        return paths, start, freeze, None, []
+    if continuation_freeze is None:
+        raise ValueError('continued observations require their explicit freeze')
+    link = manifest['continuation']
+    previous = Path(link['previous'])
+    old_manifest, old_result = read(previous/'manifest.json'), read(previous/'result.json')
+    saved = read(folder/'continuation-input.json')
+    expected = next(r for r in continuation_freeze['observations'] if r['name'] == previous.name)
+    errors = []
+    if (previous.parent != folder.parent or folder.name != previous.name+'-continued' or
+            (folder/'checkout').resolve() != (previous/'checkout').resolve()):
+        errors.append('continuation checkout/path linkage differs')
+    if any(manifest[k] != old_manifest[k] for k in
+           ('benchmark', 'base_commit', 'model', 'effort', 'factors', 'workflow', 'transport')):
+        errors.append('continuation changes a preserved benchmark setting')
+    if old_manifest['source_sha256'] != freeze['source_sha256']:
+        errors.append('original source differs from its freeze')
+    if (sha(previous/'result.json') != expected['prior_result_sha256'] or
+            link['prior_result_sha256'] != expected['prior_result_sha256'] or
+            saved['prior_result_sha256'] != expected['prior_result_sha256']):
+        errors.append('original result hash differs')
+    if (saved != read(previous/'continuation.json') or
+            saved['source_head'] != expected['source_head'] or
+            link['source_head'] != expected['source_head'] or
+            saved['bundle_sha256'] != sha(folder/'input.bundle')):
+        errors.append('saved source/continuation claim differs')
+    if (old_result['usage']['observed_raw_tokens'] != expected['prior_raw'] or
+            not old_result['usage']['measurement_complete'] or
+            old_result['duration_seconds'] != expected['prior_duration_seconds'] or
+            manifest['limits']['seconds'] != expected['remaining_seconds'] or
+            link['original_limits'] != old_manifest['limits'] or
+            manifest['limits']['observed_raw_tokens'] != old_manifest['limits']['observed_raw_tokens'] or
+            manifest['limits']['turns'] != old_manifest['limits']['turns']):
+        errors.append('earlier accounting or total allocation differs')
+    proof = read(folder/'provider/config-equivalence.json')
+    if (proof['original_sha256'] != freeze['effective_config_sha256'] or
+            proof['actual_sha256'] != continuation_freeze['actual_effective_config_sha256'] or
+            sorted(proof['removed_redundant_trust_records']) != sorted(continuation_freeze['redundant_trust']) or
+            proof['global_config_modified'] is not False):
+        errors.append('configuration equivalence receipt differs from freeze')
+    effective = dict(freeze, source_sha256=continuation_freeze['source_sha256'],
+                     effective_config_sha256=continuation_freeze['actual_effective_config_sha256'])
+    paths.insert(0, previous/'provider/transport.jsonl')
+    start = old_manifest['created_at_unix']
+    saved['repair_pause_seconds'] = manifest['created_at_unix']-start-old_result['duration_seconds']
+    return paths, start, effective, saved, errors
+
+
+def source_bridge(freeze, continuation_freeze):
+    root = Path(__file__).resolve().parents[2]
+    old = subprocess.check_output(['git', 'show', '3f54c08:lab/workflow.py'], cwd=root).decode()
+    new = subprocess.check_output(['git', 'show', '196b660:lab/workflow.py'], cwd=root).decode()
+    names = ['review_clean', 'author_prompt', 'review_prompt', 'integration_prompts', 'after_read_fixture']
+    unchanged = ['config.py', 'host.py', 'provider.py', 'nested.py', 'environment.py']
+    return {
+        'old_commit': '3f54c08', 'new_commit': '196b660',
+        'workflow_sources_match_freeze': hashlib.sha256(old.encode()).hexdigest() == freeze['source_sha256']['workflow.py'] and
+            hashlib.sha256(new.encode()).hexdigest() == continuation_freeze['source_sha256']['workflow.py'],
+        'measured_prompt_functions_identical': function_forms(old, names) == function_forms(new, names),
+        'unchanged_shared_modules': {name: freeze['source_sha256'][name] == continuation_freeze['source_sha256'][name] for name in unchanged},
+        'remaining_difference': 'final native marker parsing and explicit cost-preserving continuation; live observer includes earlier costs',
+        'limitation': 'mixed runner revisions and a recorded supervision pause; comparison keys remain different'}
 
 
 def inspect_native(path, model, effort):
@@ -74,12 +172,13 @@ def inspect_native(path, model, effort):
                 t.get('completed') and t.get('priced') for t in turns.values())}
 
 
-def audit(folder, freeze):
+def audit(folder, freeze, continuation_freeze=None):
     folder = folder.resolve()
     result, manifest = read(folder/'result.json'), read(folder/'manifest.json')
     identity = read(folder/'provider/provider.json')
-    parent, owned_parents, messages, prices, completed, errors = {}, set(), {}, {}, {}, []
-    for position, row in enumerate(lines(folder/'provider/transport.jsonl'), 1):
+    paths, native_since, freeze, continuation, errors = continuation_context(folder, manifest, freeze, continuation_freeze)
+    parent, owned_parents, messages, prices, completed = {}, set(), {}, {}, {}
+    for position, row in enumerate(transport_records(paths), 1):
         event = row['event']
         started = (event.get('result') or {}).get('thread') or {}
         if started.get('id'):
@@ -106,7 +205,7 @@ def audit(folder, freeze):
         if prices.get(key, 0) < messages.get(key, 1):
             errors.append('parent final message lacks a later price: '+str(key))
     native = {}
-    start = datetime.fromtimestamp(manifest['created_at_unix'], timezone.utc).date()-timedelta(days=1)
+    start = datetime.fromtimestamp(native_since, timezone.utc).date()-timedelta(days=1)
     end = datetime.now(timezone.utc).date()+timedelta(days=1)
     sessions = Path(os.environ.get('CODEX_HOME', Path.home()/'.codex'))/'sessions'
     day = start
@@ -115,7 +214,7 @@ def audit(folder, freeze):
             with path.open() as stream:
                 first = json.loads(stream.readline())
             meta = first.get('payload', {})
-            if first.get('type') != 'session_meta' or not Path(meta.get('cwd', '/')).resolve().is_relative_to(folder/'checkout'):
+            if first.get('type') != 'session_meta' or not Path(meta.get('cwd', '/')).resolve().is_relative_to((folder/'checkout').resolve()):
                 continue
             thread = meta['id']
             if thread in native:
@@ -123,6 +222,8 @@ def audit(folder, freeze):
                 continue
             native[thread] = inspect_native(path, manifest['model'], manifest['effort'])
         day += timedelta(days=1)
+    if continuation:
+        errors.extend(native_prefix_errors(folder, continuation['native_sha256'], native))
     for thread, value in parent.items():
         if native.get(thread, {}).get('totals') != value:
             errors.append('parent native/transport mismatch: '+thread)
@@ -131,6 +232,8 @@ def audit(folder, freeze):
         errors.extend(thread+': '+e for e in row['errors'])
         if not row['model_matches']:
             errors.append('native model/effort mismatch: '+thread)
+        if any(plan in ('api', 'unknown') for plan in row['plans']):
+            errors.append('unrecognized subscription plan: '+thread)
         if thread in children and not row['complete_child']:
             errors.append('child coverage incomplete: '+thread)
     raw_parent = sum(v[0]+v[1] for v in parent.values())
@@ -154,6 +257,10 @@ def audit(folder, freeze):
         'native': native, 'child_ids': list(children), 'checkpoints': result['checkpoints'],
         'factor_activations': result['factor_activations'], 'result_sha256': sha(folder/'result.json'),
         'transport_sha256': sha(folder/'provider/transport.jsonl'),
+        'transport_parts_sha256': {str(path): sha(path) for path in paths},
+        'continuation': continuation,
+        'all_agent_stages_finished': len(result['checkpoints']) == len(manifest['benchmark']['features']) and
+            any(stage['stage'] == 'integration-accept' for stage in result['stages']),
         'scope': 'native histories rooted in this owned checkout; unrelated external generation is unsupported'}
 
 
@@ -162,13 +269,18 @@ def main():
     parser.add_argument('runs', type=Path, nargs='+')
     parser.add_argument('--output', type=Path, required=True)
     parser.add_argument('--freeze', type=Path, default=Path(__file__).with_name('FREEZE.json'))
+    parser.add_argument('--continuation-freeze', type=Path)
     args = parser.parse_args()
-    rows = [audit(path, read(args.freeze)) for path in args.runs]
+    freeze = read(args.freeze)
+    continuation_freeze = read(args.continuation_freeze) if args.continuation_freeze else None
+    rows = [audit(path, freeze, continuation_freeze) for path in args.runs]
     on = [r['total_raw'] for r in rows if r['run'].startswith('on-')]
     off = [r['total_raw'] for r in rows if r['run'].startswith('off-')]
     valid = len(on) == len(off) == 3 and all(r['qualified'] for r in rows) and len({r['comparison_key'] for r in rows}) == 1
     report = {'generated_at_utc': datetime.now(timezone.utc).isoformat(), 'generation': 'none',
         'runs': rows, 'complete_three_vs_three': valid, 'reduction_percent': None}
+    if continuation_freeze:
+        report['source_bridge'] = source_bridge(freeze, continuation_freeze)
     if valid:
         report.update(mean_on=statistics.mean(on), mean_off=statistics.mean(off),
             reduction_percent=100*(statistics.mean(off)-statistics.mean(on))/statistics.mean(off),
