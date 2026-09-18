@@ -1,9 +1,17 @@
-# Neutral-format baseline: attempts ended 0 / 3 | Completed 0 / 3 | Running 3
+# Neutral-format baseline: attempts ended 3 / 3 | Completed 3 / 3 | Running 0
 
 Current request: three parallel complete workflows with C38, C20, C15, C14 and
 C13 ON; C08, C16, C17 and C25 OFF. C16 OFF imposes no edit-format instruction.
-Current activity: all three workflows launched concurrently at **2026-09-18
-12:15:18 UTC**. All 84 local tests pass; subscription-only preflight and each
+Current activity: all three workflows, independent accounting audit and external
+feature scoring are finished. All workflows pass repository checks and have
+complete reconciled usage. External feature checks pass 1/3, 2/3 and 3/3.
+**Mean: 35,001,944.67 raw tokens.** The saved all-on mean, 24,761,150, is
+**29.26% lower**, not approximately 50% against this baseline. This comparison
+retains the older runs' failure, quality and environment differences; it is not
+an isolated causal percentage. No benchmark or model process is running.
+[Full result and exact denominators](experiments/baseline-five-neutral-20260918/RESULT.md).
+All three launched concurrently at **2026-09-18 12:15:18 UTC**.
+All 84 local tests pass; subscription-only preflight and each
 run's source, configuration, factors and limits match the prospective freeze.
 Limits stay at four hours, 60M observed raw tokens and 600 parent turns
 per workflow. Manual checks are **twenty minutes apart**, following the user's
@@ -15,12 +23,12 @@ continuation is authorized. All previous outcomes remain below and on disk.
 <!-- baseline-five-neutral-live-table -->
 | Run | State | Recorded raw tokens |
 | --- | --- | ---: |
-| baseline-01 | integration-accept; 3/3 features reviewed | 23,211,091 |
-| baseline-02 | integration-plan; 3/3 features reviewed | 26,677,255 |
-| baseline-03 | integration-plan; 3/3 features reviewed | 24,307,090 |
+| baseline-01 | Completed | 29,650,393 |
+| baseline-02 | Completed | 39,059,021 |
+| baseline-03 | Completed | 36,296,420 |
 <!-- baseline-five-neutral-live-table-end -->
 
-Latest manual snapshot: **2026-09-18T13:16:03.935894+00:00**. All earlier snapshots remain in the observer log.
+Latest manual snapshot: **2026-09-18T13:32:19.353025+00:00**. All earlier snapshots remain in the observer log.
 
 Admission commit: `8e874dd`; implementation commit: `4de5b26`. Runner sessions:
 baseline-01 `85569`, baseline-02 `58325`, baseline-03 `99353`; observer `13393`.
