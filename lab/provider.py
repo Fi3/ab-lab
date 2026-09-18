@@ -97,7 +97,8 @@ class Codex:
         self.process = None
         if os.environ.get("AGENT_LAB_CHILD") == "1":
             raise Fatal("recursive benchmark generation is forbidden")
-        self.commands = CommandEnvironment(self.repo, self.artifacts / "commands", model, effort, executable)
+        self.commands = CommandEnvironment(self.repo, self.artifacts / "commands", model, effort, executable,
+                                           deadline=deadline)
         self.command_env = self.commands.env
         self.nested = NestedUsage(self.repo, model, effort)
         self.parent_threads = set()
@@ -128,7 +129,7 @@ class Codex:
             self.identity = {"codex_version": subprocess.check_output([self.commands.executable, "--version"], text=True, env=clean_env()).strip(),
                 "auth": "chatgpt", "model": model, "effort": effort,
                 "effective_config_sha256": hashlib.sha256(normalized_config.encode()).hexdigest(),
-                "nested_policy": "same-model-subscription-native-history-v1"}
+                "nested_policy": "same-model-subscription-supervised-native-history-v2"}
             save_json(self.artifacts / "provider.json", self.identity)
             if require_git_write:
                 self.verify_git_write()
@@ -226,7 +227,29 @@ class Codex:
                     "measurement_complete": True, "errors": [], "incomplete": []}
         parents = self.parent_threads | set(self.usage.totals)
         self.nested.refresh(parents, force=force)
-        return self.nested.report(parents)
+        report = self.nested.report(parents)
+        if hasattr(self, "commands"):
+            processes = self.commands.children.report()
+            report["processes"] = processes
+            report["measurement_complete"] &= processes["measurement_complete"]
+            report["errors"].extend(processes["errors"])
+        return report
+
+    def settle_children(self):
+        if not hasattr(self, "commands"):
+            return
+        def check_budget():
+            if time.monotonic() >= self.deadline or self.observed_raw() >= self.max_raw:
+                raise Fatal("workflow wall-time/observed-token limit reached while waiting for nested verification")
+        try:
+            processes = self.commands.children.settle(check_budget)
+        except BaseException:
+            self.commands.close()
+            raise
+        child = self.child_report(force=True)
+        if not processes["measurement_complete"] or not child["measurement_complete"]:
+            detail = processes["pending"] + processes["errors"] + child["errors"] + child["incomplete"]
+            raise Fatal("incomplete nested token measurement; no further generation: "+"; ".join(detail))
 
     def observed_raw(self):
         child = self.child_report()
@@ -235,6 +258,7 @@ class Codex:
         return self.usage.raw+child["observed_raw_tokens"]
 
     def turn(self, thread, prompt, label, interrupt=False, host_request=False, writable=False):
+        self.settle_children()
         if len(self.turns) >= self.max_turns:
             raise Fatal("workflow turn limit reached")
         if time.monotonic() >= self.deadline or self.observed_raw() >= self.max_raw:
@@ -330,6 +354,7 @@ class Codex:
                 raise Fatal(stop_reason)
             if not final:
                 raise Fatal("turn supplied no executable request or final reply")
+            self.settle_children()
             return final
         except BaseException as exc:
             if interrupted is None and row.get("status") == "started":
@@ -381,6 +406,8 @@ class Codex:
                     self.process.wait(timeout=2)
         if self.process is not None:
             self.process.stdout.close()
+        if hasattr(self, "commands"):
+            self.commands.close()
         self.log.close()
         self.stderr.close()
 

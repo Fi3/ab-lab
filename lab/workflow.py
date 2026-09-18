@@ -238,6 +238,8 @@ def run(benchmark, factors, output, seconds, max_raw, max_turns,
                         host.unchanged()
                         host.evidence("AUTHOR REPLY", reply)
                         prompt = host.consume(reply)
+                        if hasattr(provider, "settle_children"):
+                            provider.settle_children()
                         if fixture and not fixture_fired:
                             try:
                                 operations = parse_operations(reply)
@@ -307,6 +309,8 @@ def run(benchmark, factors, output, seconds, max_raw, max_turns,
             receipt["command"] = command
             result["checks"].append(receipt)
             save_json(folder / "result.json", receipt)
+            if hasattr(provider, "settle_children"):
+                provider.settle_children()
             if receipt["exit_code"] or receipt["timed_out"] or receipt["cancelled_signal"]:
                 raise Fatal(f"final check {index} failed; no automatic replacement")
         if git(checkout, "status", "--porcelain"):

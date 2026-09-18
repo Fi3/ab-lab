@@ -1,5 +1,45 @@
 # Verification
 
+## Nested caller shutdown — 2026-09-18
+
+All 117 local tests, Python compilation and the whitespace check pass. The
+regression first fails because terminating the caller's process group also
+kills its nested Codex call. Separate supervision retains that call's output
+until completion. The next-response guard also fails before implementation and
+passes afterward. A startup/cancellation regression also verifies that a delayed
+supervisor cannot launch after shutdown. [Behavior and reproducible checks](docs/nested-verification.md).
+
+The final real-subscription shutdown check passes on the exact resulting runner
+source, using GPT-5.5/xhigh and the existing Pro login. Its caller is killed
+with SIGKILL during generation. The nested call finishes normally with complete
+usage: 10,833 raw tokens in 5.49 seconds. The final CLI usage equals the
+independent native session counter. No parent model response is generated.
+
+Evidence is retained under `runs/nested-shutdown-20260918/real-03`,
+including input/source pins and child stdout, stderr and terminal receipts.
+Its `at-shutdown.json` is the immutable pre-shutdown observation: zero observed
+tokens and an incomplete active call, followed by complete final usage.
+
+Two earlier shutdown checks also pass, before the startup/cancellation guard:
+`real-01` uses 10,841 raw tokens in 6.66 seconds and `real-02` uses 10,836 in
+5.70 seconds. Their CLI and native totals match. All three outcomes are retained;
+combined verification usage is 32,510 raw tokens. The first check's nested
+thread-detail object remains a live reference until final
+serialization; its captured zero-token total, pending process and incomplete
+status are valid, but its embedded thread details show the later state. The
+second and final checks freeze the entire observation before killing the caller.
+
+Two non-generating sandbox probes reject temporary-file writes and local socket
+connections under the read-only policy. The repair grants no extra permissions
+and does not use an outside-sandbox execution service. Actual generation in
+the checks above runs through the ordinary host-command path.
+
+The original hour-long failed benchmark remains unchanged and is not resumed
+or repeated. Its missing final child charge remains unknown. The successful
+small checks establish the repaired shutdown path, not a full-benchmark pass.
+The completion/usage event assertion follows the
+[official non-interactive Codex documentation](https://learn.chatgpt.com/docs/non-interactive-mode).
+
 ## Three code-quality checkpoints — 2026-09-18
 
 All 94 local tests, Python compilation and the whitespace check pass. The ten

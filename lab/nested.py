@@ -10,6 +10,7 @@ import time
 import tomllib
 
 from .environment import BLOCKED, clean_env
+from .child_process import Children, launch
 
 
 def pinned_arguments(config, arguments):
@@ -48,7 +49,7 @@ def pinned_arguments(config, arguments):
 
 
 class CommandEnvironment:
-    def __init__(self, repo, folder, model, effort, executable):
+    def __init__(self, repo, folder, model, effort, executable, *, deadline=None):
         self.bin = Path(folder).resolve()
         self.bin.mkdir(parents=True)
         resolved = shutil.which(executable)
@@ -56,6 +57,8 @@ class CommandEnvironment:
             raise ValueError('Codex executable not found')
         config = {'repo': str(Path(repo).resolve()), 'model': model, 'effort': effort,
                   'executable': str(Path(resolved).absolute())}
+        self.children = Children(self.bin / 'children', deadline if deadline is not None else time.monotonic()+300)
+        config.update(calls=str(self.children.folder), deadline=self.children.deadline, owner_pid=os.getpid())
         self.executable = config['executable']
         config_path = self.bin / 'settings.json'
         config_path.write_text(json.dumps(config))
@@ -80,6 +83,9 @@ class CommandEnvironment:
         return [part for key in ('PATH', 'BASH_ENV', 'AGENT_LAB_CHILD')
                 for part in ('-c', 'shell_environment_policy.set.'+key+'='+json.dumps(self.env[key]))]
 
+    def close(self):
+        self.children.close()
+
 
 def command_main(config_path):
     config = json.loads(Path(config_path).read_text())
@@ -87,10 +93,14 @@ def command_main(config_path):
         if not Path.cwd().resolve().is_relative_to(Path(config['repo'])):
             raise ValueError('nested Codex must run inside the owned checkout')
         argv = pinned_arguments(config, sys.argv[1:])
-    except ValueError as exc:
+        # Non-generating CLI queries retain their ordinary read-only behavior.
+        if sys.argv[1:] in (['--version'], ['-V'], ['--help'], ['-h']):
+            os.execvpe(argv[0], argv, clean_env())
+        code = launch(config, argv)
+    except (ValueError, OSError) as exc:
         print(str(exc), file=sys.stderr)
         raise SystemExit(2)
-    os.execvpe(argv[0], argv, clean_env())
+    raise SystemExit(code if code >= 0 else 128-code)
 
 
 class NestedUsage:
