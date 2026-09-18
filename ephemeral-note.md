@@ -1,29 +1,40 @@
-# Benchmark attempts ended: 15 | Successful full benchmarks: 2
+# Benchmark attempts ended: 15 | Full workflows passing repository checks: 3
 
-Current repair: **3 / 3 obligations verified**. Original comparison attempts: **6 / 6 started; 6 / 6 ended**. Saved-work continuations: **3 / 3 started; 1 / 3 ended; 2 running**.
+Current repair: **3 / 3 obligations verified**. Original comparison attempts: **6 / 6 started; 6 / 6 ended**. Saved-work continuations: **3 / 3 started; 3 / 3 ended; 0 running**.
 The user authorizes repairs and completion of the requested comparison; reuse any
 valid complete observation. The earlier third batch had no complete all-on
 observation; the current fourth batch has two passes and one final-check failure.
 [Current authority](experiments/on-off-20260918-r4/AUTHORITY.md).
 
-Last updated: 2026-09-18 02:04 UTC.
-Current activity: off-02 has stopped at its original active-time limit during
-the final feature; off-03 reviews that feature and off-01 still implements it.
-All earlier work and costs remain included. Their valid
-first author replies are not regenerated. All-on 1/3 remain passed; all-on 2
-retains its terminal test failure. No all-on result is replaced.
-Measured on-versus-off reduction: NOT AVAILABLE until the full comparison ends.
+Last updated: 2026-09-18 02:31 UTC.
+Current activity: all model execution, observation, feature scoring and audits
+have ended. No model or compiler is running. The requested complete three-versus-three
+validation is **NOT ACHIEVED**: off-01/off-02 retain time-limit failures.
+No first author or all-on result is regenerated. The exact outcome and remaining
+evidence requirements are in [RESULT.md](experiments/on-off-20260918-r4/RESULT.md).
+**Valid three-versus-three reduction: NOT AVAILABLE.** Descriptive comparison
+only: the three all-on executions average **24.761M**, versus **42.177M** for the
+one complete all-off workflow, a **41.29%** difference using that single off run
+as denominator. This is not the requested complete comparison or a 50% proof.
+**External feature checks:** on-01 **2/3**, on-03 **2/3**, off-03 **3/3**;
+failed/unfinished workflows are not scored. On-02's failed terminal assertion
+and full suite pass once on unchanged source; its original failure remains.
 [Current protocol](experiments/on-off-20260918-r4/PROTOCOL.md) ·
 [Current qualification](experiments/on-off-20260918-r4/QUALIFICATION.md) ·
 [15-second continuation snapshot](runs/on-off-20260918-r4/continuation-monitor/current.json).
 
 <!-- continuation-live-table -->
-| Saved-work continuation | Current stage / outcome | Cumulative raw tokens | Missing returned counts |
+| Saved-work continuation | Current stage / outcome | Cumulative raw tokens | Runner incomplete-turn flags |
 | --- | --- | ---: | ---: |
-| off-01-continued | review-completion-review-1 | 32,779,681 | 0 |
+| off-01-continued | failed: workflow wall-time/observed-token limit reached | 40,043,900 | 1 |
 | off-02-continued | failed: workflow wall-time/observed-token limit reached | 37,167,934 | 2 |
-| off-03-continued | review-completion-review-1 | 34,828,154 | 0 |
+| off-03-continued | passed | 42,177,372 | 0 |
 <!-- continuation-live-table-end -->
+
+Off-01's single flag denotes its interrupted, unfinished planning turn; the
+independent audit finds its delivered output priced. Off-02's two flags describe
+one interrupted response with a genuinely missing final price, not two missing
+responses. Earlier and resumed costs appear once in the cumulative totals.
 
 Original terminal records before continuation (unchanged):
 
@@ -121,6 +132,30 @@ Raw tokens are input plus output, with cached input included only once.
 That previous observer is stopped; the replacement observer is separate.
 
 ## Activity log, with earlier entries retained
+
+- 2026-09-18 02:21–02:31 UTC: the final six-record audit reproduces every
+  observed total and all saved source/configuration links. It identifies only
+  off-02's missing final response price. The unchanged external scorer returns
+  2/3 for on-01, 2/3 for on-03 and 3/3 for off-03; other records remain explicitly
+  not scored. On-01 fails to show the completion question; on-03 fails the
+  visible-closure check. On-02's original failed terminal assertion and full
+  suite both pass in the single unchanged-source diagnostic, without model
+  generation. All 70 local tests, compilation, program/input hashes and whitespace
+  checks pass. RESULT.md and SUMMARY.json retain the exact incomplete-comparison
+  conclusion, descriptive denominator, network/recovery limitations and all
+  earlier failures. No replacement, extra model turn or source repair follows
+  scoring. All-owned-process checks show no remaining benchmark or scorer.
+
+- 2026-09-18 02:19–02:20 UTC: off-03 passes all feature/review/integration
+  stages and final checks at 42,177,372 raw, including 118,492 child tokens.
+  Off-01 reaches its original active-time limit during integration planning
+  at 40,043,900 observed raw. Its last delivered message has a later price,
+  but the interrupted stage is incomplete and the runner conservatively marks
+  the turn incomplete. Off-02's earlier 37,167,934 remains incomplete with a
+  genuine missing post-message price. All generator and observer sessions close.
+  Start the unchanged feature scorer on all six records (failed workflows retain
+  its explicit not-scored result), the complete audit and the original-source
+  on-02 diagnostic. No new model observation or budget extension is launched.
 
 - 2026-09-18 02:02 UTC: off-02 reaches its original 5,400-second active
   limit while implementing the final feature. It retains two approved feature

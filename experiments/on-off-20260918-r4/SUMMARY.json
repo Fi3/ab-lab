@@ -1,0 +1,104 @@
+{
+  "date": "2026-09-18",
+  "all_model_execution_ended": true,
+  "requested_three_vs_three_validated": false,
+  "all_on_repeated": false,
+  "original_all_off_work_reused": true,
+  "raw_definition": "input plus output; cached input counted once; parent and child conversation counters included once",
+  "observations": [
+    {
+      "run": "on-01",
+      "status": "passed",
+      "total_raw": 25673000,
+      "parent_raw": 25607498,
+      "child_raw": 65502,
+      "audit_errors": [],
+      "duration_seconds": 4733.681456624996,
+      "result_sha256": "1cc417033c088d833020884d32cd738d04aacbc3cee36981e0709135020179c6",
+      "all_agent_stages_finished": true
+    },
+    {
+      "run": "on-02",
+      "status": "failed",
+      "total_raw": 22490575,
+      "parent_raw": 22477482,
+      "child_raw": 13093,
+      "audit_errors": [],
+      "duration_seconds": 3791.3588969580014,
+      "result_sha256": "fc671cb9370e11f8447fb391337de1b66ce088af1929253043cadf484b1af7f6",
+      "all_agent_stages_finished": true
+    },
+    {
+      "run": "on-03",
+      "status": "passed",
+      "total_raw": 26119875,
+      "parent_raw": 26080489,
+      "child_raw": 39386,
+      "audit_errors": [],
+      "duration_seconds": 4739.30511903399,
+      "result_sha256": "5550bf9f4857b5162328ab940bd41e6d9b5dd3c6912058ca7a6b364272b42eb6",
+      "all_agent_stages_finished": true
+    },
+    {
+      "run": "off-01-continued",
+      "status": "failed",
+      "total_raw": 40043900,
+      "parent_raw": 39855225,
+      "child_raw": 188675,
+      "audit_errors": [],
+      "duration_seconds": 5401.150564978001,
+      "result_sha256": "50129f9be47a74603e71f0778e2834cd0831f9f363b4dbad1d1c9c88f2338e13",
+      "all_agent_stages_finished": false
+    },
+    {
+      "run": "off-02-continued",
+      "status": "failed",
+      "total_raw": 37167934,
+      "parent_raw": 37115543,
+      "child_raw": 52391,
+      "audit_errors": [
+        "parent final message lacks a later price: ('01a0b237-1ebd-71e0-bb48-fbe6526c4e8c', '01a0b237-1eeb-7163-b815-675c55a76a5b')"
+      ],
+      "duration_seconds": 5405.100516577993,
+      "result_sha256": "7af55594d2b1e23cc7534e54225df62baa0fadf5e14ebc130894a12aee223861",
+      "all_agent_stages_finished": false
+    },
+    {
+      "run": "off-03-continued",
+      "status": "passed",
+      "total_raw": 42177372,
+      "parent_raw": 42058880,
+      "child_raw": 118492,
+      "audit_errors": [],
+      "duration_seconds": 5330.490616596988,
+      "result_sha256": "713376612019872a843041dcbdba547ece16aa03cb4e8fb8e614e182f2b82248",
+      "all_agent_stages_finished": true
+    }
+  ],
+  "all_on_mean_recorded_raw": 24761150,
+  "only_complete_all_off_raw": 42177372,
+  "descriptive_difference_percent": 41.292809803322974,
+  "descriptive_denominator": "the one completed all-off workflow, not a three-run all-off mean",
+  "descriptive_limit": "not the requested complete three-vs-three result; includes one originally failed all-on host check; two other all-off workflows are unfinished",
+  "external_feature_scores": {
+    "on-01": "2/3",
+    "on-02": "not scored: original workflow failed",
+    "on-03": "2/3",
+    "off-01-continued": "not scored: unfinished",
+    "off-02-continued": "not scored: unfinished",
+    "off-03-continued": "3/3"
+  },
+  "on_02_unchanged_source_diagnostic": "focused failed test and full original suite pass; original failure retained; zero additional model usage",
+  "limits": "90 active minutes per workflow; interruption drain adds up to about five seconds; repair pause separate",
+  "interpretation_limits": [
+    "two unfinished all-off workflows",
+    "one genuinely missing interrupted-response price",
+    "all-on external completion-behavior failures",
+    "mixed runner revisions with unchanged measured prompt functions and shared execution modules",
+    "native author network restrictions differ from external host command execution",
+    "on-first execution order; no randomization"
+  ],
+  "original_evidence": "runs/on-off-20260918-r4/accounting-original.json",
+  "final_evidence": "runs/on-off-20260918-r4/accounting-final.json",
+  "total_observed_raw": 193672656
+}

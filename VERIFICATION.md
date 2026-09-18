@@ -1,5 +1,27 @@
 # Verification
 
+## Six-run endpoint — 2026-09-18
+
+All six observations have retained terminal outcomes, including linked saved-work
+continuations. The full three-versus-three token validation is **not achieved**:
+two all-off workflows reach their 90-minute active-time limit before completion.
+One full all-off workflow passes repository checks and all three external feature
+tests at 42,177,372 raw. Two complete all-on workflows pass repository checks but
+score 2/3 externally. The third all-on run's failed terminal assertion and the
+full suite pass once on unchanged source, with zero additional model usage;
+its original failed result remains intact. No all-on model workflow is repeated.
+
+The final independent audit reproduces all observed totals. All-off 2 retains
+one missing interrupted-response price. All-off 1 has priced recorded output,
+but its interrupted integration plan and the whole workflow remain unfinished.
+The ordinary comparison guard rejects the incomplete/mixed-identity group.
+[Full results, exact denominators and limitations](experiments/on-off-20260918-r4/RESULT.md).
+
+All 70 local tests and Python compilation pass. The real parent resume test and
+the complete all-off workflow verify the agent-facing recovery path. The final
+accounting/scoring scripts affect no agent inputs or agent workflow and generate
+no model responses. No Work Leaf Rust implementation is part of these changes.
+
 ## Native completion and same-conversation recovery — 2026-09-18
 
 All 66 local tests, Python compilation and the whitespace check pass. Seven
@@ -28,8 +50,8 @@ The first and third pass; the second retains its original final test failure.
 All three all-off first authors have complete accounting and clean committed
 work, but the old parser rejects their valid final markers after a summary.
 Their explicit continuations start at independent review, preserve every prior
-cost and use only the remaining original allocation. The six-run comparison
-is not yet complete. [Recovery boundaries](experiments/on-off-20260918-r4/NATIVE-CONTINUATION.md).
+cost and use only the remaining original allocation. Their terminal outcomes
+are recorded above. [Recovery boundaries](experiments/on-off-20260918-r4/NATIVE-CONTINUATION.md).
 
 The provider-free audit has four additional tests; all 70 local tests pass.
 The audit combines original and continued transport records in order, checks
@@ -62,8 +84,8 @@ No broad sandbox change or credential copy is made. The successfully generated
 child verification above runs through the host-command path.
 
 The first tiny qualification failure (143,950 raw, no child generation) remains
-retained. It is not counted as successful verification. The full comparison is
-still pending; these functional checks establish no saving percentage.
+retained. It is not counted as successful verification. These functional checks
+do not themselves establish a saving percentage; the full outcomes appear above.
 
 Performance review flag: `NestedUsage.refresh` scans active-day candidate file
 names, and `NestedUsage.report` summarizes retained child turns at each poll.

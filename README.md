@@ -17,14 +17,16 @@ Python command-line tool;
 no other agent orchestrator, service, dashboard or third-party Python package
 is required.
 
-**Validation status:** the full all-on/all-off comparison is incomplete.
-Request interruption, parent-response accounting and actual native Git-history
-rewriting pass their small real-agent checks. Host-run nested launch/resume and
-independently reviewed no-change completion pass a real tiny workflow with
-complete usage and ten passing feature tests. Native-sandbox child startup has
-an explicit pre-agent filesystem limitation. The three earlier
-full-batch attempts remain failed or partial. No saving percentage is established.
-See [verification and retained failures](VERIFICATION.md).
+**Validation status:** a complete three-all-on versus three-all-off comparison
+is not established. The retained six-run test has two all-off time-limit failures
+and one complete all-off workflow with all three external feature checks passing.
+Two complete all-on workflows pass repository checks but only two of three
+external feature checks. A third all-on run has a retained host-test failure
+that passes a later unchanged-source diagnostic. No model workflow is repeated
+to improve its result. Real subscription checks cover interruption, Git writes,
+nested launch/resume and cost-preserving recovery. See the
+[six-run results and limits](experiments/on-off-20260918-r4/RESULT.md) and
+[implementation verification](VERIFICATION.md).
 
 - [How a benchmark runs](#how-a-benchmark-runs)
 - [Quick start](#quick-start)
