@@ -1,4 +1,28 @@
-# Benchmark attempts ended: 15 | Full workflows passing repository checks: 3
+# Baseline workflows finished: 0 | Running: 0 | Planned: 3
+
+Current request: three parallel workflows with **C13, C14, C15, C20, C38 on**;
+**C08, C16, C17, C25 off**. The agent uses its own tools, not host-executed edits.
+No all-on workflow will be repeated. The older research counters are untouched.
+
+Last updated: 2026-09-18 08:54 UTC.
+Current activity: prelaunch local checks and subscription-only configuration
+readback. No new model generation has started. Each workflow has a four-hour
+safety limit, 60M observed raw tokens and 600 parent turns; no 90-minute cutoff.
+[Exact prospective protocol](experiments/baseline-five-20260918/PROTOCOL.md).
+
+<!-- baseline-five-live-table -->
+| Baseline run | Stage / outcome | Observed raw tokens | Incomplete-turn flags |
+| --- | --- | ---: | ---: |
+| baseline-01 | Not started | 0 | 0 |
+| baseline-02 | Not started | 0 | 0 |
+| baseline-03 | Not started | 0 | 0 |
+<!-- baseline-five-live-table-end -->
+
+Native command restrictions stay unchanged. The saved all-on comparison will
+remain explicitly qualified by its different permissions, old source/time
+allocation and recorded feature-score failures. No new percentage is available.
+
+## Retained preceding batch: 15 attempts ended; 3 workflows passed repository checks
 
 Current repair: **3 / 3 obligations verified**. Original comparison attempts: **6 / 6 started; 6 / 6 ended**. Saved-work continuations: **3 / 3 started; 3 / 3 ended; 0 running**.
 The user authorizes repairs and completion of the requested comparison; reuse any
@@ -132,6 +156,13 @@ Raw tokens are input plus output, with cached input included only once.
 That previous observer is stopped; the replacement observer is separate.
 
 ## Activity log, with earlier entries retained
+
+- 2026-09-18 08:54 UTC: record the user's exact five-switch native baseline and
+  three concurrent observations. C25 is explicitly off after the user declined
+  its C17 dependency. Preserve source, model, task, native permissions, reviews
+  and final checks; enlarge only the time allowance to four hours. Local tests
+  and a non-generating configuration check precede generation. No all-on repeat,
+  new historical-research task, patch to Work Leaf or extra pilot is selected.
 
 - 2026-09-18 02:21–02:31 UTC: the final six-record audit reproduces every
   observed total and all saved source/configuration links. It identifies only
