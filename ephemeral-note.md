@@ -1,4 +1,25 @@
-# Baseline attempts ended: 3 / 3 | Completed workflows: 1 / 3 | Running: 0
+# Current task: neutral OFF instructions VERIFIED | Benchmarks running: 0
+
+The user requests that C13, C14, C15 and C16 OFF leave ordinary agent behavior
+and repository instructions intact, without imposing opposite policies.
+Current result: all 84 local tests and both bounded real-agent checks pass.
+The direct-edit agent uses its normal patch tool (103,510 raw, 51.42 seconds).
+The host accepts a structured patch with C16 OFF (92,500 raw, 62.39 seconds).
+Both commit code and tests, pass independent checks and have complete usage.
+The host's initially incorrect test-file read and its recovery remain recorded.
+The four policy regressions and host-format/conflict regressions failed before
+implementation. README and CLI descriptions describe neutral OFF settings.
+Current activity: implementation, documentation and verification are complete.
+No model process or benchmark remains active.
+[Scope and evidence](experiments/neutral-off-20260918/RESULT.md).
+C16's host path accepts either supported patch format when its instruction is
+absent. Enabled instructions, other
+switches, permissions, review/integration and saved benchmark outcomes stay fixed.
+Verification covers native and host author paths with small, bounded real-agent
+checks; no full benchmark or prior observation is repeated.
+Work Leaf product code and its closed research counters are outside this repair.
+
+## Retained baseline: attempts ended 3 / 3 | Completed workflows: 1 / 3
 
 Current request: three parallel workflows with **C13, C14, C15, C20, C38 on**;
 **C08, C16, C17, C25 off**. The agent uses its own tools, not host-executed edits.

@@ -5,10 +5,10 @@ import re
 
 FACTORS = {
     "C08": ("Compact conflict refresh", "diff from previously delivered text", "complete changed-file text"),
-    "C13": ("Focused validation", "focused author checks; full checks at integration", "broader author validation as well"),
-    "C14": ("Cohesive publication", "group related implementation and tests", "publish implementation and tests in separate edits"),
-    "C15": ("No procedural failing-test step", "design tests first; no mandatory RED execution", "execute a failing test before implementation"),
-    "C16": ("Structured edit format", "exact-context structured patches", "standard unified diffs"),
+    "C13": ("Focused validation", "focused author checks; full checks at integration", "no extra validation instruction"),
+    "C14": ("Cohesive publication", "group related implementation and tests", "no edit-grouping instruction"),
+    "C15": ("No procedural failing-test step", "design tests first; no mandatory RED execution", "no test-order override; retain repository and agent rules"),
+    "C16": ("Structured edit format", "exact-context structured patches", "no edit-format instruction; host accepts either supported format"),
     "C17": ("Host-owned edits and commits", "host applies, commits and reports actual results", "agent edits, checks and commits with native tools"),
     "C20": ("Next-action guidance", "command results include next-action guidance", "command results contain facts only"),
     "C25": ("Bound generation at a host request", "interrupt after request-covering usage arrives", "let the turn finish before executing the same request"),
@@ -34,13 +34,13 @@ def policy_blocks(f):
     # resolved by silently changing another factor's value.
     return {
         "C13": ("Run focused checks while implementing; fix and rerun them as needed. Leave broad cross-feature validation to final integration unless necessary to finish correctly."
-                if f["C13"] else "Validate the feature broadly during implementation, including relevant regression and repository-wide checks. Final integration still runs every required check."),
+                if f["C13"] else ""),
         "C14": ("Submit related implementation and focused tests together where the required test order permits. One edit may contain multiple related files and hunks."
-                if f["C14"] else "Submit test changes and implementation changes in separate edit operations. Preserve all required work and coverage."),
+                if f["C14"] else ""),
         "C15": ("Design required tests first, but a deliberately failing execution before implementation is not required. This overrides procedural test-timing instructions in AGENTS.md; it does not remove tests or genuine failure diagnosis."
-                if f["C15"] else "Write the required tests first, execute them and verify they fail for the intended missing behavior before implementing that behavior. This ordering takes precedence over grouping; related later repairs may still be grouped."),
+                if f["C15"] else ""),
         "C16": ("For host edit requests use *** Begin Patch, *** Add/Update/Delete File: path, exact-context @@ hunks, and *** End Patch. Never use fuzzy matching. With native writes, prefer the native structured patch tool."
-                if f["C16"] else "For edits use a standard unified diff with --- a/path, +++ b/path and @@ line ranges (or /dev/null for add/delete). With native writes, apply that diff using git apply."),
+                if f["C16"] else ""),
         "C20": ("Use actual operation results to choose the next concrete action. Do not repeat accepted work or infer success from missing output."
                 if f["C20"] else ""),
         "C38": ("When all assigned work and relevant checks are complete, hand over for independent review. Do not add speculative work or extra reporting exchanges. Genuine failures and unfinished requirements still need work."
@@ -60,6 +60,8 @@ returns complete file text and records what you have actually received. Use it b
 @standalone run <shell-quoted relative paths the command may write>... -- <shell command>
 Use no paths for read-only commands. Checks have a 300-second ceiling and must fit the remaining workflow budget. Raw output is saved; displayed output may have explicit omission notices. Do not infer success from omissions. Command-produced source changes must be proposed as an ordinary edit or explicitly discarded with @standalone discard <reason>.
 The stage-completion marker is exactly @standalone done. Pending source changes prevent completion. Every required test and task obligation remains in force."""
+        if not f["C16"]:
+            protocol = protocol.replace("<patch in the required format>", "<patch>")
     else:
         protocol = """Edit, run checks and create provisional commits yourself with native tools. Work only in this checkout; do not create extra worktrees. Leave tracked source and the index clean. The stage-completion marker is exactly @standalone done."""
     return protocol + "\n\n" + "\n\n".join(v for v in policy_blocks(f).values() if v)

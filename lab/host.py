@@ -451,9 +451,15 @@ class Host:
         path.mkdir()
         return path
 
+    def structured_patch(self, patch):
+        # OFF removes the format restriction; dispatch from the actual envelope.
+        # Selecting one validator (rather than retrying another) keeps malformed
+        # proposals rejected before any source or index mutation.
+        return self.factors["C16"] or patch.startswith("*** Begin Patch")
+
     def apply(self, reason, patch):
         self.unchanged()
-        changes = plan_edit(self.repo, patch) if self.factors["C16"] else plan_unified(self.repo, patch)
+        changes = plan_edit(self.repo, patch) if self.structured_patch(patch) else plan_unified(self.repo, patch)
         folder = self.operation_dir()
         (folder / "proposal.txt").write_text(patch, encoding="utf-8")
         before_head = self.expected["head"]
@@ -581,7 +587,7 @@ class Host:
         # Only actual previously delivered full text can serve as a diff base.
         # A native inspection, a file on disk, or an omitted refresh is not one.
         names = []
-        if self.factors["C16"]:
+        if self.structured_patch(patch):
             names = re.findall(r"^\*\*\* (?:Update|Delete) File: (.+)$", patch, re.M)
         else:
             names = re.findall(r"^--- a/(.+)$", patch, re.M)

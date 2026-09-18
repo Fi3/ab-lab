@@ -158,17 +158,19 @@ and `run`. For example, inspect a plan without the extra finishing reminders:
 python3 -m lab plan benchmarks/example.json --off C38
 ```
 
-“On” and “off” select the two behaviors in this table. They do **not** mean
-“better” and “worse.” An off setting can require more work, and an on setting
-can have no effect or even increase total usage.
+For instruction switches **C13, C14, C15, C16, C20 and C38**, off means no extra
+instruction from that switch. It does not impose an opposite policy. Ordinary
+agent behavior, repository instructions and benchmark requirements remain in
+force. Operational switches C08, C17 and C25 select the execution behaviors in
+the table. Neither setting promises better results or lower token usage.
 
 | ID and detailed explanation | On | Off |
 | --- | --- | --- |
 | [C08: Short updates after an outdated edit](#c08-short-updates-after-an-outdated-edit) | Send the changed lines relative to text already delivered | Send the complete changed file, subject to the shared fallback rules |
-| [C13: Focus checks during implementation](#c13-focus-checks-during-implementation) | Focus author checks; keep broad final checks | Ask for broader author checks too |
-| [C14: Submit code and tests together](#c14-submit-code-and-tests-together) | Group related code and tests in one edit | Request separate edit operations |
-| [C15: Make the failing-test demonstration optional](#c15-make-the-failing-test-demonstration-optional) | No required failing test run before implementation | Require tests to fail for the intended reason first |
-| [C16: Choose the edit format](#c16-choose-the-edit-format) | Structured exact-text patches | Standard Git-style patches |
+| [C13: Focus checks during implementation](#c13-focus-checks-during-implementation) | Focus author checks; keep broad final checks | No extra validation guidance |
+| [C14: Submit code and tests together](#c14-submit-code-and-tests-together) | Group related code and tests in one edit | No instruction about grouping or separating edits |
+| [C15: Make the failing-test demonstration optional](#c15-make-the-failing-test-demonstration-optional) | No required failing test run before implementation | Keep the repository's and agent's normal test-order rules |
+| [C16: Choose the edit format](#c16-choose-the-edit-format) | Structured exact-text patches | No format instruction; native tools remain available, or the host accepts either supported patch format |
 | [C17: Let the local program carry out operations](#c17-let-the-local-program-carry-out-operations) | Host executes edits, commits and checks | Agent uses its own editing and command tools |
 | [C20: Remind the agent how to use command results](#c20-remind-the-agent-how-to-use-command-results) | Include a next-action reminder | Omit that reminder, retaining actual results |
 | [C25: Stop generation when a host request is ready](#c25-stop-generation-when-a-host-request-is-ready) | Interrupt after a complete request and a short usage-report wait | Let the turn end naturally before acting |
@@ -244,12 +246,14 @@ review, given that full final checks still run later?**
   across features to final integration unless needed earlier for correctness.
   After accepting an edit, the host recommends at most one relevant focused
   validation step for that accepted work.
-- **Off:** ask the author to perform broader validation too, including relevant
-  regression and repository-wide checks.
+- **Off:** omit this checking guidance, including the host's post-edit reminder.
+  Let the author follow the task and repository requirements without an added
+  instruction to run either broader or narrower checks.
 
 Example: after changing a parser, on favors its targeted parser tests during
-implementation. Off also asks the author to consider the broader project test
-suite. The final required suite remains the same in both cases.
+implementation. Off leaves that choice to the normal instructions; it does not
+demand another project-wide test run. The final required suite remains the same
+in both cases.
 
 Possible token effect: requesting, reading and reacting to repeated broad checks
 can add conversation text and further investigation. Focused checks may avoid
@@ -268,18 +272,20 @@ edit operation or separate operations?**
 
 - **On:** ask the author to group related code and tests in one proposal when
   the required test order allows it. One proposal can change several files.
-- **Off:** ask for test changes and implementation changes in separate edits.
+- **Off:** give no extra instruction about grouping or separating edits.
 
 Example: adding a function and its unit tests can be one two-file proposal with
-on. With off, they are separate proposals, each followed by its own result.
+on. With off, the agent may still group them, or make separate edits when the
+task or repository rules call for that. Separate edits are not forced.
 
 Possible token effect: grouping can avoid extra edit requests, acceptance
 messages and decisions between closely related changes. It does not remove the
 tests or imply that the agent generates less implementation code.
 
-This is not the test-order switch. If C15 is off, the agent must first submit
-tests and run them to see the intended failure, even with C14 on. Grouping can
-still apply to compatible work afterward. Both settings eventually produce the
+This is not the test-order switch. With C15 off, a repository rule requiring a
+failing test before implementation still applies, even with C14 on. Without
+such a rule, C15 off does not introduce one. Grouping can still apply to
+compatible work afterward. Both settings eventually produce the
 same required one final commit per feature; this switch concerns the temporary
 editing steps, not the final commit count. Grouping is an instruction, not a
 guarantee that every possible change is submitted together.
@@ -292,18 +298,19 @@ the behavior that makes it pass?**
 - **On:** design the required tests first, but do not require a separate test
   execution demonstrating the missing behavior. Implementation and tests may
   be submitted together when C14 allows it, then checked.
-- **Off:** write the tests, run them, confirm that they fail because the requested
-  behavior is missing, then implement that behavior and validate the result.
+- **Off:** give no test-order override. Follow the repository's and agent's
+  normal rules; do not introduce a mandatory failing-test demonstration.
 
-Example: for a new parser option, off requires a saved failing test run before
-the option is implemented. On permits the implementation and tests to reach the
-first test run together. A test that fails because of a broken test setup is not
-the intended demonstration.
+Example: if a repository requires failing tests before implementation, off
+preserves that requirement. If it has no such rule, off does not add one. On
+explicitly permits implementation and tests to reach the first test run together.
+A test that fails because of a broken setup is not evidence of missing behavior.
 
-Possible token effect: the required failing run adds an execution step, its
+Possible token effect: an otherwise required failing run adds an execution step, its
 output and decisions around it. It also prevents submitting the initial tests
 and implementation together. C14 and C15 therefore can interact; their effects
-should not be assumed independent.
+should not be assumed independent. If the normal instructions already allow
+tests and implementation together, this override may have little effect.
 
 On does not mean “skip tests,” “ignore failures” or “omit regression coverage.”
 The instruction explicitly overrides repository rules about this procedural
@@ -317,25 +324,26 @@ This asks: **how should the agent describe the file changes it wants applied?**
 - **On:** use a structured patch that names each file operation and gives the
   exact old and replacement text. The host requires unambiguous text matches;
   it does not guess at a nearby match.
-- **Off:** use a standard Git-style patch, also called a unified diff, with
-  file headers, line ranges, removed lines and added lines. The host validates
-  it with Git before applying the planned changes.
+- **Off:** give no editing-tool or patch-format instruction. When the agent
+  edits directly, it chooses its normal tools subject to repository rules.
+  When the host owns edits, it accepts either structured patches or Git-style
+  unified diffs inside the same edit-request protocol.
 
-Example: both formats can request the same change from `return value` to
-`return value + 1`. On uses `*** Update File` and exact-text blocks; off uses
-`---` / `+++` file headers and Git-style line ranges. The intended source change
-can be identical even though its description differs.
+Example: with off, the agent can use its usual structured patch tool without
+being told to calculate Git-style line ranges or run `git apply`. It may choose
+the same format as with on. Off does not guarantee a different editing method.
 
 Possible token effect: formats can require different amounts of text, and the
 agent may make different formatting or context errors that need correction.
 The two matching methods can reject different proposals, so this is not a
 promise that only the number of formatting characters changes.
 
-With C17 on, the host selects the corresponding patch validator and rejects an
-invalid proposal without partially applying that rejected edit. With C17 off,
-C16 is an instruction to use the corresponding native editing method; the host
-is not applying or enforcing that format. Keep the same edit ownership when
-trying to measure the format's effect.
+With C17 on, enabled C16 requires the structured format. Disabled C16 selects a
+validator from the submitted patch's actual format, including when returning
+changed-file information after rejection. Both validators retain path safety
+and reject invalid edits without partially applying them. With C17 off, enabled
+C16 prefers the native structured patch tool, while disabled C16 says nothing
+about editing tools. Keep the same edit ownership when measuring the effect.
 
 ### C17: Let the local program carry out operations
 
@@ -536,6 +544,11 @@ partial or failed attempts. `compare` and `interaction` require successful
 complete workflows with no flagged usage gaps. They also require matching
 settings other than the behavior switches: benchmark, starting commit, runner
 code, model, reasoning effort, effective configuration and run limits.
+
+Saved results describe the exact runner version and instructions that produced
+them. Some earlier records use opposite-policy OFF instructions; those records
+are not neutral-OFF measurements. Their original prompts and outcomes remain
+the evidence, and must not be relabeled or pooled with different switch meanings.
 
 Nested Codex verification inside the owned checkout is included separately in
 `usage.nested` and in the total. Its model, reasoning setting, native turn

@@ -1,5 +1,22 @@
 # Verification
 
+## Neutral disabled instructions — 2026-09-18
+
+C13/C14/C15/C16 OFF leave ordinary agent/repository policy intact. All 84 local
+tests pass, including fourteen regressions covering absent instructions, every
+switch combination, both host edit formats, rejected/stale edits and preserved
+review/repair/integration. Enabled author instructions retain their exact
+pre-repair hashes. The failing-before-fix assertions and scope are documented
+in the [verification result](experiments/neutral-off-20260918/RESULT.md).
+
+Both real-subscription author checks pass: direct native edits and host-managed
+edits with all four instructions disabled. Both agents implement and test the
+same tiny function, commit clean source and retain complete token records.
+The native agent uses its normal patch tool; the host accepts a structured patch
+without a format instruction. Verification uses 196,010 raw tokens combined;
+it is not a token-saving experiment or a full-benchmark rerun. Other permissions,
+switches, transport and Work Leaf implementation remain outside the repair.
+
 ## Six-run endpoint — 2026-09-18
 
 All six observations have retained terminal outcomes, including linked saved-work
