@@ -186,7 +186,8 @@ class ScbWorkflowTests(unittest.TestCase):
             for options, executable in (([], "scb-check"), (["--scb-check", "/some/tool"], "/some/tool")):
                 with self.subTest(options=options), patch("lab.__main__.run", return_value={"status": "passed"}) as runner:
                     argv = ["lab", "run", str(path), "--out", str(root / "run"),
-                            "--seconds", "30", "--max-raw", "1000", "--max-turns", "10", *options]
+                            "--seconds", "30", "--max-raw", "1000", "--max-turns", "10",
+                            "--harness", "codex", *options]
                     with patch.object(sys, "argv", argv), contextlib.redirect_stdout(io.StringIO()):
                         self.assertEqual(main(), 0)
                     self.assertEqual(runner.call_args.kwargs["scb_check"], executable)

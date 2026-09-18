@@ -5,10 +5,12 @@ import json
 import os
 from pathlib import Path
 import queue
+import shutil
 import signal
 import subprocess
 import threading
 import time
+import uuid
 
 from .host import Fatal, Rejected, parse_operations, save_json
 from .environment import clean_env
@@ -25,19 +27,25 @@ class Usage:
         self.totals = {}
         self.uncertain = []
 
-    def observe(self, params):
-        thread = params.get("threadId")
-        value = params.get("tokenUsage", {}).get("total", {})
-        if not thread or any(type(value.get(k)) is not int or value[k] < 0 for k in ("inputTokens", "outputTokens")):
+    def observe_tokens(self, thread, input_tokens, output_tokens, cached_input_tokens=0):
+        if not thread or any(type(v) is not int or v < 0 for v in (input_tokens, output_tokens, cached_input_tokens)):
             self.uncertain.append("invalid usage notification")
             return False
-        now = tuple(value.get(k, 0) for k in ("inputTokens", "outputTokens", "cachedInputTokens"))
+        now = (input_tokens, output_tokens, cached_input_tokens)
         before = self.totals.get(thread, (0, 0, 0))
         if any(a < b for a, b in zip(now, before)):
             self.uncertain.append(f"provider counters decreased for {thread}; no negative charge inferred")
             return False
         self.totals[thread] = now
         return now[:2] != before[:2]
+
+    def observe(self, params):
+        thread = params.get("threadId")
+        value = params.get("tokenUsage", {}).get("total", {})
+        if not thread or not isinstance(value, dict):
+            self.uncertain.append("invalid usage notification")
+            return False
+        return self.observe_tokens(thread, value.get("inputTokens", 0), value.get("outputTokens", 0), value.get("cachedInputTokens", 0))
 
     @property
     def raw(self):
@@ -375,3 +383,383 @@ class Codex:
             self.process.stdout.close()
         self.log.close()
         self.stderr.close()
+
+
+class PiThread:
+    def __init__(self, thread_id, argv, cwd, env, stderr, log_fn):
+        self.thread_id = thread_id
+        self.log_fn = log_fn
+        self.events = queue.Queue()
+        self.process = subprocess.Popen(
+            argv,
+            cwd=cwd,
+            env=env,
+            stdin=subprocess.PIPE,
+            stdout=subprocess.PIPE,
+            stderr=stderr,
+            text=True,
+            bufsize=1,
+            start_new_session=True
+        )
+        self.reader = threading.Thread(target=self._reader, daemon=True)
+        self.reader.start()
+
+    def _reader(self):
+        try:
+            for line in self.process.stdout:
+                line = line.strip()
+                if not line:
+                    continue
+                try:
+                    msg = json.loads(line)
+                    self.log_fn("receive", msg)
+                    self.events.put(msg)
+                except json.JSONDecodeError:
+                    self.events.put({"_transport_error": "non-JSON server output"})
+        except Exception:
+            pass
+        finally:
+            self.events.put({"_transport_error": "pi stdout closed"})
+
+    def send(self, message):
+        self.log_fn("send", message)
+        self.process.stdin.write(json.dumps(message) + "\n")
+        self.process.stdin.flush()
+
+    def incoming(self, timeout):
+        try:
+            return self.events.get(timeout=max(0.001, timeout))
+        except queue.Empty:
+            return None
+
+    def rpc(self, message, timeout=30):
+        req_id = message.get("id") or str(uuid.uuid4())
+        message["id"] = req_id
+        self.send(message)
+        end = time.monotonic() + timeout
+        deferred = []
+        try:
+            while time.monotonic() < end:
+                event = self.incoming(min(0.2, end - time.monotonic()))
+                if event is None:
+                    continue
+                if "_transport_error" in event:
+                    raise Fatal(event["_transport_error"])
+                if event.get("type") == "response" and event.get("id") == req_id:
+                    return event
+                deferred.append(event)
+            raise Fatal(f"{message.get('type')} timed out")
+        finally:
+            for e in deferred:
+                self.events.put(e)
+
+    def close(self):
+        if self.process is not None:
+            if self.process.stdin is not None:
+                try:
+                    self.process.stdin.close()
+                except Exception:
+                    pass
+            if self.process.poll() is None:
+                try:
+                    self.process.wait(timeout=2)
+                except (OSError, subprocess.TimeoutExpired):
+                    try:
+                        os.killpg(self.process.pid, signal.SIGTERM)
+                        self.process.wait(timeout=2)
+                    except (ProcessLookupError, subprocess.TimeoutExpired):
+                        try:
+                            os.killpg(self.process.pid, signal.SIGKILL)
+                        except ProcessLookupError:
+                            pass
+                        self.process.wait(timeout=2)
+            if self.process.stdout is not None:
+                try:
+                    self.process.stdout.close()
+                except Exception:
+                    pass
+
+
+class Pi:
+    transport = "pi-rpc-stdio"
+
+    def __init__(self, repo, artifacts, model, effort, deadline, max_raw, max_turns, executable="pi", *, require_git_write=False):
+        self.repo, self.artifacts = Path(repo), Path(artifacts)
+        self.artifacts.mkdir(parents=True, exist_ok=False)
+        self.deadline, self.max_raw, self.max_turns = deadline, max_raw, max_turns
+        self.model, self.effort = model, effort
+        self.usage, self.turns, self.missing_turns = Usage(), [], []
+        self.threads = {}
+        self.thread_counter = 0
+        self.log = (self.artifacts / "transport.jsonl").open("x")
+        self.stderr = (self.artifacts / "stderr.txt").open("x")
+        self.command_env = clean_env()
+        self.sessions_dir = self.artifacts / "sessions"
+        self.sessions_dir.mkdir(parents=True, exist_ok=True)
+        if os.environ.get("AGENT_LAB_CHILD") == "1":
+            raise Fatal("recursive benchmark generation is forbidden")
+        resolved = shutil.which(executable)
+        if not resolved:
+            raise ValueError(f"Pi executable not found: {executable}")
+        self.executable = str(Path(resolved).absolute())
+        try:
+            self._probe()
+            if require_git_write:
+                self.verify_git_write()
+        except BaseException:
+            self.close()
+            raise
+
+    def _probe(self):
+        version = subprocess.check_output([self.executable, "--version"], text=True, env=self.command_env).strip()
+        auth = "default"
+        probe = subprocess.Popen(
+            [self.executable, "--mode", "rpc", "--approve", "--no-session"],
+            cwd=self.repo,
+            env=self.command_env,
+            stdin=subprocess.PIPE,
+            stdout=subprocess.PIPE,
+            stderr=self.stderr,
+            text=True,
+            bufsize=1,
+            start_new_session=True
+        )
+        try:
+            probe.stdin.write(json.dumps({"id": "probe-state", "type": "get_state"}) + "\n")
+            probe.stdin.flush()
+            line = probe.stdout.readline()
+            probe_state = json.loads(line) if line else {}
+            data = probe_state.get("data") or {}
+            model_info = data.get("model") or {}
+            if not self.model:
+                self.model = model_info.get("id") or "default"
+            auth = model_info.get("provider") or auth
+        finally:
+            if probe.stdin is not None:
+                try:
+                    probe.stdin.close()
+                except Exception:
+                    pass
+            if probe.poll() is None:
+                try:
+                    probe.terminate()
+                    probe.wait(timeout=2)
+                except (OSError, subprocess.TimeoutExpired):
+                    probe.kill()
+            if probe.stdout is not None:
+                try:
+                    probe.stdout.close()
+                except Exception:
+                    pass
+        self.identity = {
+            "pi_version": version,
+            "harness": "pi",
+            "auth": auth,
+            "model": self.model,
+            "effort": self.effort,
+            "effective_config_sha256": hashlib.sha256(json.dumps({
+                "pi_version": version, "model": self.model, "effort": self.effort, "auth": auth
+            }, sort_keys=True).encode()).hexdigest(),
+        }
+        save_json(self.artifacts / "provider.json", self.identity)
+
+    def verify_git_write(self):
+        proc = subprocess.Popen(
+            [self.executable, "--mode", "rpc", "--approve", "--no-session"],
+            cwd=self.repo,
+            env=self.command_env,
+            stdin=subprocess.PIPE,
+            stdout=subprocess.PIPE,
+            stderr=self.stderr,
+            text=True,
+            bufsize=1,
+            start_new_session=True
+        )
+        try:
+            req = {"id": "git-preflight", "type": "bash", "command": "git update-index --refresh"}
+            proc.stdin.write(json.dumps(req) + "\n")
+            proc.stdin.flush()
+            receipt = {}
+            while line := proc.stdout.readline():
+                try:
+                    msg = json.loads(line)
+                except json.JSONDecodeError:
+                    continue
+                if msg.get("id") == "git-preflight" and msg.get("type") == "response":
+                    receipt = msg.get("data", {})
+                    break
+            save_json(self.artifacts / "git-write-preflight.json", {"request": req, "response": receipt})
+            if receipt.get("exitCode") != 0:
+                raise Fatal("Git-write preflight failed before model generation: " + str(receipt.get("output", "unknown error")))
+        finally:
+            if proc.stdin is not None:
+                try:
+                    proc.stdin.close()
+                except Exception:
+                    pass
+            if proc.poll() is None:
+                try:
+                    proc.terminate()
+                    proc.wait(timeout=2)
+                except (OSError, subprocess.TimeoutExpired):
+                    proc.kill()
+            if proc.stdout is not None:
+                try:
+                    proc.stdout.close()
+                except Exception:
+                    pass
+
+    def record(self, direction, event):
+        self.log.write(json.dumps({"time": time.time(), "direction": direction, "event": event}) + "\n")
+        self.log.flush()
+
+    def start_thread(self, writable=False):
+        self.thread_counter += 1
+        thread_id = f"pi-thread-{self.thread_counter}"
+        session_dir = self.sessions_dir / thread_id
+        session_dir.mkdir(parents=True, exist_ok=True)
+        argv = [self.executable, "--mode", "rpc", "--approve", "--session-dir", str(session_dir)]
+        if self.model:
+            argv.extend(["--model", self.model])
+        if self.effort:
+            argv.extend(["--thinking", self.effort])
+        th = PiThread(thread_id, argv, self.repo, self.command_env, self.stderr, self.record)
+        self.threads[thread_id] = th
+        return thread_id
+
+    def observed_raw(self):
+        return self.usage.raw
+
+    def turn(self, thread, prompt, label, interrupt=False, host_request=False, writable=False):
+        if len(self.turns) >= self.max_turns:
+            raise Fatal("workflow turn limit reached")
+        if time.monotonic() >= self.deadline or self.observed_raw() >= self.max_raw:
+            raise Fatal("workflow wall-time/observed-token limit reached")
+        folder = self.artifacts / f"turn-{len(self.turns)+1:04d}"
+        folder.mkdir()
+        (folder / "prompt.txt").write_text(prompt)
+        turn_id = f"turn-{len(self.turns)+1:04d}"
+        row = {"label": label, "thread_id": thread, "turn_id": turn_id, "status": "started", "prompt_file": str(folder / "prompt.txt")}
+        self.turns.append(row)
+        th = self.threads[thread]
+        gate = InterruptGate(interrupt)
+        selected, replies, interrupted = None, [], None
+        priced, last_output, last_usage = False, 0.0, 0.0
+        stop_reason, stop_at = None, None
+        try:
+            th.send({"id": turn_id, "type": "prompt", "message": prompt})
+            while True:
+                now = time.monotonic()
+                if stop_at is not None and now - stop_at > 15:
+                    raise Fatal("interrupted turn did not close within 15 seconds; retained with unknown tail")
+                if interrupted is None:
+                    budget = now >= self.deadline or self.observed_raw() >= self.max_raw
+                    reason = "budget" if budget else gate.reason(now)
+                    if reason:
+                        th.send({"type": "abort"})
+                        interrupted, stop_at = reason, now
+                        if budget:
+                            stop_reason = "workflow wall-time/observed-token limit reached"
+                message = th.incoming(0.1)
+                if message is None:
+                    continue
+                if "_transport_error" in message:
+                    raise Fatal(message["_transport_error"])
+                if message.get("type") == "extension_ui_request":
+                    th.send({"type": "extension_ui_response", "id": message.get("id"), "cancelled": True})
+                if message.get("type") == "response" and message.get("command") == "prompt" and message.get("id") == turn_id:
+                    if not message.get("success"):
+                        raise Fatal(f"prompt failed: {message.get('error')}")
+                if message.get("type") == "message_update" and message.get("usage"):
+                    u = message["usage"]
+                    fresh = self.usage.observe_tokens(thread, u.get("input", 0), u.get("output", 0), u.get("cacheRead", 0))
+                    if fresh:
+                        priced, last_usage = True, now
+                        if gate.at is not None:
+                            gate.fresh_usage = True
+                if message.get("type") in ("message_end", "turn_end"):
+                    m = message.get("message", {})
+                    if m.get("role") == "assistant":
+                        text = "".join(c.get("text", "") for c in m.get("content", []) if isinstance(c, dict) and c.get("type") == "text")
+                        if text and (not replies or replies[-1] != text):
+                            replies.append(text)
+                            last_output = now
+                            gate.fresh_usage = False
+                            if selected is None and host_request:
+                                try:
+                                    if len(parse_operations(text)) == 1:
+                                        selected = text
+                                        gate.directive(now)
+                                except Rejected:
+                                    pass
+                    if m.get("usage"):
+                        u = m["usage"]
+                        fresh = self.usage.observe_tokens(thread, u.get("input", 0), u.get("output", 0), u.get("cacheRead", 0))
+                        if fresh:
+                            priced, last_usage = True, now
+                            if gate.at is not None:
+                                gate.fresh_usage = True
+                if message.get("type") == "agent_settled":
+                    row.update(status="interrupted" if interrupted else "completed", interrupt_reason=interrupted)
+                    break
+
+            try:
+                stats = th.rpc({"type": "get_session_stats"}, timeout=5)
+                if stats and stats.get("success") and "tokens" in stats.get("data", {}):
+                    tok = stats["data"]["tokens"]
+                    self.usage.observe_tokens(thread, tok.get("input", 0), tok.get("output", 0), tok.get("cacheRead", 0))
+                    priced = True
+                    last_usage = time.monotonic()
+            except Exception:
+                pass
+
+            if not priced or last_output > last_usage:
+                self.missing_turns.append({"thread_id": thread, "turn_id": turn_id, "reason": "no fresh usage covering the last delivered message"})
+            final = selected if selected is not None else (replies[-1] if replies else "")
+            (folder / "reply.txt").write_text(final)
+            save_json(folder / "messages.json", replies)
+            row["usage_observed_after_last_message"] = priced and last_usage >= last_output
+            if stop_reason:
+                raise Fatal(stop_reason)
+            if not final:
+                raise Fatal("turn supplied no executable request or final reply")
+            return final
+        except BaseException as exc:
+            if interrupted is None and row.get("status") == "started":
+                try:
+                    th.send({"type": "abort"})
+                    drain_end = time.monotonic() + 2
+                    while time.monotonic() < drain_end:
+                        th.incoming(min(0.1, drain_end - time.monotonic()))
+                except (OSError, Fatal):
+                    self.usage.uncertain.append("transport unavailable during cancellation drain")
+            row.update(error=str(exc))
+            self.missing_turns.append({"thread_id": thread, "turn_id": turn_id, "reason": "failed/incomplete turn; inspect retained transport"})
+            raise
+        finally:
+            save_json(folder / "result.json", row)
+            with (self.artifacts / "coverage.jsonl").open("a") as journal:
+                journal.write(json.dumps({"turn_id": turn_id, "label": label,
+                    "status": row["status"], "error": row.get("error"),
+                    "usage_observed_after_last_message": row.get("usage_observed_after_last_message", False)}) + "\n")
+
+    def report(self):
+        return {
+            **self.usage.report(),
+            "turns": self.turns,
+            "unpriced_or_incomplete_turns": self.missing_turns,
+            "parent_observed_raw_tokens": self.usage.raw,
+            "nested": {"observed_raw_tokens": 0, "cached_input_tokens": 0, "measurement_complete": True, "errors": [], "incomplete": []},
+            "observed_raw_tokens": self.usage.raw,
+            "cached_input_tokens": self.usage.cached,
+            "measurement_complete": (not self.missing_turns and not self.usage.uncertain and bool(self.turns)),
+            "qualification": "pi rpc per-turn coverage and session tokens"
+        }
+
+    def close(self):
+        for th in self.threads.values():
+            th.close()
+        if hasattr(self, "log") and not self.log.closed:
+            self.log.close()
+        if hasattr(self, "stderr") and not self.stderr.closed:
+            self.stderr.close()

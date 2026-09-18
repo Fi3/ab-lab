@@ -8,7 +8,7 @@ import time
 
 from .config import author_policy
 from .host import Fatal, Rejected, Host, execute_child, git, save_json, snapshot, parse_operations, relative_path
-from .provider import Codex, clean_env
+from .provider import Codex, Pi, clean_env
 from . import scb
 
 
@@ -101,11 +101,18 @@ def after_read_fixture(host, fixture, output, deadline):
 
 def run(benchmark, factors, output, seconds, max_raw, max_turns,
         model="gpt-5.5", effort="xhigh", executable="codex", backend=Codex, *,
-        scb_check=None, scb_seconds=300, _prepared=None):
+        harness=None, scb_check=None, scb_seconds=300, _prepared=None):
     if seconds <= 0 or max_raw <= 0 or max_turns <= 0:
         raise ValueError("positive wall-time, observed-token and turn limits are required")
     if not math.isfinite(scb_seconds) or scb_seconds <= 0:
         raise ValueError("scb-check needs a positive finite time limit")
+    if harness == "pi":
+        if backend is Codex:
+            backend = Pi
+        if executable == "codex":
+            executable = "pi"
+        if model == "gpt-5.5":
+            model = None
     fixture = benchmark.get("after_read")
     if fixture and not factors["C17"]:
         raise ValueError("after_read fixture requires mediated host reads (C17=on)")
@@ -124,11 +131,13 @@ def run(benchmark, factors, output, seconds, max_raw, max_turns,
     code = source_hashes()
     try:
         base = git(benchmark["repo"], "rev-parse", "--verify", benchmark["revision"]+"^{commit}").decode().strip()
+        default_transport = "pi-rpc-stdio" if harness == "pi" else "codex-app-server-stdio"
+        transport = backend.transport if isinstance(getattr(backend, "transport", None), str) else default_transport
         manifest = {"schema": "agent-behavior-lab/v1", "benchmark": benchmark, "base_commit": base,
                     "factors": factors, "limits": {"seconds": seconds, "observed_raw_tokens": max_raw, "turns": max_turns},
                     "model": model, "effort": effort, "source_sha256": code,
                     "workflow": "sequential-implement-review-repair-then-plan-accept-and-one-commit-per-feature",
-                    "transport": "codex-app-server-stdio", "created_at_unix": time.time()}
+                    "transport": transport, "created_at_unix": time.time()}
         if scb_check is not None:
             manifest["scb_check"] = {"executable": str(scb_check), "seconds_per_check": scb_seconds}
         if _prepared:
@@ -184,6 +193,11 @@ def run(benchmark, factors, output, seconds, max_raw, max_turns,
             score("before_changes")
         provider = backend(checkout, output / "provider", model, effort, deadline, max_raw, max_turns, executable,
                            require_git_write=True)
+        if manifest["model"] is None and provider.identity.get("model"):
+            manifest["model"] = provider.identity["model"]
+            with (output / "manifest.json").open("w", encoding="utf-8") as out:
+                json.dump(manifest, out, ensure_ascii=False, indent=2)
+                out.write("\n")
         if _prepared:
             from .continuation import configuration_matches, restore_provider
             if not configuration_matches(provider, _prepared['identity'], _prepared.get('redundant_trust', ())):
