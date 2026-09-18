@@ -1,0 +1,34 @@
+{
+  "created_at": "2026-09-18 01:22:14 UTC",
+  "generation": "none; execute only after all admitted model generation ends",
+  "source": "runs/on-off-20260918-r4/on-02/checkout",
+  "expected_head": "b7b296edafaa0fb132279fde4666236efd097a5b",
+  "original_outcome": "failed final check 3; never overwritten",
+  "checks": [
+    {
+      "argv": [
+        "cargo",
+        "test",
+        "--test",
+        "terminal_app",
+        "terminal_app_does_not_run_project_required_checks_outside_agent",
+        "--",
+        "--exact"
+      ],
+      "seconds": 300
+    },
+    {
+      "argv": [
+        "cargo",
+        "test",
+        "--all-targets",
+        "--all-features"
+      ],
+      "seconds": 300
+    }
+  ],
+  "CARGO_BUILD_JOBS": 4,
+  "source_changes": "none; require clean source before and after",
+  "interpretation": "A repeat pass is diagnostic evidence, not a rewrite of the original failed observation or another model run.",
+  "feature_scoring": "Run the unchanged original fixture scorer once on each of the six terminal records. Its failed-source refusal remains explicit. No model repairs follow scoring."
+}

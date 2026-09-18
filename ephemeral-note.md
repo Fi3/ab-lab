@@ -6,7 +6,7 @@ valid complete observation. The earlier third batch had no complete all-on
 observation; the current fourth batch has two passes and one final-check failure.
 [Current authority](experiments/on-off-20260918-r4/AUTHORITY.md).
 
-Last updated: 2026-09-18 01:18 UTC.
+Last updated: 2026-09-18 01:30 UTC.
 Current activity: all three saved all-off workflows run concurrently from
 independent review. All earlier work and costs remain included. Their valid
 first author replies are not regenerated. All-on 1/3 remain passed; all-on 2
@@ -19,9 +19,9 @@ Measured on-versus-off reduction: NOT AVAILABLE until the full comparison ends.
 <!-- continuation-live-table -->
 | Saved-work continuation | Current stage / outcome | Cumulative raw tokens | Missing returned counts |
 | --- | --- | ---: | ---: |
-| off-01-continued | visual-mode-fix-1 | 14,233,832 | 0 |
-| off-02-continued | visual-mode-fix-1 | 17,705,390 | 0 |
-| off-03-continued | visual-mode-fix-1 | 15,546,119 | 0 |
+| off-01-continued | visual-mode-review-3 | 18,254,980 | 0 |
+| off-02-continued | visual-mode-review-2 | 21,347,625 | 0 |
+| off-03-continued | visual-mode-review-3 | 19,635,508 | 0 |
 <!-- continuation-live-table-end -->
 
 Original terminal records before continuation (unchanged):
@@ -120,6 +120,14 @@ Raw tokens are input plus output, with cached input included only once.
 That previous observer is stopped; the replacement observer is separate.
 
 ## Activity log, with earlier entries retained
+
+- 2026-09-18 01:30 UTC: all three saved workflows remain active with
+  complete observed accounting. Runs 1/3 are in their third text-selection
+  review; run 2 is in its second. The intervening repairs address review
+  findings, not a harness failure. Earlier first-author work is retained, and
+  all resumed-author and nested-verification costs remain included. The final
+  no-model test-diagnostic plan is frozen; it runs only after model generation
+  ends and cannot change the original all-on-2 failed result.
 
 - 2026-09-18 01:17–01:18 UTC: all three first-feature reviews request
   repairs from their original authors. Returned token counts remain complete.
