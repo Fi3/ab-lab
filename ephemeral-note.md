@@ -1,38 +1,60 @@
-# Baseline workflows finished: 0 / 3 | Running: 3
+# Baseline attempts ended: 3 / 3 | Completed workflows: 1 / 3 | Running: 0
 
 Current request: three parallel workflows with **C13, C14, C15, C20, C38 on**;
 **C08, C16, C17, C25 off**. The agent uses its own tools, not host-executed edits.
 No all-on workflow will be repeated. The older research counters are untouched.
 
-Last updated: 2026-09-18 09:50 UTC.
-Current activity: 3 workflows running; 0 finished. Monitoring implementation, review and final checks.
+Last updated: 2026-09-18 10:58 UTC.
+Current activity: model runs, observation, accounting audit and external feature scoring are finished.
 Safety limits per workflow: four hours, 60M observed raw tokens, 600 parent turns.
-Manual checks are about ten minutes apart, following the user's request for less
-frequent checking. The background observer still records every 15 seconds. This
+Manual checks were about ten minutes apart, following the user's request for less
+frequent checking. The background observer recorded every 15 seconds. This
 later direction supersedes the protocol's one-minute supervisor-check cadence;
 it changes no measured instruction, source, switch or workflow limit.
 [Exact prospective protocol](experiments/baseline-five-20260918/PROTOCOL.md).
 
 <!-- baseline-five-live-table -->
-| Baseline run | Stage / outcome | Observed raw tokens | Incomplete-turn flags |
+| Baseline run | Stage / outcome | Observed raw tokens | Accounting flags |
 | --- | --- | ---: | ---: |
-| baseline-01 | Slash commands / implementation | 37,976,389 | 0 |
-| baseline-02 | Completion prompt / implementation | 19,824,757 | 0 |
-| baseline-03 | Slash commands / review 1 | 29,651,091 | 0 |
+| baseline-01 | Stopped: two nested verification turns lack complete usage | 40,983,813 + unknown | 3 |
+| baseline-02 | Completed; repository checks pass; external feature checks 1/3 | 55,659,262 | 0 |
+| baseline-03 | Stopped: 60M token ceiling during final integration | 60,125,802 observed | 1 |
 <!-- baseline-five-live-table-end -->
 
-Native command restrictions stay unchanged. The saved all-on comparison will
-remain explicitly qualified by its different permissions, old source/time
-allocation and recorded feature-score failures. No new percentage is available.
+**Complete three-baseline comparison: unavailable.** The saved all-on mean of
+24,761,150 raw is **55.51% below the single completed baseline's 55,659,262**.
+This is a descriptive three-old-versus-one-new comparison, not a three-versus-three
+or quality-matched result. Native permissions, earlier source/time allocation
+and feature-score failures remain explicit. [Full result](experiments/baseline-five-20260918/RESULT.md).
+
+Baseline-01 stopped after 61m54s with **40,983,813 observed raw tokens plus unknown
+usage for two nested verification turns**. Its three diagnostic flags refer to
+those two turns, not three missing responses. All parent turns are priced. The
+agent's real-terminal verification shuts down its process group while those
+child histories lack completion and final usage. No process remains in that
+checkout. The saved failure is retained; no replacement or restart is launched.
+
+Baseline-03 used 104m32s, below the four-hour time allowance. Its **60M observed-token
+ceiling**, not time, caused the stop. Its delivered output has a matching price;
+the one incomplete-turn flag denotes unfinished integration, not a demonstrated
+missing final charge. Its dirty partial source remains intact.
+
+The completed baseline passes formatting, strict Clippy and the repository test
+suite, but the unchanged external scorer passes only the slash-command check.
+The visual-status and visible-closure assertions fail. No scoring-driven repair
+is made. Standard Git-style edits also produce 79 / 31 / 62 nonzero-exit commands
+containing git apply across the three attempts; this is observed overhead, not
+an isolated token saving assigned to the edit-format switch.
 
 Launch: **2026-09-18 08:56:37 UTC**. All three manifests, factor vectors, source
 pins, subscription/model identities and effective configurations match FREEZE.json.
 All 70 local tests pass; preflight generates no model response. Protocol commit:
 `b26e0e1`. Runner PID / tool session: baseline-01 **2029485 / 91097**,
 baseline-02 **2029497 / 63545**, baseline-03 **2029509 / 16633**.
-Observer **2029451 / 78672** writes a snapshot every 15 seconds under
-`runs/baseline-five-20260918/monitor/`. Its raw counts are provisional until the
-full workflow and independent accounting audit finish.
+Observer **2029451 / 78672** retained 15-second snapshots under
+`runs/baseline-five-20260918/monitor/`. All runner, observer and scorer sessions
+are closed. The independent audit reproduces every observed total, with the two
+missing child turns and incomplete final integration retained explicitly.
 
 ## Retained preceding batch: 15 attempts ended; 3 workflows passed repository checks
 
@@ -168,6 +190,52 @@ Raw tokens are input plus output, with cached input included only once.
 That previous observer is stopped; the replacement observer is separate.
 
 ## Activity log, with earlier entries retained
+
+- 2026-09-18 10:58 UTC: all three attempt outcomes are retained. Run 2 completes at
+  55,659,262 raw and passes the repository checks; the unchanged external feature
+  scorer returns 1/3, failing visual status and visible closure. Run 1 retains
+  two missing nested prices. Run 3 stops at 60,125,802 observed raw during final
+  integration because of the 60M token ceiling, not the four-hour time limit.
+  Its delivered output is priced, but integration remains unfinished. The final
+  audit reconciles every observed total and all prior reference hashes remain
+  unchanged. Preserve all sources, partial modifications and failures; no
+  replacement, resumption or all-on repeat is launched. RESULT.md and SUMMARY.json
+  state the exact descriptive denominator and the lack of a full comparison.
+
+- 2026-09-18 10:38 UTC: baseline-02 finishes all stages, exactly three final
+  commits and all repository checks at **55,659,262 raw tokens**, including
+  65,548 child tokens, with complete recorded accounting. Baseline-03 remains
+  in final integration at 57,251,523 observed raw; its agent is handling a local
+  HTTP-bind restriction encountered during full validation. Preserve the
+  measured source and original permissions. External feature scoring waits for
+  the last workflow so it does not add compiler contention to live generation.
+
+- 2026-09-18 10:27 UTC: baseline-02 and baseline-03 have completed all three
+  feature/review sequences. Run 2 executes final integration and its full test
+  suite; run 3 is in integration planning. Their observed totals are 47,335,936
+  and 50,011,562 raw, with complete returned-turn and child records so far.
+  Both have exceeded the old 90-minute allowance and remain within the new
+  four-hour allocation. No run or final source is replaced or externally repaired.
+
+- 2026-09-18 10:16 UTC: baseline-02 is repairing the final completion-prompt
+  feature after review; baseline-03 is reviewing that feature. Their observed
+  totals are 43,583,689 and 44,494,274 raw, including 39,313 and 53,271 child
+  tokens, with no missing completed usage or model mismatch. The first run's
+  40,983,813-plus-unknown incomplete outcome remains retained and is not replaced.
+  Nonzero commands containing `git apply` are 30 and 59 in the two live runs.
+
+- 2026-09-18 10:02–10:05 UTC: baseline-01 terminated at 09:58:30, after its
+  slash-routing author returned, because two nested real-terminal verification
+  turns lack complete usage/lifecycle evidence. The independent native/transport
+  audit matches all 40,983,813 observed raw tokens and finds exactly those two
+  child-coverage gaps. Both terminal-test commands explicitly shut down their
+  process groups; one nested conversation ends after a new task-start record,
+  and another ends without its first response price. Absence of a price is not
+  treated as zero. No owned process remains in baseline-01's checkout. Preserve
+  the failed result, clean source and completed first-feature review; no model
+  recovery or replacement is selected. Baseline-02 and baseline-03 continue the
+  third feature. The live table includes child-accounting flags, not only parent
+  coverage flags, so this failure is visible without opening its detailed report.
 
 - 2026-09-18 09:50 UTC: all three have passed text-selection review.
   Baseline-02 has also passed slash-command review and starts the final

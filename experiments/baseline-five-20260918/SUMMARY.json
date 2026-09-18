@@ -1,0 +1,120 @@
+{
+  "generation": "none",
+  "factors": {
+    "C08": false,
+    "C13": true,
+    "C14": true,
+    "C15": true,
+    "C16": false,
+    "C17": false,
+    "C20": true,
+    "C25": false,
+    "C38": true
+  },
+  "attempts_ended": 3,
+  "workflows_completed": 1,
+  "running": 0,
+  "complete_three_vs_three": false,
+  "runs": [
+    {
+      "run": "baseline-01",
+      "status": "failed",
+      "error": "incomplete token measurement; stop before further host work or agent generation",
+      "duration_seconds": 3713.8644975839998,
+      "observed_raw_tokens": 40983813,
+      "child_raw_tokens": 130756,
+      "measurement_complete": false,
+      "audit_errors": [
+        "child coverage incomplete: 01a0b3f2-c819-7250-b96c-b14ed4c55296",
+        "child coverage incomplete: 01a0b3f2-c822-7b11-974b-d79cad4c5f0e"
+      ],
+      "reviewed_features": 1,
+      "final_commits": [],
+      "feature_score_status": "not_scored",
+      "feature_score_passed": null,
+      "feature_score_total": null,
+      "feature_scores": {},
+      "nonzero_git_apply_commands": 79,
+      "corrupt_patch_errors": 57,
+      "patch_match_errors": 22,
+      "result_sha256": "f9eef6bdfe1f4602f7f4d8d8f07795eecafd35dc80a3de0c33a1dda5363325b3"
+    },
+    {
+      "run": "baseline-02",
+      "status": "passed",
+      "error": null,
+      "duration_seconds": 6076.708562281012,
+      "observed_raw_tokens": 55659262,
+      "child_raw_tokens": 65548,
+      "measurement_complete": true,
+      "audit_errors": [],
+      "reviewed_features": 3,
+      "final_commits": [
+        "95aabd41384371b98042157cce5bb8198d12f463",
+        "bc54c8d732528c2f7be67b39f8915f23340679a4",
+        "1e62ad28baa5d6d7858e3ed46beea1a873c3715f"
+      ],
+      "feature_score_status": "scored",
+      "feature_score_passed": 1,
+      "feature_score_total": 3,
+      "feature_scores": {
+        "visual": "fail",
+        "status": "pass",
+        "completion": "fail"
+      },
+      "nonzero_git_apply_commands": 31,
+      "corrupt_patch_errors": 27,
+      "patch_match_errors": 1,
+      "result_sha256": "896d01870427c5227ffbf346a77537cbcf10f838af4f3be4a50b99042364bec6"
+    },
+    {
+      "run": "baseline-03",
+      "status": "failed",
+      "error": "workflow wall-time/observed-token limit reached",
+      "duration_seconds": 6272.3573416909785,
+      "observed_raw_tokens": 60125802,
+      "child_raw_tokens": 66385,
+      "measurement_complete": false,
+      "audit_errors": [],
+      "reviewed_features": 3,
+      "final_commits": [],
+      "feature_score_status": "not_scored",
+      "feature_score_passed": null,
+      "feature_score_total": null,
+      "feature_scores": {},
+      "nonzero_git_apply_commands": 62,
+      "corrupt_patch_errors": 56,
+      "patch_match_errors": 4,
+      "result_sha256": "660cd9f5927fc1f667cbea8438dd8856a235350c7add4ed4de21b6c3065c1bbb"
+    }
+  ],
+  "observed_batch_raw_tokens": 156768877,
+  "unknown_usage": "two nested verification turns in baseline-01; not zero",
+  "descriptive_comparison": {
+    "saved_all_on_mean_raw": 24761150,
+    "saved_all_on_raw": [
+      25673000,
+      22490575,
+      26119875
+    ],
+    "completed_baseline_raw": 55659262,
+    "all_on_reduction_percent": 55.512974642028134,
+    "denominator": "the one completed five-policy native baseline; not a three-baseline mean",
+    "qualified_causal_or_quality_matched_result": false
+  },
+  "integrity": {
+    "live_source_matches_freeze": true,
+    "benchmark_matches_freeze": true,
+    "original_protocol_matches_freeze": true,
+    "prior_results_unchanged": {
+      "on-01": true,
+      "on-02": true,
+      "on-03": true,
+      "off-01-continued": true,
+      "off-02-continued": true,
+      "off-03-continued": true
+    }
+  },
+  "evidence_root": "runs/baseline-five-20260918",
+  "audit": "accounting-final.json"
+}
