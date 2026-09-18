@@ -1,26 +1,38 @@
-# Baseline workflows finished: 0 | Running: 0 | Planned: 3
+# Baseline workflows finished: 0 / 3 | Running: 3
 
 Current request: three parallel workflows with **C13, C14, C15, C20, C38 on**;
 **C08, C16, C17, C25 off**. The agent uses its own tools, not host-executed edits.
 No all-on workflow will be repeated. The older research counters are untouched.
 
-Last updated: 2026-09-18 08:54 UTC.
-Current activity: prelaunch local checks and subscription-only configuration
-readback. No new model generation has started. Each workflow has a four-hour
-safety limit, 60M observed raw tokens and 600 parent turns; no 90-minute cutoff.
+Last updated: 2026-09-18 09:50 UTC.
+Current activity: 3 workflows running; 0 finished. Monitoring implementation, review and final checks.
+Safety limits per workflow: four hours, 60M observed raw tokens, 600 parent turns.
+Manual checks are about ten minutes apart, following the user's request for less
+frequent checking. The background observer still records every 15 seconds. This
+later direction supersedes the protocol's one-minute supervisor-check cadence;
+it changes no measured instruction, source, switch or workflow limit.
 [Exact prospective protocol](experiments/baseline-five-20260918/PROTOCOL.md).
 
 <!-- baseline-five-live-table -->
 | Baseline run | Stage / outcome | Observed raw tokens | Incomplete-turn flags |
 | --- | --- | ---: | ---: |
-| baseline-01 | Not started | 0 | 0 |
-| baseline-02 | Not started | 0 | 0 |
-| baseline-03 | Not started | 0 | 0 |
+| baseline-01 | Slash commands / implementation | 37,976,389 | 0 |
+| baseline-02 | Completion prompt / implementation | 19,824,757 | 0 |
+| baseline-03 | Slash commands / review 1 | 29,651,091 | 0 |
 <!-- baseline-five-live-table-end -->
 
 Native command restrictions stay unchanged. The saved all-on comparison will
 remain explicitly qualified by its different permissions, old source/time
 allocation and recorded feature-score failures. No new percentage is available.
+
+Launch: **2026-09-18 08:56:37 UTC**. All three manifests, factor vectors, source
+pins, subscription/model identities and effective configurations match FREEZE.json.
+All 70 local tests pass; preflight generates no model response. Protocol commit:
+`b26e0e1`. Runner PID / tool session: baseline-01 **2029485 / 91097**,
+baseline-02 **2029497 / 63545**, baseline-03 **2029509 / 16633**.
+Observer **2029451 / 78672** writes a snapshot every 15 seconds under
+`runs/baseline-five-20260918/monitor/`. Its raw counts are provisional until the
+full workflow and independent accounting audit finish.
 
 ## Retained preceding batch: 15 attempts ended; 3 workflows passed repository checks
 
@@ -156,6 +168,53 @@ Raw tokens are input plus output, with cached input included only once.
 That previous observer is stopped; the replacement observer is separate.
 
 ## Activity log, with earlier entries retained
+
+- 2026-09-18 09:50 UTC: all three have passed text-selection review.
+  Baseline-02 has also passed slash-command review and starts the final
+  completion-prompt feature. Baseline-01 implements slash routing and baseline-03
+  reviews it. Observed raw totals: 37,976,389 / 19,824,757 / 29,651,091,
+  including 26,205 / 26,216 / 40,171 child-verification tokens. All source/model
+  coverage indicators remain clear. Nonzero `git apply`-containing commands:
+  78 / 10 / 42. No admission, prompt, permission or measured source is altered.
+
+- 2026-09-18 09:39 UTC: baseline-02 and baseline-03 complete text-selection
+  review and advance to slash-command review and implementation respectively.
+  Baseline-01 continues its first review repair. Observed totals are
+  34,765,126 / 16,307,935 / 26,171,207 raw; runs 1 and 2 include 13,103 and
+  13,101 child-verification tokens. All recorded coverage/model checks remain
+  clear. Nonzero commands containing `git apply` total 76 / 10 / 36; these are
+  observed recovery work, not an assigned percentage of token savings.
+
+- 2026-09-18 09:27 UTC: all three initial implementations have returned and the
+  workflows are in text-selection review/repair. Observed raw totals are
+  25,554,088 / 11,517,104 / 19,166,981. Run 1 includes 13,103 child-verification
+  tokens; no model or accounting mismatch appears. Runs 1/2/3 have 60/3/35
+  completed nonzero-exit commands containing `git apply`, respectively. Saved
+  messages repeatedly correct unified-diff hunk counts. These command counts
+  are not isolated token-effect estimates, and not necessarily unique rejected
+  patches. Preserve this actual C16-off behavior and costs; do not silently
+  switch edit formats, discard observations or change the five-policy request.
+
+- 2026-09-18 09:16 UTC: the next manual inspection, about eleven minutes after
+  the cadence change, finds all three workflows active. Baseline-02 has finished
+  its first implementation and repair and is in the second text-selection
+  review. Baseline-01 and baseline-03 remain in initial implementation. Observed
+  raw totals are 10,317,675 / 5,480,079 / 10,541,740; no completed-turn coverage
+  gap or nested-model mismatch appears. Standard unified-diff corrections remain
+  part of the actual native work and its recorded costs. No setting is changed.
+
+- 2026-09-18 09:05 UTC: the user requests longer waits between checks. Space
+  manual inspection about ten minutes apart and omit unchanged-status messages.
+  Leave the non-generating background observer recording the same 15-second
+  history. This supersedes only the supervisor cadence in the frozen protocol;
+  the three running workflows, their instructions and allocations are unchanged.
+
+- 2026-09-18 08:56–08:57 UTC: all 70 tests pass and the non-generating readback
+  confirms ChatGPT authentication, Codex 0.154.0 and GPT-5.5/xhigh. Commit the
+  protocol and launch all three workflows concurrently. Each admitted manifest
+  matches the exact five-switch vector, source, base, limits and configuration
+  freeze. All three agents begin the text-selection feature; no old all-on work
+  is regenerated. The observer retains 15-second snapshots and usage coverage.
 
 - 2026-09-18 08:54 UTC: record the user's exact five-switch native baseline and
   three concurrent observations. C25 is explicitly off after the user declined
