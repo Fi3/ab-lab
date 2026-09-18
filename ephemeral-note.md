@@ -1,16 +1,16 @@
-# Benchmark attempts ended: 10 | Successful full benchmarks: 0
+# Benchmark attempts ended: 12 | Successful full benchmarks: 2
 
-Current repair: **2 / 2 obligations verified**. Full comparison: **3 / 6 started; 1 / 6 ended; 2 running**.
+Current repair: **2 / 2 obligations verified**. Full comparison: **6 / 6 started; 3 / 6 ended; 3 running**.
 The user authorizes repairs and completion of the requested comparison; reuse any
 valid complete observation. None of the last three all-on attempts completed.
 [Current authority](experiments/on-off-20260918-r4/AUTHORITY.md).
 
-Last updated: 2026-09-17 23:56 UTC.
-Current activity: two all-on workflows remain in final integration. All-on 2
-finishes model work and reaches all three host checks; the last test suite fails
-one terminal screen-content assertion. Its complete cost and failed outcome are retained.
-All three pass Git-write preflight and match the frozen model, subscription,
-configuration and source hashes. The all-off wave follows after these three finish.
+Last updated: 2026-09-18 00:08 UTC.
+Current activity: three all-off workflows run concurrently. The completed
+all-on runs 1 and 3 pass every final host check; run 2 fails one terminal
+screen-content assertion. All costs and outcomes are retained. Both groups use
+identical frozen code, input, subscription, model, configuration and limits.
+No all-on result is replaced and no successful observation is repeated.
 Measured on-versus-off reduction: NOT AVAILABLE until the full comparison ends.
 [Current protocol](experiments/on-off-20260918-r4/PROTOCOL.md) ·
 [Current qualification](experiments/on-off-20260918-r4/QUALIFICATION.md) ·
@@ -19,18 +19,21 @@ Measured on-versus-off reduction: NOT AVAILABLE until the full comparison ends.
 <!-- r4-live-table -->
 | Current run | Switches | Stage / outcome | Observed raw tokens | Missing returned counts |
 | --- | --- | --- | ---: | ---: |
-| on-01 | All on | Final integration: execution | 21,395,437 | 0 |
+| on-01 | All on | passed | 25,673,000 | 0 |
 | on-02 | All on | failed: final check 3 failed; no automatic replacement | 22,490,575 | 0 |
-| on-03 | All on | Final integration: execution | 21,451,977 | 0 |
-| off-01 | All off | Not started | — | — |
-| off-02 | All off | Not started | — | — |
-| off-03 | All off | Not started | — | — |
+| on-03 | All on | passed | 26,119,875 | 0 |
+| off-01 | All off | Feature 1: text selection, author | 33,129 | 0 |
+| off-02 | All off | Feature 1: text selection, author | 32,598 | 0 |
+| off-03 | All off | Feature 1: text selection, author | 33,028 | 0 |
 <!-- r4-live-table-end -->
 
 Owned runner PID / tool session: on-01 **1429754 / 66262**, on-02
 **1429773 / 30295**, on-03 **1429767 / 45701**. Observer **1429720 / 31103**.
 Launch: 2026-09-17 22:47:56 UTC; observer began one second earlier.
 Frozen implementation commit: `3f54c08`. No program changes during the batch.
+All-on runner sessions are closed. All-off launch: **2026-09-18 00:08:08 UTC**.
+Active runner PID / tool session: off-01 **1554844 / 16418**, off-02
+**1554830 / 90896**, off-03 **1554857 / 29317**. The same observer remains active.
 
 ## Previous third batch — retained failed observations
 
@@ -100,6 +103,21 @@ Raw tokens are input plus output, with cached input included only once.
 That previous observer is stopped; the replacement observer is separate.
 
 ## Activity log, with earlier entries retained
+
+- 2026-09-18 00:08:08 UTC: launch off-01/off-02/off-03 concurrently with
+  all nine switches explicitly disabled. Each retains the same 90-minute,
+  60M-observed-raw and 600-parent-turn bounds. Record all three owned PIDs and
+  sessions above. The observer remains uninterrupted; all-on sessions close.
+  Post-run scoring and any failed-test diagnostic wait until all generation
+  ends, so they do not add compilation load to this wave.
+
+- 2026-09-18 00:07 UTC: all-on model generation and final checks finish.
+  On-01 passes at 25,673,000 raw; on-02 retains its failed terminal assertion
+  at 22,490,575; on-03 passes at 26,119,875. Each has complete parent/child
+  coverage and matching frozen source/configuration. The unrelated failed
+  test is not a shared authentication/accounting/setup failure, so the
+  already-admitted three all-off workflows proceed. No source or permission
+  change, replacement, extra model call or success-only selection occurs.
 
 - 2026-09-17 23:53 UTC: on-02 ends at 22,490,575 raw, including 13,093
   child tokens counted once. Integration has the required three commits and
