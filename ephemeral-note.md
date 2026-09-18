@@ -1,4 +1,23 @@
-# Current task: neutral OFF instructions VERIFIED | Benchmarks running: 0
+# Neutral-format baseline: attempts ended 0 / 3 | Completed 0 / 3 | Running 0
+
+Current request: three parallel complete workflows with C38, C20, C15, C14 and
+C13 ON; C08, C16, C17 and C25 OFF. C16 OFF imposes no edit-format instruction.
+Current activity: non-generating preflight and prospective input freeze before
+launch. Limits stay at four hours, 60M observed raw tokens and 600 parent turns
+per workflow. Manual checks are about ten minutes apart; the read-only observer
+keeps 15-second snapshots. No all-on rerun, automatic replacement or old-run
+continuation is authorized. All previous outcomes remain below and on disk.
+[Batch protocol](experiments/baseline-five-neutral-20260918/PROTOCOL.md).
+
+<!-- baseline-five-neutral-live-table -->
+| Run | State | Recorded raw tokens |
+| --- | --- | ---: |
+| baseline-01 | Not started | 0 |
+| baseline-02 | Not started | 0 |
+| baseline-03 | Not started | 0 |
+<!-- baseline-five-neutral-live-table-end -->
+
+## Retained neutral-OFF implementation verification
 
 The user requests that C13, C14, C15 and C16 OFF leave ordinary agent behavior
 and repository instructions intact, without imposing opposite policies.
