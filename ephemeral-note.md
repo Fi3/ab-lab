@@ -1,10 +1,13 @@
-# Neutral-format baseline: attempts ended 0 / 3 | Completed 0 / 3 | Running 0
+# Neutral-format baseline: attempts ended 0 / 3 | Completed 0 / 3 | Running 3
 
 Current request: three parallel complete workflows with C38, C20, C15, C14 and
 C13 ON; C08, C16, C17 and C25 OFF. C16 OFF imposes no edit-format instruction.
-Current activity: non-generating preflight and prospective input freeze before
-launch. Limits stay at four hours, 60M observed raw tokens and 600 parent turns
-per workflow. Manual checks are about ten minutes apart; the read-only observer
+Current activity: all three workflows launched concurrently at **2026-09-18
+12:15:18 UTC**. All 84 local tests pass; subscription-only preflight and each
+run's source, configuration, factors and limits match the prospective freeze.
+Limits stay at four hours, 60M observed raw tokens and 600 parent turns
+per workflow. Manual checks are **twenty minutes apart**, following the user's
+post-launch instruction "check every 20 min only"; the read-only observer
 keeps 15-second snapshots. No all-on rerun, automatic replacement or old-run
 continuation is authorized. All previous outcomes remain below and on disk.
 [Batch protocol](experiments/baseline-five-neutral-20260918/PROTOCOL.md).
@@ -12,10 +15,19 @@ continuation is authorized. All previous outcomes remain below and on disk.
 <!-- baseline-five-neutral-live-table -->
 | Run | State | Recorded raw tokens |
 | --- | --- | ---: |
-| baseline-01 | Not started | 0 |
-| baseline-02 | Not started | 0 |
-| baseline-03 | Not started | 0 |
+| baseline-01 | text selection-review-2; 0/3 features reviewed | 6,389,464 |
+| baseline-02 | text selection-fix-2; 0/3 features reviewed | 7,557,039 |
+| baseline-03 | text selection-fix-1; 0/3 features reviewed | 8,413,229 |
 <!-- baseline-five-neutral-live-table-end -->
+
+Latest manual snapshot: **2026-09-18T12:35:32.935165+00:00**. All earlier snapshots remain in the observer log.
+
+Admission commit: `8e874dd`; implementation commit: `4de5b26`. Runner sessions:
+baseline-01 `85569`, baseline-02 `58325`, baseline-03 `99353`; observer `13393`.
+Live observer: `runs/baseline-five-neutral-20260918/monitor/current.json`.
+Only the old C16 OFF Git-diff instruction is removed from the earlier five-policy
+author prompt; the remaining author-policy text matches exactly. The effective
+configuration hash differs from the earlier batch and is retained, not normalized.
 
 ## Retained neutral-OFF implementation verification
 
