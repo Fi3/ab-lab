@@ -1,0 +1,68 @@
+{
+  "created_at": "2026-09-18 01:12:24 UTC",
+  "original_freeze": "FREEZE.json",
+  "source_sha256": {
+    "__init__.py": "cd5de7ee4472c1ef8bada6b3b56d56cee36d93dbfab9195d2dcfc0c7d7be13a1",
+    "__main__.py": "0271f5c7bfd985a08c353e0b6e12002bbbabb9a0997bfff879492273f288f1df",
+    "config.py": "0c7c7f6c4446843187f23e819b616bd5ee7197be58aac7d1ffb06ea6d416be16",
+    "continuation.py": "c3cea26e1c54afc9babaa32dd9ca69727654ef8eb3e7a9040c6ea014fa4de578",
+    "environment.py": "4d6b2e16f873a47a56a7525033d9417de0698b3dc9f086d2181669c8a45130ed",
+    "host.py": "72b7845a29a9129259205d4d0b2007eecb6e874a63e82f8e16fd060a9330eec9",
+    "monitor.py": "12570369760924b06ada662fa32370a3f7df53647c941d8a0a3d4392bc01d316",
+    "nested.py": "3bd017832047e6eef544bfa472a0b422183b1fa6311d160259b3244bedcdadee",
+    "provider.py": "10f5007025bd380f1c8ed7ebc2bc50266e3fa9ef7f33e8597b1e1ef1a96ae6c7",
+    "workflow.py": "1128dfbb9edc3142818e5ec79dc7d2740fedf29b46faf48caaca776b4061c7c0"
+  },
+  "benchmark_sha256": "beace51ce596f9c5afb6329d0a132e7dddf716b24b47c321b41dcd15c3aa613e",
+  "observations": [
+    {
+      "name": "off-01",
+      "source_head": "c4ae3078f31226a87b0e72a185a350bbd92bd0fe",
+      "prior_result_sha256": "5f5f91901a69d38694116f4b9736766f895bfc48f0cf936cc01ae30623a411cf",
+      "prior_raw": 12819166,
+      "prior_duration_seconds": 1382.917671600997,
+      "remaining_seconds": 4017.082328399003,
+      "author_thread": "01a0b1d7-9059-7b63-aeaf-5dd38ad11a4c"
+    },
+    {
+      "name": "off-02",
+      "source_head": "9b57d1171d9c0eeece92bc1dc08228b667ea8849",
+      "prior_result_sha256": "8943ad85139b434b5158bef987d69bd0682237cbd12c9d2471fac3eb2c2ead28",
+      "prior_raw": 16049406,
+      "prior_duration_seconds": 2442.081619367993,
+      "remaining_seconds": 2957.918380632007,
+      "author_thread": "01a0b1d7-9033-7c92-8c7b-15f358b4fb75"
+    },
+    {
+      "name": "off-03",
+      "source_head": "3083149c512d19b530e8bf806f02040ee99661bd",
+      "prior_result_sha256": "bb4b61a783c86b416fafeb5f5579612b1e2eba52216d20194eadad9449906600",
+      "prior_raw": 13824449,
+      "prior_duration_seconds": 1386.8236256609962,
+      "remaining_seconds": 4013.176374339004,
+      "author_thread": "01a0b1d7-903a-7002-b201-603e3232bf91"
+    }
+  ],
+  "model": "gpt-5.5",
+  "effort": "xhigh",
+  "auth": "chatgpt",
+  "codex_version": "codex-cli 0.154.0",
+  "original_effective_config_sha256": "e72a7b12072de84593999d6cab5038e5699ef194806bc6b0c9ed2d2a76147c04",
+  "actual_effective_config_sha256": "5e584c5128a86fac428a2e62ec52ec47862af6e9df365c70cfd0e11a9535450d",
+  "redundant_trust": [
+    "/home/user/src/agent-behavior-lab/runs/on-off-20260918-r4/off-01/checkout",
+    "/home/user/src/agent-behavior-lab/runs/on-off-20260918-r4/off-02/checkout",
+    "/home/user/src/agent-behavior-lab/runs/on-off-20260918-r4/off-03/checkout",
+    "/home/user/src/agent-behavior-lab/runs/on-off-20260918-r4/resume-qualification-001/checkout"
+  ],
+  "limits": {
+    "total_active_seconds": 5400,
+    "total_observed_raw": 60000000,
+    "total_parent_turns": 600
+  },
+  "CARGO_BUILD_JOBS": 4,
+  "qualification": "runs/on-off-20260918-r4/resume-qualification-002/result.json",
+  "source_bridge": "Parser accepts a unique final marker after summary; recovery starts at first review, preserves same author and prior costs; measured prompts and shared settings unchanged. No all-on or first-feature generation repeated.",
+  "monitoring_seconds": 15,
+  "operator_review_seconds": 60
+}

@@ -1,16 +1,19 @@
-# Benchmark attempts ended: 12 | Successful full benchmarks: 2
+# Benchmark attempts ended: 15 | Successful full benchmarks: 2
 
-Current repair: **2 / 2 obligations verified**. Full comparison: **6 / 6 started; 3 / 6 ended; 3 running**.
+Current repair: **3 / 3 obligations verified**. Original comparison attempts: **6 / 6 started; 6 / 6 ended**. Saved-work continuations: **0 / 3 started; 0 / 3 ended; 0 running**.
 The user authorizes repairs and completion of the requested comparison; reuse any
-valid complete observation. None of the last three all-on attempts completed.
+valid complete observation. The earlier third batch had no complete all-on
+observation; the current fourth batch has two passes and one final-check failure.
 [Current authority](experiments/on-off-20260918-r4/AUTHORITY.md).
 
-Last updated: 2026-09-18 00:08 UTC.
-Current activity: three all-off workflows run concurrently. The completed
-all-on runs 1 and 3 pass every final host check; run 2 fails one terminal
-screen-content assertion. All costs and outcomes are retained. Both groups use
-identical frozen code, input, subscription, model, configuration and limits.
-No all-on result is replaced and no successful observation is repeated.
+Last updated: 2026-09-18 01:12 UTC.
+Current activity: all original attempts have ended; no generator is running.
+All three all-off replies contain the required completion marker but were
+rejected because they also contain a summary. All 66 local tests and the real
+subscription resume qualification pass. Freeze the repaired source, then
+continue the three saved workflows together at independent review without
+regenerating their first features. All-on 1/3 remain passed; all-on 2 retains its terminal
+test failure. No all-on result is replaced.
 Measured on-versus-off reduction: NOT AVAILABLE until the full comparison ends.
 [Current protocol](experiments/on-off-20260918-r4/PROTOCOL.md) ·
 [Current qualification](experiments/on-off-20260918-r4/QUALIFICATION.md) ·
@@ -22,9 +25,9 @@ Measured on-versus-off reduction: NOT AVAILABLE until the full comparison ends.
 | on-01 | All on | passed | 25,673,000 | 0 |
 | on-02 | All on | failed: final check 3 failed; no automatic replacement | 22,490,575 | 0 |
 | on-03 | All on | passed | 26,119,875 | 0 |
-| off-01 | All off | Feature 1: text selection, author | 33,129 | 0 |
-| off-02 | All off | Feature 1: text selection, author | 32,598 | 0 |
-| off-03 | All off | Feature 1: text selection, author | 33,028 | 0 |
+| off-01 | All off | failed: native author did not supply the stage-completion marker | 12,819,166 | 0 |
+| off-02 | All off | failed: native author did not supply the stage-completion marker | 16,049,406 | 0 |
+| off-03 | All off | failed: native author did not supply the stage-completion marker | 13,824,449 | 0 |
 <!-- r4-live-table-end -->
 
 Owned runner PID / tool session: on-01 **1429754 / 66262**, on-02
@@ -32,8 +35,9 @@ Owned runner PID / tool session: on-01 **1429754 / 66262**, on-02
 Launch: 2026-09-17 22:47:56 UTC; observer began one second earlier.
 Frozen implementation commit: `3f54c08`. No program changes during the batch.
 All-on runner sessions are closed. All-off launch: **2026-09-18 00:08:08 UTC**.
-Active runner PID / tool session: off-01 **1554844 / 16418**, off-02
-**1554830 / 90896**, off-03 **1554857 / 29317**. The same observer remains active.
+Original runner PID / tool session: off-01 **1554844 / 16418**, off-02
+**1554830 / 90896**, off-03 **1554857 / 29317**. These runner and observer sessions
+are closed. Continuations have separate artifacts and monitoring.
 
 ## Previous third batch — retained failed observations
 
@@ -103,6 +107,67 @@ Raw tokens are input plus output, with cached input included only once.
 That previous observer is stopped; the replacement observer is separate.
 
 ## Activity log, with earlier entries retained
+
+- 2026-09-18 01:04–01:12 UTC: the real resume check passes with 11,270
+  earlier + 11,302 additional = 22,572 cumulative raw, matching the independent
+  native history exactly. It resumes the original tiny conversation without
+  repeating its first response. All 66 local tests, compilation and whitespace
+  checks pass. The three saved all-off checkpoints are clean and retain
+  4,017.08 / 2,957.92 / 4,013.18 seconds of their original active-time budgets.
+  Freeze the qualified repair before simultaneous continuation; no all-on
+  generation or first-feature replacement is selected.
+
+- 2026-09-18 00:53–01:02 UTC: the first resume qualification stops after
+  its 11,270-token first response and before a second response, because of a
+  different configuration hash. Zero-generation probes trace this exactly to
+  four new redundant trusted-folder records; subtracting only those records
+  in memory reproduces the frozen full-batch hash. Each folder already inherits
+  the same trusted status. No model/login/permission change or global config
+  edit is made. Seven targeted tests pass, including a strict equivalence guard
+  that still rejects other changes. Continue only the remaining planned tiny
+  response, keeping the first response, original failure and total budget.
+
+- 2026-09-18 00:49–00:51 UTC: off-02 ends with the same marker defect at
+  16,049,406 raw, including 13,094 child tokens. All runner and observer sessions
+  close. The independent six-record audit reproduces every total, with no
+  accounting/model/source errors. Only after all generation ends, apply the
+  parser fix and explicit continuation support. Five fail-first cases pass:
+  summary acceptance, malformed markers, saved-boundary rejection, cumulative
+  resume usage, and live inclusion of earlier costs. The small real resume
+  qualification is prepared but has not started. The original results and
+  protocol stay intact; the continuation plan is NATIVE-CONTINUATION.md.
+
+- 2026-09-18 00:31–00:40 UTC: off-01/off-03 stop after their first author
+  response at 12,819,166 / 13,824,449 raw, both with complete counts. Both real
+  replies end with exactly one standalone `@standalone done` line after a
+  normal summary. The prompt defines the marker, but the runner mistakenly
+  requires the entire reply to equal it. No independent review runs yet. Two
+  local regression cases fail before repair (one reproduced workflow failure,
+  one missing parser helper). Off-02 remains active, so only new tests and
+  supervising evidence are edited. The proposed next work is parsing repair
+  and a verified same-conversation continuation retaining prior costs and
+  outcomes, not automatic replacement observations. Continuation is not yet
+  implemented, qualified or admitted; no additional model has been launched.
+
+- 2026-09-18 00:30 UTC: saved native command receipts in off-01/off-03
+  confirm `Operation not permitted` in local-server Rust checks. The provider's
+  native writable policy disables network access; external host commands and
+  final host checks run without that restriction. This same native limitation
+  appeared in all-on integration, but author command execution differs when
+  host operation is disabled. Therefore an observed cost difference cannot be
+  assigned solely to the intended instruction/edit mechanisms without also
+  disclosing execution-restriction and recovery costs. Keep the frozen policy
+  and every outcome; do not silently broaden permissions, mark blocked tests
+  passed or represent this as a clean isolated effect. No new model observation
+  or product repair is added by this read-only finding.
+
+- 2026-09-18 00:19 UTC: independent read-only audit of the three completed
+  all-on histories reproduces 25,673,000 / 22,490,575 / 26,119,875 exactly.
+  Parent and child totals, source pins, model settings and returned-response
+  coverage match with zero audit errors. On-02 remains failed solely because
+  of its original host test; accurate counting does not turn it into a pass.
+  The audit takes under one second, launches no model or compiler and changes
+  no measured file. Full six-run audit still follows the ongoing all-off wave.
 
 - 2026-09-18 00:08:08 UTC: launch off-01/off-02/off-03 concurrently with
   all nine switches explicitly disabled. Each retains the same 90-minute,

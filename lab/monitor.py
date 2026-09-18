@@ -31,6 +31,12 @@ def sample(folders, state):
             manifest = json.loads((folder / "manifest.json").read_text())
             entry["nested"] = NestedUsage(folder / "checkout", manifest["model"], manifest["effort"])
             entry["nested"].started = manifest["created_at_unix"]
+            if continuation := manifest.get('continuation'):
+                prior = json.loads((Path(continuation['previous'])/'result.json').read_text())['usage']
+                entry['usage'].totals = {k: tuple(v) for k, v in prior['thread_totals'].items()}
+                entry['parents'].update(prior['thread_totals'])
+                entry['turns'].update(t.get('turn_id', t['thread_id']) for t in prior['turns'])
+                entry['nested'].started = continuation['original_created_at']
         for record in complete_lines(folder / "provider/transport.jsonl", entry["offsets"]):
             event = record.get("event", {})
             identity = event.get("result", {}).get("thread", {}).get("id")

@@ -77,6 +77,15 @@ token records and failures are retained in its output directory. One invocation
 starts one workflow. It does not automatically start comparison runs, repeat
 failed attempts or replace unfavorable results.
 
+A native author's completion marker is one unquoted final `@standalone done`
+line; a preceding summary is allowed. The marker does not waive clean-source,
+independent-review or final-check requirements. Explicit recovery of a saved
+first native response can continue at review with the original author and costs.
+It requires a clean pinned checkpoint, complete prior accounting and an
+exclusive continuation record; it is not an automatic retry or a general resume
+of arbitrary failed stages. The original result and a reconstructible source
+checkpoint remain preserved. See the [recovery verification](VERIFICATION.md).
+
 ## Quick start
 
 Requirements: Python 3.11 or newer, Git, and the Codex CLI already configured
@@ -633,6 +642,7 @@ required background for using the tool.
 | Conflict text, edit formats, real operation results and reminders | [lab/host.py](lab/host.py): `refresh_text`, `Host.refresh`, `plan_edit`, `plan_unified`, `Host.consume` |
 | Subscription connection, interruption and usage accounting | [lab/provider.py](lab/provider.py): `Codex`, `InterruptGate`, `Usage` |
 | Nested command settings and owned child usage | [lab/nested.py](lab/nested.py): `CommandEnvironment`, `NestedUsage` |
+| Explicit first-native-boundary recovery and prior-cost preservation | [lab/continuation.py](lab/continuation.py): `inspect_boundary`, `continue_native`, `restore_provider` |
 | Incremental operator monitoring, including missing response coverage | [lab/monitor.py](lab/monitor.py): `sample` |
 | Feature/review/repair sequence, controlled file change, integration and comparisons | [lab/workflow.py](lab/workflow.py): `run`, `after_read_fixture`, `integration_prompts`, `compare`, `interaction` |
 | Commands and preset settings | [lab/__main__.py](lab/__main__.py): `main`, `factors_from` |

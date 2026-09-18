@@ -25,6 +25,21 @@ def review_clean(reply):
     return markers == ["NO_FINDINGS"]
 
 
+def native_done(reply):
+    """A unique final marker may follow a normal human-readable summary."""
+    lines = [line.strip() for line in reply.splitlines() if line.strip()]
+    if not lines or lines[-1] != "@standalone done" or lines.count("@standalone done") != 1:
+        return False
+    fence = None
+    for line in lines[:-1]:
+        if line.startswith(("```", "~~~")):
+            if fence == line[:3]:
+                fence = None
+            elif fence is None:
+                fence = line[:3]
+    return fence is None
+
+
 def author_prompt(benchmark, feature, factors, findings=None):
     action = "Implement this feature with focused tests." if findings is None else "Fix only the reviewed feature and its tests to resolve these findings:\n" + findings
     docs = ("Documentation and prose updates are deferred to final integration. Do not modify docs/**, README*, CHANGELOG*, *.md or *.txt during feature implementation/repair."
@@ -83,7 +98,7 @@ def after_read_fixture(host, fixture, output, deadline):
 
 
 def run(benchmark, factors, output, seconds, max_raw, max_turns,
-        model="gpt-5.5", effort="xhigh", executable="codex", backend=Codex):
+        model="gpt-5.5", effort="xhigh", executable="codex", backend=Codex, *, _prepared=None):
     if seconds <= 0 or max_raw <= 0 or max_turns <= 0:
         raise ValueError("positive wall-time, observed-token and turn limits are required")
     fixture = benchmark.get("after_read")
@@ -107,18 +122,44 @@ def run(benchmark, factors, output, seconds, max_raw, max_turns,
                     "model": model, "effort": effort, "source_sha256": code,
                     "workflow": "sequential-implement-review-repair-then-plan-accept-and-one-commit-per-feature",
                     "transport": "codex-app-server-stdio", "created_at_unix": time.time()}
+        if _prepared:
+            if factors["C17"] or base != _prepared['manifest']['base_commit']:
+                raise Fatal('continuation must preserve native custody and the original base')
+            from .continuation import archive_boundary
+            archive_boundary(_prepared, output)
+            manifest['continuation'] = {'previous': str(_prepared['previous']),
+                'original_created_at': _prepared['manifest']['created_at_unix'],
+                'prior_result_sha256': _prepared['prior_result_sha256'],
+                'source_head': _prepared['source_head'],
+                'original_limits': _prepared['manifest']['limits']}
+            result['continuation'] = manifest['continuation']
+            result['stages'] = list(_prepared['result']['stages'])
         save_json(output / "manifest.json", manifest)
         checkout = output / "checkout"
-        clone = subprocess.run(["git", "clone", "--quiet", "--no-hardlinks", "--no-checkout", "--", benchmark["repo"], str(checkout)], capture_output=True, timeout=max(1, deadline-time.monotonic()))
-        if clone.returncode:
-            raise Fatal("clone failed: "+clone.stderr.decode(errors="replace"))
-        git(checkout, "checkout", "--quiet", "--detach", base)
+        if _prepared:
+            checkout.symlink_to(_prepared['checkout'], target_is_directory=True)
+            checkout = _prepared['checkout']
+            if git(checkout, 'rev-parse', 'HEAD').decode().strip() != _prepared['source_head'] or git(checkout, 'status', '--porcelain'):
+                raise Fatal('continuation source changed after qualification')
+        else:
+            clone = subprocess.run(["git", "clone", "--quiet", "--no-hardlinks", "--no-checkout", "--", benchmark["repo"], str(checkout)], capture_output=True, timeout=max(1, deadline-time.monotonic()))
+            if clone.returncode:
+                raise Fatal("clone failed: "+clone.stderr.decode(errors="replace"))
+            git(checkout, "checkout", "--quiet", "--detach", base)
         # Only the owned clone's identity is configured; no global changes.
         git(checkout, "config", "user.name", "Agent Behavior Lab")
         git(checkout, "config", "user.email", "agent-behavior-lab@example.invalid")
         git(checkout, "config", "commit.gpgSign", "false")
         provider = backend(checkout, output / "provider", model, effort, deadline, max_raw, max_turns, executable,
                            require_git_write=True)
+        if _prepared:
+            from .continuation import configuration_matches, restore_provider
+            if not configuration_matches(provider, _prepared['identity'], _prepared.get('redundant_trust', ())):
+                raise Fatal('continuation provider identity differs from the original')
+            restore_provider(provider, _prepared['manifest'], _prepared['result']['usage'], _prepared['author'])
+            prior_usage = provider.report()
+            if not prior_usage['measurement_complete'] or prior_usage['observed_raw_tokens'] != _prepared['result']['usage']['observed_raw_tokens']:
+                raise Fatal('continuation did not recover exact prior complete costs')
         invariant = {k: v for k, v in manifest.items() if k not in ("factors", "created_at_unix")}
         invariant["provider"] = provider.identity
         result["comparison_key"] = fingerprint(invariant)
@@ -133,10 +174,11 @@ def run(benchmark, factors, output, seconds, max_raw, max_turns,
                 raise Fatal("incomplete token measurement; stop before further host work or agent generation")
             return reply
 
-        for feature in benchmark["features"]:
+        for feature_index, feature in enumerate(benchmark["features"]):
             name = feature["id"]
-            feature_base = git(checkout, "rev-parse", "HEAD").decode().strip()
-            author = provider.start_thread(writable=not factors["C17"])
+            reuse_author = _prepared is not None and feature_index == 0
+            feature_base = base if reuse_author else git(checkout, "rev-parse", "HEAD").decode().strip()
+            author = _prepared['author'] if reuse_author else provider.start_thread(writable=not factors["C17"])
             host = Host(checkout, output / (name+"-host"), name, "author", deadline, factors,
                         command_env=getattr(provider, "command_env", None)) if factors["C17"] else None
 
@@ -158,12 +200,13 @@ def run(benchmark, factors, output, seconds, max_raw, max_turns,
                                 fixture_fired = True
                 else:
                     reply = turn(author, prompt, label, writable=True)
-                    if reply.strip() != "@standalone done":
+                    if not native_done(reply):
                         raise Fatal("native author did not supply the stage-completion marker")
                 if git(checkout, "status", "--porcelain"):
                     raise Fatal("author left uncommitted source changes")
 
-            implement(author_prompt(benchmark, feature, factors), name+"-implement")
+            if not reuse_author:
+                implement(author_prompt(benchmark, feature, factors), name+"-implement")
             reviewer = provider.start_thread()
             round_number, evidence = 1, ""
             while True:
@@ -233,6 +276,9 @@ def run(benchmark, factors, output, seconds, max_raw, max_turns,
             result["usage"] = {"observed_raw_tokens": None, "measurement_complete": False,
                                "reason": "provider did not initialize; inspect retained stderr"}
         result["duration_seconds"] = time.monotonic()-start
+        if _prepared:
+            result['continuation_duration_seconds'] = result['duration_seconds']
+            result['duration_seconds'] += _prepared['result']['duration_seconds']
         result["fixture_executed"] = fixture_fired
         save_json(output / "result.json", result)
     return result

@@ -1,5 +1,36 @@
 # Verification
 
+## Native completion and same-conversation recovery — 2026-09-18
+
+All 66 local tests, Python compilation and the whitespace check pass. Seven
+recovery regressions cover a summary before the final marker, malformed markers,
+clean saved-source requirements, unchanged first-feature work, retained prior
+costs, resumed cumulative counters and rejection of configuration differences.
+The failure cases were exercised before the corresponding repair.
+
+The real subscription resume check passes: the original conversation uses
+11,270 raw tokens before resume and another 11,302 afterward, for 22,572 total.
+The independent native history matches exactly. Both replies use GPT-5.5/xhigh;
+the original instructions are not resent. The two active phases take 9.62
+seconds combined. Evidence is under
+`runs/on-off-20260918-r4/resume-qualification-001` and
+`resume-qualification-002`; the first configuration-stop record remains intact.
+The resume behavior follows the [official app-server documentation](https://learn.chatgpt.com/docs/app-server).
+
+The provider configuration differs only by four automatically added trusted
+folder records, each already covered by a trusted parent. Removing exactly those
+records in memory reproduces the original complete configuration hash. The
+actual new hash and proof remain visible; no global configuration or permission
+is edited. All other differences are rejected.
+
+The three all-on observations remain 25,673,000 / 22,490,575 / 26,119,875 raw.
+The first and third pass; the second retains its original final test failure.
+All three all-off first authors have complete accounting and clean committed
+work, but the old parser rejects their valid final markers after a summary.
+Their explicit continuations start at independent review, preserve every prior
+cost and use only the remaining original allocation. The six-run comparison
+is not yet complete. [Recovery boundaries](experiments/on-off-20260918-r4/NATIVE-CONTINUATION.md).
+
 ## Nested processes and unchanged features — 2026-09-18
 
 [The real tiny qualification](experiments/on-off-20260918-r4/QUALIFICATION.md)
