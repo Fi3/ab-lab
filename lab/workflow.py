@@ -101,7 +101,7 @@ def after_read_fixture(host, fixture, output, deadline):
 
 def run(benchmark, factors, output, seconds, max_raw, max_turns,
         model="gpt-5.5", effort="xhigh", executable="codex", backend=Codex, *,
-        harness=None, scb_check=None, scb_seconds=300, _prepared=None):
+        harness=None, scb_check=None, scb_seconds=300, _prepared=None, _base_commit=None):
     if seconds <= 0 or max_raw <= 0 or max_turns <= 0:
         raise ValueError("positive wall-time, observed-token and turn limits are required")
     if not math.isfinite(scb_seconds) or scb_seconds <= 0:
@@ -124,13 +124,15 @@ def run(benchmark, factors, output, seconds, max_raw, max_turns,
     deadline = time.monotonic()+seconds
     provider = None
     result = {"schema": "agent-behavior-lab/v1", "status": "failed", "factors": factors,
-              "output": str(output), "stages": [], "checkpoints": [], "checks": [], "factor_activations": {}}
+              "output": str(output), "benchmark": benchmark["name"],
+              "feature_count": len(benchmark["features"]), "check_count": len(benchmark["checks"]),
+              "stages": [], "checkpoints": [], "checks": [], "factor_activations": {}}
     if scb_check is not None:
         result["scb_check"] = scb.pending()
     start = time.monotonic()
     code = source_hashes()
     try:
-        base = git(benchmark["repo"], "rev-parse", "--verify", benchmark["revision"]+"^{commit}").decode().strip()
+        base = git(benchmark["repo"], "rev-parse", "--verify", (_base_commit or benchmark["revision"])+"^{commit}").decode().strip()
         default_transport = "pi-rpc-stdio" if harness == "pi" else "codex-app-server-stdio"
         transport = backend.transport if isinstance(getattr(backend, "transport", None), str) else default_transport
         manifest = {"schema": "agent-behavior-lab/v1", "benchmark": benchmark, "base_commit": base,

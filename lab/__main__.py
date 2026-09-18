@@ -9,6 +9,15 @@ from .config import FACTORS, author_policy, load_benchmark, settings
 from .provider import Codex, Pi
 from .host import Fatal
 from .workflow import compare, interaction, run
+from .batch import run_batch
+from .summary import records
+
+
+def positive_integer(value):
+    number = int(value)
+    if number <= 0:
+        raise argparse.ArgumentTypeError('must be a positive integer')
+    return number
 
 
 def factors_from(args):
@@ -24,7 +33,7 @@ def factors_from(args):
 
 
 def main():
-    parser = argparse.ArgumentParser(description="Standalone agent behavior research: one full workflow, retained outcomes, subscription only.")
+    parser = argparse.ArgumentParser(description="Standalone agent behavior research: isolated workflows, optional parallel repetitions, retained outcomes.")
     commands = parser.add_subparsers(dest="command", required=True)
     commands.add_parser("factors", help="show the exact ON/OFF meanings")
     for name in ("plan", "run"):
@@ -40,13 +49,17 @@ def main():
         if name == "plan":
             p.add_argument("--harness", choices=("codex", "pi"), default="codex", help="agent harness: codex or pi")
         if name == "run":
-            p.add_argument("--out", type=Path, required=True, help="new run directory; must not exist")
+            p.add_argument("--out", type=Path, required=True, help="new run or batch directory; must not exist")
             p.add_argument("--seconds", type=int, required=True)
             p.add_argument("--max-raw", type=int, required=True, help="observed-token stop, not a guaranteed hard charge cap")
             p.add_argument("--max-turns", type=int, required=True)
             p.add_argument("--harness", choices=("codex", "pi"), required=True, help="agent harness: codex or pi")
             p.add_argument("--codex", default="codex")
             p.add_argument("--pi", default="pi")
+            p.add_argument("--parallel", type=positive_integer, default=1,
+                           help="maximum simultaneous workflows; also the repetition count unless --repeat is set")
+            p.add_argument("--repeat", type=positive_integer,
+                           help="total repetitions of this benchmark; defaults to --parallel")
     doctor = commands.add_parser("doctor", help="read-only subscription/configuration check; no generation")
     doctor.add_argument("--repo", type=Path, default=Path.cwd())
     doctor.add_argument("--out", type=Path, required=True)
@@ -83,9 +96,16 @@ def main():
                     backend = Codex
                     executable = args.codex
                     model = args.model or "gpt-5.5"
-                value = run(benchmark, factors, args.out, args.seconds, args.max_raw, args.max_turns,
-                            model, args.effort, executable, backend=backend, harness=args.harness,
-                            scb_check=args.scb_check, scb_seconds=args.scb_seconds)
+                repeat = args.repeat if args.repeat is not None else args.parallel
+                if repeat > 1:
+                    value = run_batch(benchmark, factors, args.out, repeat, args.parallel,
+                        seconds=args.seconds, max_raw=args.max_raw, max_turns=args.max_turns,
+                        model=model, effort=args.effort, executable=executable, harness=args.harness,
+                        scb_check=args.scb_check, scb_seconds=args.scb_seconds)
+                else:
+                    value = run(benchmark, factors, args.out, args.seconds, args.max_raw, args.max_turns,
+                                model, args.effort, executable, backend=backend, harness=args.harness,
+                                scb_check=args.scb_check, scb_seconds=args.scb_seconds)
         elif args.command == "doctor":
             harness = getattr(args, "harness", "codex")
             if harness == "pi":
@@ -109,9 +129,9 @@ def main():
             elif args.command == "interaction":
                 value = interaction(*(read(p) for p in args.results))
             else:
-                value = [{"path": str(p), "status": (r := read(p))["status"], "factors": r["factors"],
-                          "usage": r["usage"], "scb_check": r.get("scb_check"),
-                          "error": r.get("error")} for p in args.results]
+                value = [{**r, "path": str(Path(r['output'])/'result.json') if r.get('output') else str(p),
+                          "scb_check": r.get("scb_check"), "error": r.get("error")}
+                         for p in args.results for r in records(read(p))]
         print(json.dumps(value, indent=2))
         return 1 if isinstance(value, dict) and value.get("status") == "failed" else 0
     except (OSError, ValueError, RuntimeError, Fatal) as exc:

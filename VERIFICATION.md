@@ -1,5 +1,20 @@
 # Verification
 
+## Parallel repetitions and result tables — 2026-09-18
+
+All 134 local tests, Python compilation and the whitespace check pass. Three
+concurrent complete workflows with a scripted agent backend verify separate
+checkouts, unchanged feature/review/repair/integration order, quality checks and
+one pinned starting commit. Queue tests verify the concurrency limit, retained
+failures, missing usage, cancellation and unstarted repetitions. The actual
+command-line worker path retains three pre-generation failures as one batch.
+
+Summary tests cover single results, batches, report arrays, stdin, failed runs,
+incomplete measurements, comparable-run averages and duplicate rejection. The
+existing failed all-on report renders with its incomplete token count and two
+unrun quality checkpoints preserved. These checks launch no model generation;
+they are not a real-subscription parallel benchmark or a token-saving result.
+
 ## Nested caller shutdown — 2026-09-18
 
 All 117 local tests, Python compilation and the whitespace check pass. The

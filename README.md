@@ -30,6 +30,7 @@ nested launch/resume and cost-preserving recovery. See the
 
 - [How a benchmark runs](#how-a-benchmark-runs)
 - [Quick start](#quick-start)
+- [Parallel repetitions and summary tables](#parallel-repetitions-and-summary-tables)
 - [Code-quality measurements](#code-quality-measurements)
 - [Choosing behaviors](#choosing-behaviors)
 - [Every behavior explained](#every-behavior-explained)
@@ -76,9 +77,11 @@ or the final checks. They also do not change the number or order of features.
 
 Each run uses a separate clone of the chosen starting commit; the source
 repository is not edited. Prompts, responses, command output, temporary commits,
-token records and failures are retained in its output directory. One invocation
-starts one workflow. It does not automatically start comparison runs, repeat
-failed attempts or replace unfavorable results.
+token records and failures are retained in its output directory. An invocation
+starts one workflow unless explicit repetitions are requested. Repetitions run
+the same benchmark and settings in separate checkouts; they do not parallelize
+the feature/review sequence inside a workflow. Failed attempts are retained,
+never automatically retried or replaced.
 
 A native author's completion marker is one unquoted final `@standalone done`
 line; a preceding summary is allowed. The marker does not waive clean-source,
@@ -141,7 +144,7 @@ starting an agent. To actually attempt the two-feature example:
 
 ```sh
 python3 -m lab run benchmarks/example.json --out runs/example-all \
-  --seconds 600 --max-raw 300000 --max-turns 24
+  --harness codex --seconds 600 --max-raw 300000 --max-turns 24
 ```
 
 Only `run` spends model-generation capacity. It requires a fresh output directory
@@ -156,6 +159,68 @@ a small check of the idea, retain failed and partial attempts, and inspect their
 behavior before paying for repetitions. The observed-token limit can overshoot
 while a response is in progress or its usage report is late; it is not a hard
 token cap. Time and turn limits still apply when usage reports are missing.
+
+## Parallel repetitions and summary tables
+
+Add `--parallel 3` to a run command to execute three copies of the same benchmark
+at once. All settings, including enabled switches, model and checks, apply to
+each copy. The starting Git commit is resolved once for the entire batch, even
+if the source branch moves while another repetition waits to start.
+
+```sh
+python3 -m lab run benchmarks/example.json --out runs/example-parallel \
+  --harness codex --seconds 600 --max-raw 300000 --max-turns 24 \
+  --scb-check .venv/bin/scb-check --parallel 3
+```
+
+Use `--repeat 9 --parallel 3` for nine runs with at most three running at once.
+`--repeat 3` runs three copies sequentially. Without either option, the command
+keeps its single-run output format. Limits are **per run**, not per batch:
+nine repetitions can consume up to nine runs' worth of subscription capacity.
+Queued runs receive their own time allowance when they start.
+
+The batch output directory must not exist. It contains:
+
+```text
+example-parallel/
+  batch-input.json        shared settings, pinned commit and source hashes
+  result.json             aggregate JSON containing every requested outcome
+  logs/                   separate stdout/stderr for each worker
+  run-001/result.json     first run, alongside its checkout and full artifacts
+  run-002/result.json     second run
+  run-003/result.json     third run
+```
+
+Each requested run executes once. One failure does not discard other outcomes
+or add a replacement. Ctrl-C stops active workers and records queued runs as
+`not_run`. Workers receive time to close their providers and retain partial
+results before forced shutdown. A worker that crashes without a token report
+has unknown usage, never an invented zero. The batch exits unsuccessfully if
+any requested run fails or does not run. The final aggregate is also printed
+as one JSON object on stdout; worker output does not interleave with it.
+
+The root script `summarize.py` renders a Markdown table from a batch, one run,
+several result files, or the JSON array printed by `lab report`:
+
+```sh
+python3 summarize.py runs/example-parallel/result.json
+python3 summarize.py runs/first/result.json runs/second/result.json
+python3 -m lab report runs/example-parallel/result.json | python3 summarize.py
+```
+
+With no file argument it reads JSON from stdin, so a run command can also pipe
+its output directly into the script. In Bash, use `set -o pipefail` if the
+pipeline's exit status must preserve a failed run; the script's own exit status
+reports whether it successfully rendered the JSON.
+
+The main table shows status, observed raw tokens, cached input, measurement
+completeness, elapsed time, reviewed features and passed final checks. Separate
+rows show all three code-quality checkpoints. Missing values stay missing;
+failed runs remain visible. The total includes known usage from failed runs.
+The mean includes only passed, fully measured runs with matching settings and
+says how many runs it includes. No saving percentage is inferred. Supply a
+batch result or its individual results, not both: duplicate run IDs are rejected
+to prevent double counting. Reading these reports starts no agents.
 
 ## Choosing behaviors
 
@@ -708,6 +773,8 @@ required background for using the tool.
 | Incremental operator monitoring, including missing response coverage | [lab/monitor.py](lab/monitor.py): `sample` |
 | Feature/review/repair sequence, controlled file change, integration and comparisons | [lab/workflow.py](lab/workflow.py): `run`, `after_read_fixture`, `integration_prompts`, `compare`, `interaction` |
 | Commands and preset settings | [lab/__main__.py](lab/__main__.py): `main`, `factors_from` |
+| Isolated repetitions, concurrency and batch outcomes | [lab/batch.py](lab/batch.py): `run_batch`, `worker` |
+| Read-only summary tables | [summarize.py](summarize.py), [lab/summary.py](lab/summary.py): `records`, `render` |
 
 [VERIFICATION.md](VERIFICATION.md) records automated and real-agent checks,
 including unsuccessful attempts and the limits of what was verified.
