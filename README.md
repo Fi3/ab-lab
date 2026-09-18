@@ -728,6 +728,14 @@ are already part of output. Neither is added a second time. Each increase in a
 conversation's cumulative usage counter is counted once; repeated notifications
 do not count as new usage.
 
+With `--harness pi`, completed response counts are added once and reconciled
+with Pi's cumulative session totals after each turn. Streaming counters may
+reset between responses and are not used as conversation totals. Pi reports
+uncached input, cache reads and cache writes separately; all three belong to
+raw input, while `cached_input_tokens` records cache reads. Missing, invalid,
+stale or decreasing session totals stop the run with incomplete measurement.
+Per-turn `session_tokens` and raw transport events retain the provider's counts.
+
 The local observer reads native Codex histories whose working directory belongs
 to the run's separate checkout. Parent conversations already priced through the
 main connection are excluded from child totals. Native child records retain
@@ -777,7 +785,7 @@ required background for using the tool.
 | --- | --- |
 | Supported switches, dependencies and author instructions | [lab/config.py](lab/config.py): `settings`, `policy_blocks`, `author_policy` |
 | Conflict text, edit formats, real operation results and reminders | [lab/host.py](lab/host.py): `refresh_text`, `Host.refresh`, `plan_edit`, `plan_unified`, `Host.consume` |
-| Subscription connection, interruption and usage accounting | [lab/provider.py](lab/provider.py): `Codex`, `InterruptGate`, `Usage` |
+| Agent connections, interruption and usage accounting | [lab/provider.py](lab/provider.py): `Codex`, `Pi`, `InterruptGate`, `Usage` |
 | Nested command settings and owned child usage | [lab/nested.py](lab/nested.py): `CommandEnvironment`, `NestedUsage` |
 | Explicit first-native-boundary recovery and prior-cost preservation | [lab/continuation.py](lab/continuation.py): `inspect_boundary`, `continue_native`, `restore_provider` |
 | Incremental operator monitoring, including missing response coverage | [lab/monitor.py](lab/monitor.py): `sample` |

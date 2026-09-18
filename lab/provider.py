@@ -508,6 +508,20 @@ class PiThread:
                     pass
 
 
+def pi_usage_tokens(value):
+    """Pi separates uncached input, cache reads and cache writes."""
+    if not isinstance(value, dict):
+        raise Fatal("Pi session/response usage is missing")
+    counts = (value.get("input"), value.get("output"), value.get("cacheRead", 0), value.get("cacheWrite", 0))
+    if any(type(n) is not int or n < 0 for n in counts):
+        raise Fatal("Pi session/response usage has invalid token counts")
+    for key in ("total", "totalTokens"):
+        if key in value and (type(value[key]) is not int or value[key] != sum(counts)):
+            raise Fatal("Pi session/response usage has inconsistent totals")
+    inputs, outputs, reads, writes = counts
+    return inputs + reads + writes, outputs, reads
+
+
 class Pi:
     transport = "pi-rpc-stdio"
 
@@ -585,6 +599,7 @@ class Pi:
             "auth": auth,
             "model": self.model,
             "effort": self.effort,
+            "usage_accounting": "pi-session-totals-with-cache-v2",
             "effective_config_sha256": hashlib.sha256(json.dumps({
                 "pi_version": version, "model": self.model, "effort": self.effort, "auth": auth
             }, sort_keys=True).encode()).hexdigest(),
@@ -670,6 +685,8 @@ class Pi:
         row = {"label": label, "thread_id": thread, "turn_id": turn_id, "status": "started", "prompt_file": str(folder / "prompt.txt")}
         self.turns.append(row)
         th = self.threads[thread]
+        before_raw = sum(self.usage.totals.get(thread, (0, 0, 0))[:2])
+        counted_messages = set()
         gate = InterruptGate(interrupt)
         selected, replies, interrupted = None, [], None
         priced, last_output, last_usage = False, 0.0, 0.0
@@ -698,13 +715,8 @@ class Pi:
                 if message.get("type") == "response" and message.get("command") == "prompt" and message.get("id") == turn_id:
                     if not message.get("success"):
                         raise Fatal(f"prompt failed: {message.get('error')}")
-                if message.get("type") == "message_update" and message.get("usage"):
-                    u = message["usage"]
-                    fresh = self.usage.observe_tokens(thread, u.get("input", 0), u.get("output", 0), u.get("cacheRead", 0))
-                    if fresh:
-                        priced, last_usage = True, now
-                        if gate.at is not None:
-                            gate.fresh_usage = True
+                # Streaming snapshots reset for every response; they are not
+                # cumulative conversation counters or completed usage records.
                 if message.get("type") in ("message_end", "turn_end"):
                     m = message.get("message", {})
                     if m.get("role") == "assistant":
@@ -720,26 +732,32 @@ class Pi:
                                         gate.directive(now)
                                 except Rejected:
                                     pass
-                    if m.get("usage"):
-                        u = m["usage"]
-                        fresh = self.usage.observe_tokens(thread, u.get("input", 0), u.get("output", 0), u.get("cacheRead", 0))
-                        if fresh:
-                            priced, last_usage = True, now
-                            if gate.at is not None:
-                                gate.fresh_usage = True
+                    if message.get("type") == "message_end" and m.get("usage"):
+                        key = hashlib.sha256(json.dumps(m, sort_keys=True).encode()).digest()
+                        if key not in counted_messages:
+                            delta = pi_usage_tokens(m["usage"])
+                            previous = self.usage.totals.get(thread, (0, 0, 0))
+                            fresh = self.usage.observe_tokens(thread, *(a+b for a, b in zip(previous, delta)))
+                            counted_messages.add(key)
+                            if fresh:
+                                priced, last_usage = True, now
+                                if gate.at is not None:
+                                    gate.fresh_usage = True
                 if message.get("type") == "agent_settled":
                     row.update(status="interrupted" if interrupted else "completed", interrupt_reason=interrupted)
                     break
 
-            try:
-                stats = th.rpc({"type": "get_session_stats"}, timeout=5)
-                if stats and stats.get("success") and "tokens" in stats.get("data", {}):
-                    tok = stats["data"]["tokens"]
-                    self.usage.observe_tokens(thread, tok.get("input", 0), tok.get("output", 0), tok.get("cacheRead", 0))
-                    priced = True
-                    last_usage = time.monotonic()
-            except Exception:
-                pass
+            stats = th.rpc({"type": "get_session_stats"}, timeout=5)
+            if not isinstance(stats, dict) or not stats.get("success") or not isinstance(stats.get("data"), dict):
+                raise Fatal("Pi session usage could not be retrieved")
+            row["session_tokens"] = stats["data"].get("tokens")
+            totals = pi_usage_tokens(row["session_tokens"])
+            self.usage.observe_tokens(thread, *totals)
+            if self.usage.totals.get(thread) != totals:
+                raise Fatal("Pi session usage does not cover the observed response totals")
+            if sum(totals[:2]) <= before_raw:
+                raise Fatal("Pi session usage did not advance for this turn")
+            priced, last_usage = True, time.monotonic()
 
             if not priced or last_output > last_usage:
                 self.missing_turns.append({"thread_id": thread, "turn_id": turn_id, "reason": "no fresh usage covering the last delivered message"})
@@ -782,7 +800,7 @@ class Pi:
             "observed_raw_tokens": self.usage.raw,
             "cached_input_tokens": self.usage.cached,
             "measurement_complete": (not self.missing_turns and not self.usage.uncertain and bool(self.turns)),
-            "qualification": "pi rpc per-turn coverage and session tokens"
+            "qualification": "Pi finalized-message usage reconciled with session totals; cache read/write included in input"
         }
 
     def close(self):

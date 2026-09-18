@@ -267,7 +267,7 @@ class PiProviderStreamTests(unittest.TestCase):
         self.assertEqual(p.missing_turns, [])
         rep = p.report()
         self.assertTrue(rep["measurement_complete"])
-        self.assertEqual(rep["observed_raw_tokens"], 120)
+        self.assertEqual(rep["observed_raw_tokens"], 125)
 
     def test_turn_interruption_at_host_request(self):
         events = [

@@ -1,5 +1,37 @@
 # Verification
 
+## Pi consecutive-turn accounting — 2026-09-18
+
+All 151 local tests, Python compilation and the whitespace check pass. Eight
+regression tests first expose the accounting errors, then verify per-response
+counter resets, smaller subsequent responses, duplicate end events, cache
+reads/writes, session-only usage and rejection of missing, malformed, stale or
+decreasing session totals. Raw input includes Pi's separate cache categories.
+
+Replaying the two recorded turns from each of the three failed Pi runs produces
+complete accounting: 39,428, 14,506 and 14,919 raw tokens. Their original failed
+results remain unchanged; replay does not finish the unrun benchmark work.
+
+Three simultaneous real Pi workflows with all nine switches enabled pass on
+separate tiny checkouts. Each implements and tests negation, passes independent
+review, completes integration with one final commit, and passes both the test
+suite and a separate behavior assertion. Pi 0.85.1 uses the configured
+`openai-codex` ChatGPT-subscription provider with GPT-5.5/xhigh. Every run has
+complete usage, matching an independent sum of its persisted Pi session data.
+
+| Run | Turns | Raw tokens | Seconds | Result |
+| --- | ---: | ---: | ---: | --- |
+| 001 | 9 | 72,972 | 127.51 | Passed |
+| 002 | 12 | 50,647 | 107.11 | Passed |
+| 003 | 10 | 46,657 | 108.46 | Passed |
+
+The batch takes 127.59 seconds and uses 170,276 raw tokens in total. The limits
+are 300 seconds, 300,000 observed raw tokens and 20 turns per workflow. Evidence
+is under `runs/pi-usage-verification-20260918T215352Z`, including the input,
+retained replay totals and complete batch records. This is implementation
+verification, not a repetition of the original large benchmark or evidence of
+a token-saving effect. Factor prompts and the Codex adapter are unchanged.
+
 ## Completion whitespace and trailing messages — 2026-09-18
 
 All 143 local tests, Python compilation and the whitespace check pass. The nine
