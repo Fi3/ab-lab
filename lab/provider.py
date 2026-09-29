@@ -14,7 +14,8 @@ import uuid
 
 from .host import Fatal, Rejected, parse_operations, save_json
 from .host_response import (HOST_RESPONSE_FORMAT, HOST_OUTPUT_SCHEMA,
-                            HOST_RESPONSE_INSTRUCTIONS, decode_host_response)
+                            HOST_RESPONSE_INSTRUCTIONS, HostResponseOutputError,
+                            decode_host_response)
 from .environment import clean_env
 from .nested import CommandEnvironment, NestedUsage
 from .native_usage import NativeUsage
@@ -557,6 +558,8 @@ class Codex(ChildAccounting):
                         if item.get("phase") in (None, "final_answer"):
                             try:
                                 operation = decode_host_response(text)
+                            except HostResponseOutputError as exc:
+                                violation = exc.reason
                             except ValueError as exc:
                                 row.setdefault("host_response_errors", []).append({
                                     "item_id": item_id, "error": str(exc)})

@@ -24,6 +24,8 @@ class CompactionTests(unittest.TestCase):
         self.assertEqual(json.loads(json.dumps(CONTEXT_POLICY)), CONTEXT_POLICY)
         self.assertEqual(CONTEXT_POLICY["max_agent_message_bytes"], MAX_FINAL_BYTES)
         self.assertEqual(CONTEXT_POLICY["auto_compact_tokens"], AUTO_COMPACT_TOKENS)
+        self.assertEqual(CONTEXT_POLICY["version"], 5)
+        self.assertEqual(CONTEXT_POLICY["max_repeated_character_chars"], 1024)
 
 
 class OutputGuardTests(unittest.TestCase):
@@ -36,7 +38,7 @@ class OutputGuardTests(unittest.TestCase):
 
     def test_replacement_ratio_uses_sliding_window_and_exact_boundary(self):
         guard = OutputGuard()
-        self.assertIsNone(guard.observe("a", "x" * 2048))
+        self.assertIsNone(guard.observe("a", "xy" * 1024))
         self.assertIsNone(guard.observe("a", "\ufffd" * 128 + " " * 1715))
         self.assertEqual(guard.observe("a", " "), "replacement_character_flood")
 
@@ -46,7 +48,8 @@ class OutputGuardTests(unittest.TestCase):
 
     def test_suspicious_run_inside_one_delta_cannot_be_hidden_by_safe_suffix(self):
         for payload, reason in (("\ufffd" * 128, "replacement_character_flood"),
-                                (" " * 8192, "trailing_whitespace")):
+                                (" " * 8192, "trailing_whitespace"),
+                                ("A" * 1024, "repeated_character_flood")):
             with self.subTest(reason=reason):
                 self.assertEqual(OutputGuard().observe("a", payload + "safe" * 2048), reason)
 
@@ -59,6 +62,36 @@ class OutputGuardTests(unittest.TestCase):
         self.assertIsNone(guard.observe("a", " " * 8191))
         self.assertIsNone(guard.observe("a", "x"))
         self.assertIsNone(guard.observe("a", " " * 8191))
+
+    def test_repetition_threshold_counts_characters_across_chunk_boundaries(self):
+        for char in ("A", "é", "🙂"):
+            with self.subTest(char=char):
+                guard = OutputGuard()
+                self.assertIsNone(guard.observe("a", char * 1023))
+                self.assertEqual(guard.observe("a", char), "repeated_character_flood")
+                self.assertEqual(guard.observe("a", "ordinary text"), "repeated_character_flood")
+                self.assertEqual(guard._items["a"].repeated_characters, 1024)
+                self.assertEqual(guard._items["a"].last_character, char)
+                self.assertLessEqual(len(guard._items["a"].window), 2048)
+
+    def test_repetition_counter_resets_on_other_characters_and_whitespace(self):
+        for separator in ("B", "é", "🙂", " ", "\t", "\n", "\u2003"):
+            with self.subTest(separator=separator):
+                guard = OutputGuard()
+                self.assertIsNone(guard.observe("a", "A" * 1023))
+                self.assertIsNone(guard.observe("a", separator))
+                self.assertIsNone(guard.observe("a", "A" * 1023))
+                self.assertEqual(guard.observe("a", "A"), "repeated_character_flood")
+
+    def test_repetition_is_independent_per_item_and_finish_releases_it(self):
+        guard = OutputGuard()
+        self.assertIsNone(guard.observe("a", "A" * 1023))
+        self.assertIsNone(guard.observe("b", "A"))
+        self.assertIsNone(guard.finish("b", "A"))
+        self.assertEqual(guard.observe("a", "A"), "repeated_character_flood")
+        self.assertEqual(guard.finish("a", "A" * 1024), "repeated_character_flood")
+        self.assertFalse(guard._items)
+        self.assertIsNone(guard.observe("a", "A"))
 
     def test_interleaved_items_have_independent_state_and_finish_releases_it(self):
         guard = OutputGuard()
@@ -84,6 +117,7 @@ class OutputGuardTests(unittest.TestCase):
     def test_completed_only_messages_receive_all_guards_even_after_empty_deltas(self):
         for text, reason in (("\ufffd" * 128, "replacement_character_flood"),
                              (" " * 8192, "trailing_whitespace"),
+                             ("A" * 1024, "repeated_character_flood"),
                              ("x" * (MAX_FINAL_BYTES + 1), "agent_message_bytes")):
             with self.subTest(reason=reason):
                 guard = OutputGuard()
@@ -93,14 +127,14 @@ class OutputGuardTests(unittest.TestCase):
 
     def test_byte_limit_counts_utf8_and_allows_exact_host_limit(self):
         guard = OutputGuard()
-        text = "🙂" * (MAX_FINAL_BYTES // 4)
+        text = "🙂🙃" * (MAX_FINAL_BYTES // 8)
         self.assertIsNone(guard.observe("a", text))
         self.assertEqual(guard.observe("a", "x"), "agent_message_bytes")
         self.assertIsNone(OutputGuard().finish("b", text))
 
     def test_completed_stream_is_not_counted_twice(self):
         guard = OutputGuard()
-        text = "é" * (MAX_FINAL_BYTES // 4 + 1)
+        text = "éè" * (MAX_FINAL_BYTES // 8 + 1)
         self.assertIsNone(guard.observe("a", text))
         self.assertIsNone(guard.finish("a", text))
         self.assertFalse(guard._items)

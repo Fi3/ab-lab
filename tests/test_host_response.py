@@ -17,7 +17,7 @@ from test_core import repo_at
 
 
 FIXTURE = Path(__file__).with_name("fixtures") / "checkpoint4-host-protocol-loop.json"
-FORMAT = "json-schema-host-operation-v1"
+FORMAT = "json-schema-host-operation-v2"
 
 
 def response_module():

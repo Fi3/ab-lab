@@ -974,14 +974,16 @@ recent context usage, not cumulative billed tokens. The prompt's UTF-8 byte
 length provides a conservative estimate for this preflight check.
 
 The runner watches streamed assistant messages for replacement-character floods,
-8,192 consecutive whitespace characters, messages above 4 MiB, or a message
+8,192 consecutive whitespace characters, 1,024 identical consecutive non-whitespace
+characters, messages above 4 MiB, or a message
 stream lasting over ten minutes. It quarantines suspicious output immediately;
-no host command from that response executes. For whitespace or replacement floods,
+no host command from that response executes. For whitespace, replacement, or repeated-character floods,
 it waits for the response to finish or reach a priced boundary within the existing
 ten-minute streaming limit. A completed-only violation has the same ten-minute
 settlement ceiling from detection. There is no earlier soft-guard cancellation
-timer that could cut off the token receipt. The 4 MiB ceiling and existing run,
-feature, and review budgets still interrupt immediately. Streamed assistant text
+timer that could cut off the token receipt. The 4 MiB ceiling, global limits,
+and feature/review token limits still interrupt immediately. Eligible review
+time thresholds use the review settlement policy described above. Streamed assistant text
 is retained in each turn's `agent-message-deltas.jsonl`, including unfinished
 responses absent from `reply.txt`.
 
@@ -994,7 +996,7 @@ Compaction, failed attempts and retries retain their own artifacts and count
 against the run's existing time, turn and observed-token limits. Recovery requires
 complete usage coverage; missing counters, unrelated failures (including terminal
 provider policy errors), failed compaction and exhausted limits still stop the run.
-Context policy version 4 records the bounded settlement policy in provider
+Context policy version 5 records the repetition guard and bounded settlement policy in provider
 identity and comparison matching. The review phase and its selected blocking
 priorities are unchanged. This recovery applies to new runs; it does not resume
 an already terminated run.
@@ -1138,11 +1140,21 @@ JSON in `reply.txt` and `messages.json`, and the delivered text in
 `host-operation.txt`. The canonical operation is delivered only after all existing
 usage, budget, error and permission checks. C25 acts after a validated final
 operation and covering usage, instead of an unconstrained commentary directive.
-The `json-schema-host-operation-v1` provider identity keeps these runs distinct
+The `json-schema-host-operation-v2` provider identity keeps these runs distinct
 from prior protocol versions in comparisons. This format prevents exterior prose
 from corrupting a conforming operation; it does not guarantee correct commands,
 task completion, or acceptance by provider policy checks. Provider rejections
 remain terminal and are never retried as formatting failures.
+
+Version 2 bounds every free string and array in the supplied schema and validates
+the same bounds locally: command 8,192 characters, patch 32,768, reason 1,024,
+path 4,096, and at most 16 declared write paths. Larger changes use multiple
+complete operations. These limits let the constrained decoder finish a repeated
+string instead of generating indefinitely until cancellation loses its usage
+receipt. Repetitive output is still quarantined, even if the bounded response is
+valid JSON. Recovery requires real fresh usage and retains the existing single
+compaction/retry limit; no missing cost is treated as zero. Native turns and the
+underlying text protocol keep their existing limits.
 
 The underlying text host still accepts trailing spaces and tabs on
 `@standalone done` and `@standalone end`. Patch content and command text are not

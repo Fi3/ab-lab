@@ -1,0 +1,272 @@
+{
+  "schema": "agent-behavior-lab/output-flood-fixture/v1",
+  "provenance": {
+    "run": "scb-code-search-all-on-p012-8",
+    "source": "runs/scb-code-search-all-on-p012-8/provider/turn-0033/agent-message-deltas.jsonl",
+    "source_sha256": "153f5900895fc69e23f23c8d9a4013de465c678f5a34db4b57bf0c48c4d406a7",
+    "thread_id": "01a0ed1f-d7c0-7e71-93af-cec12e0352bc",
+    "turn_id": "01a0ed20-3a96-7161-93dc-e775372c9c6b",
+    "delta_count": 33339,
+    "payload_bytes": 266486,
+    "payload_sha256": "f6328d72c426a399dc0349191e730e2b7a5c3749cae6594a4500dfebb08e7749",
+    "trailing_repeated_character": "A",
+    "trailing_repeated_characters": 266209
+  },
+  "item_id": "msg_04b74affd42f4e29016abbae26602087d29f1aec27c5945911",
+  "delta_runs": [
+    {
+      "delta": "{\"",
+      "repeat": 1
+    },
+    {
+      "delta": "operation",
+      "repeat": 1
+    },
+    {
+      "delta": "\":{\"",
+      "repeat": 1
+    },
+    {
+      "delta": "kind",
+      "repeat": 1
+    },
+    {
+      "delta": "\":\"",
+      "repeat": 1
+    },
+    {
+      "delta": "run",
+      "repeat": 1
+    },
+    {
+      "delta": "\",\"",
+      "repeat": 1
+    },
+    {
+      "delta": "paths",
+      "repeat": 1
+    },
+    {
+      "delta": "\":[]",
+      "repeat": 1
+    },
+    {
+      "delta": ",\"",
+      "repeat": 1
+    },
+    {
+      "delta": "command",
+      "repeat": 1
+    },
+    {
+      "delta": "\":\"",
+      "repeat": 1
+    },
+    {
+      "delta": "python",
+      "repeat": 1
+    },
+    {
+      "delta": " --",
+      "repeat": 1
+    },
+    {
+      "delta": "version",
+      "repeat": 1
+    },
+    {
+      "delta": " &&",
+      "repeat": 1
+    },
+    {
+      "delta": " python",
+      "repeat": 1
+    },
+    {
+      "delta": " -",
+      "repeat": 1
+    },
+    {
+      "delta": " <",
+      "repeat": 1
+    },
+    {
+      "delta": "<'",
+      "repeat": 1
+    },
+    {
+      "delta": "PY",
+      "repeat": 1
+    },
+    {
+      "delta": "'\\",
+      "repeat": 1
+    },
+    {
+      "delta": "\\n",
+      "repeat": 1
+    },
+    {
+      "delta": "import",
+      "repeat": 1
+    },
+    {
+      "delta": " import",
+      "repeat": 1
+    },
+    {
+      "delta": "lib",
+      "repeat": 1
+    },
+    {
+      "delta": ".util",
+      "repeat": 1
+    },
+    {
+      "delta": ",",
+      "repeat": 1
+    },
+    {
+      "delta": " sys",
+      "repeat": 1
+    },
+    {
+      "delta": "lib",
+      "repeat": 1
+    },
+    {
+      "delta": " if",
+      "repeat": 1
+    },
+    {
+      "delta": " False",
+      "repeat": 1
+    },
+    {
+      "delta": " else",
+      "repeat": 1
+    },
+    {
+      "delta": " sys",
+      "repeat": 1
+    },
+    {
+      "delta": " as",
+      "repeat": 1
+    },
+    {
+      "delta": " sys",
+      "repeat": 1
+    },
+    {
+      "delta": "_module",
+      "repeat": 1
+    },
+    {
+      "delta": "_unused",
+      "repeat": 1
+    },
+    {
+      "delta": "_or",
+      "repeat": 1
+    },
+    {
+      "delta": "_placeholder",
+      "repeat": 2
+    },
+    {
+      "delta": "_should",
+      "repeat": 1
+    },
+    {
+      "delta": "_ne",
+      "repeat": 1
+    },
+    {
+      "delta": "ver",
+      "repeat": 1
+    },
+    {
+      "delta": "_run",
+      "repeat": 1
+    },
+    {
+      "delta": "_this",
+      "repeat": 1
+    },
+    {
+      "delta": "_way",
+      "repeat": 1
+    },
+    {
+      "delta": "_b",
+      "repeat": 1
+    },
+    {
+      "delta": "ecause",
+      "repeat": 1
+    },
+    {
+      "delta": "_invalid",
+      "repeat": 1
+    },
+    {
+      "delta": "_s",
+      "repeat": 1
+    },
+    {
+      "delta": "yntax",
+      "repeat": 1
+    },
+    {
+      "delta": "_",
+      "repeat": 1
+    },
+    {
+      "delta": "inde",
+      "repeat": 1
+    },
+    {
+      "delta": "ed",
+      "repeat": 1
+    },
+    {
+      "delta": "_we",
+      "repeat": 1
+    },
+    {
+      "delta": "_need",
+      "repeat": 1
+    },
+    {
+      "delta": "_fix",
+      "repeat": 1
+    },
+    {
+      "delta": "_command",
+      "repeat": 1
+    },
+    {
+      "delta": "_before",
+      "repeat": 1
+    },
+    {
+      "delta": "_output",
+      "repeat": 1
+    },
+    {
+      "delta": "ting",
+      "repeat": 1
+    },
+    {
+      "delta": "_A",
+      "repeat": 1
+    },
+    {
+      "delta": "AAAAAAAA",
+      "repeat": 33276
+    }
+  ],
+  "expected_guard": "repeated_character_flood",
+  "expected_coverage": false
+}

@@ -8,12 +8,13 @@ _CONTEXT_WINDOW_FRACTION = 0.60
 _REPLACEMENT_WINDOW_CHARS = 2048
 _REPLACEMENT_MIN_CHARS = 128
 _MAX_TRAILING_WHITESPACE_CHARS = 8192
+_MAX_REPEATED_CHARACTER_CHARS = 1024
 _MAX_AGENT_MESSAGE_BYTES = 4 * 1024 * 1024
 
 # Persist this JSON-compatible policy alongside the provider identity so that
 # compaction and cancellation thresholds remain visible in benchmark artifacts.
 CONTEXT_POLICY = {
-    "version": 4,
+    "version": 5,
     "compaction_accounting": "owned-native-response-receipts-v1",
     "auto_compact_tokens": AUTO_COMPACT_TOKENS,
     "context_window_fraction": _CONTEXT_WINDOW_FRACTION,
@@ -21,6 +22,7 @@ CONTEXT_POLICY = {
     "replacement_min_chars": _REPLACEMENT_MIN_CHARS,
     "replacement_whitespace_fraction": 0.90,
     "max_trailing_whitespace_chars": _MAX_TRAILING_WHITESPACE_CHARS,
+    "max_repeated_character_chars": _MAX_REPEATED_CHARACTER_CHARS,
     "max_agent_message_bytes": _MAX_AGENT_MESSAGE_BYTES,
     "output_settle_seconds": OUTPUT_SETTLE_SECONDS,
     "output_settlement": "quarantine-until-priced-boundary-v1",
@@ -36,13 +38,15 @@ def compaction_threshold(window, configured_limit=AUTO_COMPACT_TOKENS):
 
 class _MessageState:
     __slots__ = ("window", "replacements", "blank_or_replacement", "whitespace",
-                 "bytes", "reason")
+                 "last_character", "repeated_characters", "bytes", "reason")
 
     def __init__(self):
         self.window = deque()
         self.replacements = 0
         self.blank_or_replacement = 0
         self.whitespace = 0
+        self.last_character = None
+        self.repeated_characters = 0
         self.bytes = 0
         self.reason = None
 
@@ -51,9 +55,10 @@ class OutputGuard:
     """Inspect each message independently without retaining its full text.
 
     Reason strings are stable identifiers: ``replacement_character_flood``,
-    ``trailing_whitespace``, and ``agent_message_bytes``. A detected reason stays
-    latched until ``finish`` releases that item's state. The caller owns turn
-    timing, interruption, and usage accounting.
+    ``trailing_whitespace``, ``repeated_character_flood``, and
+    ``agent_message_bytes``. A detected reason stays latched until ``finish``
+    releases that item's state. The caller owns turn timing, interruption, and
+    usage accounting.
     """
 
     def __init__(self):
@@ -84,7 +89,8 @@ class OutputGuard:
             if state.reason is not None:
                 continue
 
-            # Store only classifications, never the underlying message text.
+            # The window stores classifications; repetition needs only the
+            # previous character, not the underlying message text.
             kind = 2 if char == "\ufffd" else 1 if char.isspace() else 0
             if len(state.window) == _REPLACEMENT_WINDOW_CHARS:
                 old = state.window.popleft()
@@ -99,6 +105,15 @@ class OutputGuard:
             if (state.replacements >= _REPLACEMENT_MIN_CHARS
                     and state.blank_or_replacement * 10 >= len(state.window) * 9):
                 state.reason = "replacement_character_flood"
+            if kind == 1:
+                state.last_character = None
+                state.repeated_characters = 0
+            else:
+                state.repeated_characters = (state.repeated_characters + 1
+                                             if char == state.last_character else 1)
+                state.last_character = char
+                if state.repeated_characters >= _MAX_REPEATED_CHARACTER_CHARS and state.reason is None:
+                    state.reason = "repeated_character_flood"
         return state.reason
 
     def finish(self, item_id, text: str) -> str | None:

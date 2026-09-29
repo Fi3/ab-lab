@@ -1,5 +1,88 @@
 # Verification
 
+## Bounded host output and complete p012-8 rerun — 2026-09-29
+
+The failure in `runs/scb-code-search-all-on-p012-8` was reproduced before changes.
+Checkpoint 3's author streamed an unfinished JSON command containing **266,209
+consecutive `A` characters**. Replaying all 33,339 retained deltas through the old
+guard produced no violation: its whitespace/replacement-character checks missed
+the ASCII repetition, and the response stayed below the byte ceiling. After
+600 seconds the stream timeout interrupted it. The subsequent usage event was
+identical to the prior receipt; the failed turn had no owned numeric receipt.
+The runner correctly refused to continue with incomplete accounting. Waiting
+longer after that cancellation could not reconstruct the missing cost.
+
+The fix adds character/item bounds to every free field in host schema
+`json-schema-host-operation-v2`, with identical local validation: command 8,192,
+patch 32,768, reason 1,024, path 4,096, and at most 16 declared paths. Large edits
+must be split into complete operations, never truncated. Context policy v5
+quarantines 1,024 identical consecutive non-whitespace characters. Decoded JSON
+fields receive the same guard, so escaping the repetition cannot hide it.
+Quarantined output cannot execute; the existing settlement and single
+compaction/retry path still require real fresh usage. Missing receipts and
+provider rejections remain terminal. No budgets, evaluator tests, or benchmark
+seed were relaxed or replaced.
+
+Evidence is retained in `runs/output-bound-verification-20260929`:
+
+- The SHA-verified original-stream regression and schema-bound tests failed
+  before the fix and passed afterward. The final framework suite passed
+  **448 tests in 99.739 seconds**, including escaped repetition, Unicode bounds,
+  quarantine/recovery, and refusal to retry without a fresh receipt.
+- An installed Codex/GPT-5.6-sol live test requested 9,000 repeated characters
+  using the actual production schema. The decoder emitted exactly 8,192 and
+  completed naturally without an interrupt. The guard quarantined the response,
+  owned receipts covered its cost, compaction completed, and one benign retry
+  command executed exactly once. Its **44,142 raw / 10,368 cached input tokens**
+  reconcile independently with three native receipts, including compaction.
+- A fresh autonomous full run used the original empty seed, GPT-5.6-sol/xhigh,
+  Codex 0.157.1, all factors, P0/P1/P2 reviews, skipped linearization, and the
+  original time/token/turn limits. All five checkpoint attempts, integration,
+  final checks, seven quality measurements of generated trees, and all six
+  upstream evaluations completed in **5,203.771 seconds** (1h 26m 44s).
+- The frozen full-run audit passed: all 25 source hashes, original p012-8
+  artifacts, pinned runtime/evaluator inputs, six source snapshots, and retained
+  request settings agree with admission. **12,763,693 raw / 10,979,584 cached
+  input tokens** reconcile with 233 unique owned native receipts, including five
+  compactions, across 142 turns and 11 threads. There are no nested model costs.
+  All 125 delivered typed operations preserve their requested fields. The
+  original runaway-output/missing-receipt failure did not recur, and no upstream
+  policy rejection occurred in this run. The live recovery test, rather than
+  this non-recurrence alone, exercises the new repetition guard and recovery.
+
+The complete run is **not a solved benchmark**. Its unchanged upstream grades
+are:
+
+| Evaluation | Passed / total |
+| --- | --- |
+| Checkpoint 1 | 13 / 13 |
+| Checkpoint 2 | 25 / 25 |
+| Checkpoint 3 | 42 / 47 |
+| Checkpoint 4 | 69 / 75 |
+| Checkpoint 5 | 1 / 104 |
+| Final assembly | 90 / 104 |
+
+Checkpoint 5's retained snapshot omitted the new grammar dependencies from
+`requirements.txt`, causing `ModuleNotFoundError: tree_sitter_go`. The autonomous
+integration stage added those dependencies and repaired further local failures,
+yielding the distinct final score above. Checkpoint snapshots and grades were
+not rewritten. Checkpoints 3–5 exhausted their configured feature allowances;
+their reviews remain unapproved. The result therefore correctly records
+`execution_status: completed`, `measurement_complete: true`, completed grading,
+`status: needs_attention`, `solved: false`, and CLI exit code 1. No infrastructure
+failure or evaluation timeout occurred. Full execution must not be represented
+as 104/104 or five passing checkpoints.
+
+Primary records are `full-benchmark/result.json`, `full-run-audit.json`,
+`independent-full-run-audit.json`, `independent-closed-run-outcome.json`,
+`final-source-audit.json`,
+`live-recovery/result.json`, `independent-live-audit.json`,
+`reproduction-before.log`, and `full-tests-final.log`. The full-run audit also
+checks that offline evaluation preserved the complete agent-run evidence.
+Private effective-config digests differ from p012-8; their values were not
+retained, so their difference cannot be attributed. Recorded request settings
+match, with only the declared v2 host format and v5 context policy changed.
+
 ## Typed host delivery and review receipt settlement — 2026-09-29
 
 The completed verification is retained under
