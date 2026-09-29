@@ -14,7 +14,7 @@ def records(value):
             raise ValueError('the JSON contains no runs')
         return [row for item in value for row in records(item)]
     if (not isinstance(value, dict) or value.get('status') not in
-            ('passed', 'failed', 'not_run', 'running', 'cancelled') or
+            ('passed', 'failed', 'needs_attention', 'not_run', 'running', 'cancelled') or
             not isinstance(value.get('usage'), dict)):
         raise ValueError('expected a run result, a batch result, or an array of run reports')
     return [value]
@@ -73,6 +73,87 @@ def label(row, index):
     return path.name or str(path)
 
 
+def review_approved(checkpoint):
+    # Older reports only stored approved boundaries in this list.
+    return checkpoint.get('review_approved', checkpoint.get('status', 'approved') == 'approved') is True
+
+
+def slopcodebench_tables(names, rows):
+    summary, details = [], []
+    quality_present = False
+    review_present = False
+    tests_outcome_present = False
+
+    def outcome(value):
+        return 'pass' if value is True else 'fail' if value is False else '—'
+
+    for name, row in zip(names, rows):
+        bench = row.get('slopcodebench')
+        if not isinstance(bench, dict):
+            continue
+        checkpoints = bench.get('checkpoints')
+        strict = (fraction(sum(item.get('strict_pass') is True for item in checkpoints), row.get('feature_count'))
+                  if isinstance(checkpoints, list) else '—')
+        final = bench.get('final')
+        final_outcome = (outcome(final.get('strict_pass')) if final.get('status') in ('passed', 'failed')
+                         else final.get('status', '—')) if isinstance(final, dict) else '—'
+        solved = 'yes' if bench.get('solved') is True else 'no' if bench.get('solved') is False else '—'
+        tests_outcome_present |= 'all_tests_passed' in bench
+        summary.append([name, bench.get('problem'), bench.get('status', 'not_recorded'), strict, final_outcome,
+                        outcome(bench.get('all_tests_passed')), solved])
+        boundaries = {item.get('feature'): item for item in row.get('checkpoints', [])}
+        measurements = [(item.get('feature'), item) for item in checkpoints] if isinstance(checkpoints, list) else []
+        if isinstance(final, dict):
+            measurements.append(('Final assembly', final))
+        for checkpoint, item in measurements:
+            boundary = boundaries.get(checkpoint, {})
+            review = item if 'review_approved' in item else boundary
+            review_present |= 'review_approved' in review or 'status' in boundary
+            approval = review.get('review_approved')
+            review_status = ('approved' if approval is True else 'rejected' if approval is False else
+                             'incomplete' if 'review_approved' in review else
+                             boundary.get('status', 'approved' if boundary else '—'))
+            tests = item.get('tests') or {}
+            passed = count(tests.get('passed'))
+            total = count(tests.get('total'))
+            tested = fraction(passed, total) if passed is not None and (total is None or passed <= total) else '—'
+            quality = item.get('quality') or {}
+            quality_present |= bool(quality)
+            report = (quality.get('report') or {}) if quality.get('status') == 'completed' else {}
+            scores = []
+            for metric in ('verbosity', 'erosion'):
+                value = report.get(metric)
+                scores.append(f'{100*value:.2f}%' if type(value) in (int, float) and math.isfinite(value)
+                              and 0 <= value <= 1 else '—')
+            details.append([name, checkpoint, item.get('status', 'not_recorded'), review_status,
+                            *(outcome(item.get(key)) for key in ('strict_pass', 'isolated_pass', 'core_pass')),
+                            tested, *scores])
+    if not summary:
+        return []
+    summary_headers = ['Run', 'Problem', 'Status', 'Strict checkpoints', 'Final', 'Solved']
+    if tests_outcome_present:
+        summary_headers.insert(-1, 'All tests')
+    else:
+        summary = [item[:-2] + item[-1:] for item in summary]
+    lines = ['', 'SlopCodeBench correctness:', '',
+             table(summary_headers, summary), '',
+             'Strict checkpoints counts passing checkpoints out of the full task sequence; missing evaluations are not passes.']
+    if tests_outcome_present:
+        lines += ['All tests reports upstream correctness separately from unresolved review findings and workflow success.']
+    if details:
+        headers = ['Run', 'Checkpoint', 'Status', 'Strict', 'Isolated', 'Core', 'Tests']
+        if review_present:
+            headers.insert(3, 'Review')
+        else:
+            details = [item[:3] + item[4:] for item in details]
+        if quality_present:
+            headers += ['Verbosity', 'Erosion']
+        else:
+            details = [item[:-2] for item in details]
+        lines += ['', table(headers, details)]
+    return lines
+
+
 def render(rows):
     if not rows:
         raise ValueError('no runs to summarize')
@@ -94,20 +175,28 @@ def render(rows):
     counts = Counter(row['status'] for row in rows)
     lines = ['Runs: '+str(len(rows))+' | '+' | '.join(f'{key}: {value}' for key, value in counts.items()), '']
     main_rows = []
+    execution_present = any(isinstance(row.get('slopcodebench'), dict) and 'execution_status' in row for row in rows)
     for name, row in zip(names, rows):
         usage = row['usage']
         complete = {True: 'complete', False: 'incomplete', None: 'unknown'}.get(usage.get('measurement_complete'), 'unknown')
         checkpoints, checks = row.get('checkpoints'), row.get('checks')
-        features = fraction(len(checkpoints), row.get('feature_count')) if isinstance(checkpoints, list) else '—'
+        features = (fraction(sum(review_approved(item) for item in checkpoints), row.get('feature_count'))
+                    if isinstance(checkpoints, list) else '—')
         if isinstance(checks, list):
             passed = sum(item.get('exit_code') == 0 and not item.get('timed_out') and not item.get('cancelled_signal') for item in checks)
             checks = fraction(passed, row.get('check_count'))
         else:
             checks = '—'
-        main_rows.append([name, row['status'], number(usage.get('observed_raw_tokens')),
+        values = [name, row['status'], number(usage.get('observed_raw_tokens')),
             number(usage.get('cached_input_tokens')), complete, duration(row.get('duration_seconds')),
-            features, checks])
-    lines += [table(['Run', 'Result', 'Raw tokens', 'Cached input', 'Usage', 'Time', 'Reviewed features', 'Checks'], main_rows), '',
+            features, checks]
+        if execution_present:
+            values.insert(2, row.get('execution_status', '—'))
+        main_rows.append(values)
+    headers = ['Run', 'Result', 'Raw tokens', 'Cached input', 'Usage', 'Time', 'Reviewed features', 'Checks']
+    if execution_present:
+        headers.insert(2, 'Execution')
+    lines += [table(headers, main_rows), '',
               'Reviewed features counts reviewer approvals, not independent feature acceptance tests.', '']
     configurations = [enabled(row) for row in rows]
     if len(set(configurations)) == 1:
@@ -133,6 +222,13 @@ def render(rows):
     if errors:
         lines += ['', 'Errors:', '']+[f'- {cell(name)}: {cell(error)[:300]}' for name, error in errors]
 
+    flags = [(name, flag) for name, row in zip(names, rows) for flag in row.get('loop_flags', [])]
+    if flags:
+        lines += ['', 'Stopped attempts and review handoffs:', '',
+                  table(['Run', 'Feature', 'Trigger', 'Resolution', 'Handoff'],
+                        [[name, flag['feature'], flag['reason'], flag['resolution'], flag['artifact']]
+                         for name, flag in flags])]
+
     if any(isinstance(row.get('scb_check'), dict) for row in rows):
         quality_rows = []
         for name, row in zip(names, rows):
@@ -148,4 +244,5 @@ def render(rows):
                 quality_rows.append([name, title, measurement.get('status', 'not_recorded'), *values])
         lines += ['', 'Code-quality measurements (scb-check scores, not token savings):', '',
             table(['Run', 'Checkpoint', 'Status', 'Verbosity', 'Erosion', 'Cognitive erosion'], quality_rows)]
+    lines += slopcodebench_tables(names, rows)
     return '\n'.join(lines)+'\n'

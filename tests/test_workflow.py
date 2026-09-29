@@ -35,7 +35,7 @@ class FakeCodex:
                 return f"@standalone edit implement {name}\n*** Begin Patch\n*** Add File: {name}.py\n+value = 1\n*** End Patch\n@standalone end"
             return "@standalone done"
         if "-review-" in label:
-            return "FINDINGS\n- Change one.py value to 2" if label == "one-review-1" else "NO_FINDINGS"
+            return "FINDINGS\n- [P2] Change one.py value to 2" if label == "one-review-1" else "NO_FINDINGS"
         if "-fix-" in label:
             n = self.fixes.get(label, 0)
             self.fixes[label] = n+1
@@ -151,7 +151,7 @@ class WorkflowTests(unittest.TestCase):
 
     def test_ambiguous_or_missing_review_marker_is_not_success(self):
         self.assertTrue(review_clean("NO_FINDINGS\nLooks good."))
-        self.assertFalse(review_clean("FINDINGS\n- Broken"))
+        self.assertFalse(review_clean("FINDINGS\n- [P2] Broken"))
         for text in ("probably okay", "NO_FINDINGS\nFINDINGS\n- Oops"):
             with self.assertRaises(ValueError):
                 review_clean(text)

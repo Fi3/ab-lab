@@ -7,6 +7,7 @@ import time
 
 from .provider import Usage
 from .nested import NestedUsage
+from .continuation import restore_usage_counters
 
 
 def complete_lines(path, offsets):
@@ -33,7 +34,7 @@ def sample(folders, state):
             entry["nested"].started = manifest["created_at_unix"]
             if continuation := manifest.get('continuation'):
                 prior = json.loads((Path(continuation['previous'])/'result.json').read_text())['usage']
-                entry['usage'].totals = {k: tuple(v) for k, v in prior['thread_totals'].items()}
+                restore_usage_counters(entry['usage'], prior)
                 entry['parents'].update(prior['thread_totals'])
                 entry['turns'].update(t.get('turn_id', t['thread_id']) for t in prior['turns'])
                 entry['nested'].started = continuation['original_created_at']
@@ -44,11 +45,14 @@ def sample(folders, state):
                 entry["parents"].add(identity)
             if event.get("method") == "thread/tokenUsage/updated":
                 entry["usage"].observe(event.get("params", {}))
+        native_errors, native_incomplete = native_counters(folder, entry)
         for stage in complete_lines(folder / "progress.jsonl", entry["offsets"]):
             entry["stage"] = stage["stage"]
         for coverage in complete_lines(folder / "provider/coverage.jsonl", entry["offsets"]):
             entry["turns"].add(coverage["turn_id"])
-            if not coverage.get("usage_observed_after_last_message") or coverage.get("error") is not None:
+            # A failed or recovered turn can still have fully observed usage.
+            # Its execution error does not by itself leave an accounting gap.
+            if not coverage.get("usage_observed_after_last_message"):
                 entry["missing"].add(coverage["turn_id"])
         terminal = folder / "result.json"
         if entry["result"] is None and terminal.exists():
@@ -61,16 +65,49 @@ def sample(folders, state):
             entry["nested"].refresh(parents)
             nested = entry["nested"].report(parents)
         gaps = max(len(entry["missing"]), len(usage.get("unpriced_or_incomplete_turns", [])))
+        complete = usage.get("measurement_complete", False if gaps or entry["usage"].uncertain else None)
+        if native_errors or native_incomplete:
+            complete = False
         rows.append({"run": folder.name, "path": str(folder),
             "status": result.get("status", "running" if folder.exists() else "not_started"),
             "stage": entry["stage"], "observed_raw": usage.get("observed_raw_tokens", entry["usage"].raw+nested["observed_raw_tokens"]),
             "nested_raw": nested["observed_raw_tokens"], "nested_errors": nested["errors"],
             "nested_incomplete": nested["incomplete"],
+            "native_errors": native_errors, "native_incomplete": native_incomplete,
             "counter_flags": entry["usage"].uncertain, "coverage_gaps": gaps,
             "completed_turns": len(entry["turns"]),
-            "measurement_complete": usage.get("measurement_complete", False if gaps or entry["usage"].uncertain else None),
+            "measurement_complete": complete,
+            "loop_flags": result.get("loop_flags", []),
+            "attention": result.get("attention"),
             "error": result.get("error")})
     return {"time_utc": datetime.now(timezone.utc).isoformat(), "runs": rows}
+
+
+def native_counters(folder, entry):
+    """Read the provider's atomic receipt summary, never search unrelated sessions."""
+    path = folder / "provider/native-usage.json"
+    errors, incomplete = [], []
+    try:
+        reports = json.loads(path.read_text())
+        if not isinstance(reports, dict):
+            raise ValueError("native usage summary is not an object")
+        for thread, report in reports.items():
+            if not isinstance(report, dict) or report.get("thread_id") != thread:
+                raise ValueError("native usage summary identity mismatch")
+            errors.extend(f"{thread}: {error}" for error in report.get("errors", []))
+            incomplete.extend(f"{thread}: {response}" for response in report.get("missing_compactions", []))
+            totals = report.get("thread_totals")
+            if totals is None or report.get("errors"):
+                continue
+            if not report.get("validated") or not isinstance(totals, list) or len(totals) != 3:
+                raise ValueError("unvalidated native usage totals")
+            entry["usage"].observe_native(thread, *totals)
+            entry["parents"].add(thread)
+    except FileNotFoundError:
+        pass
+    except (OSError, ValueError) as exc:
+        errors.append(str(exc))
+    return errors, incomplete
 
 
 def main():
@@ -90,7 +127,7 @@ def main():
         temporary = args.output / "current.tmp"
         temporary.write_text(json.dumps(value, indent=2)+"\n")
         temporary.replace(args.output / "current.json")
-        if args.once or all(row["status"] in ("passed", "failed") for row in value["runs"]):
+        if args.once or all(row["status"] in ("passed", "failed", "needs_attention") for row in value["runs"]):
             return
         time.sleep(15)
 

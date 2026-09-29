@@ -57,7 +57,9 @@ returns complete file text and records what you have actually received. Use it b
 @standalone edit <reason>
 <patch in the required format>
 @standalone end
+Structured patches may put *** Mode: 100755 (executable) or *** Mode: 100644 (non-executable) immediately after an Add/Update File header. A mode-only Update needs no @@ hunks. Use this to publish executable scripts.
 @standalone run <shell-quoted relative paths the command may write>... -- <shell command>
+Declare permission changes such as chmod as writes to their target paths too. Prefer a host edit with Mode metadata for executable-bit changes.
 Use no paths for read-only commands. Checks have a 300-second ceiling and must fit the remaining workflow budget. Raw output is saved; displayed output may have explicit omission notices. Do not infer success from omissions. Command-produced source changes must be proposed as an ordinary edit or explicitly discarded with @standalone discard <reason>.
 The stage-completion marker is exactly @standalone done. Pending source changes prevent completion. Every required test and task obligation remains in force."""
         if not f["C16"]:
@@ -70,9 +72,12 @@ The stage-completion marker is exactly @standalone done. Pending source changes 
 def load_benchmark(path):
     path = Path(path).resolve(strict=True)
     data = json.loads(path.read_text())
-    allowed = {"name", "repo", "revision", "features", "checks", "instructions", "defer_documentation", "after_read"}
+    allowed = {"name", "repo", "revision", "features", "checks", "instructions", "defer_documentation", "after_read", "slopcodebench"}
     if not isinstance(data, dict) or set(data) - allowed:
         raise ValueError("unknown benchmark fields")
+    if "slopcodebench" in data:
+        from .slopcodebench import expand
+        data = expand(data, path)
     for key in ("name", "repo", "revision"):
         if not isinstance(data.get(key), str) or not data[key].strip():
             raise ValueError(f"benchmark needs {key}")

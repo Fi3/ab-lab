@@ -2,7 +2,7 @@
 """J04 exact-edit host, extended with explicit research factors.
 
 Only an invocation-owned final message grants operations. Commands have repository
-cwd and monitored source custody, NOT an OS write sandbox. All artifacts are local.
+cwd, monitored source custody and the workflow's injected OS sandbox. All artifacts are local.
 """
 from collections import deque
 import hashlib
@@ -241,10 +241,15 @@ def plan_edit(repo, patch):
         while index < len(lines) - 1 and not any(lines[index].startswith(f"*** {k} File: ") for k in ("Add", "Update", "Delete")):
             body.append(lines[index])
             index += 1
+        mode = None
+        if body and body[0].startswith("*** Mode:"):
+            if kind == "Delete" or body[0] not in ("*** Mode: 100644", "*** Mode: 100755"):
+                raise Rejected("mode must be 100644 or 100755 on an Add or Update file")
+            mode = int(body.pop(0).split()[-1], 8) & 0o777
         if kind == "Add":
             if before[0] != "missing" or not body or any(not line.startswith("+") for line in body):
                 raise Rejected("add requires absent regular path and + lines")
-            after = ("file", ("\n".join(line[1:] for line in body) + "\n").encode("utf-8"), 0o644)
+            after = ("file", ("\n".join(line[1:] for line in body) + "\n").encode("utf-8"), mode if mode is not None else 0o644)
         elif kind == "Delete":
             if before[0] != "file" or body:
                 raise Rejected("delete requires existing regular file and no body")
@@ -252,7 +257,8 @@ def plan_edit(repo, patch):
         else:
             if before[0] != "file":
                 raise Rejected("update requires existing regular file")
-            after = ("file", update_text(before[1], body), before[2])
+            content = before[1] if mode is not None and not body else update_text(before[1], body)
+            after = ("file", content, mode if mode is not None else before[2])
         if before != after:
             changes[name] = (before, after)
     if not changes:
@@ -398,9 +404,10 @@ def render_output(text, _path=None):
 
 
 class Host:
-    def __init__(self, repo, artifact_dir, feature, stage, deadline, factors, *, command_env=None):
+    def __init__(self, repo, artifact_dir, feature, stage, deadline, factors, *, command_env=None, command_argv=None):
         from .environment import clean_env
         self.command_env = dict(clean_env(command_env), AGENT_LAB_CHILD="1")
+        self.command_argv = command_argv or (lambda argv: argv)
         self.repo = Path(repo).resolve(strict=True)
         self.artifacts = Path(artifact_dir).absolute()
         self.artifacts.mkdir(parents=True, exist_ok=False)
@@ -500,7 +507,7 @@ class Host:
         save_json(folder / "request.json", {"command": command, "declared_paths": declared})
         seconds = min(COMMAND_SECONDS, self.deadline - time.monotonic())
         env = self.command_env
-        receipt = execute_child(["/bin/sh", "-c", command], self.repo, None, folder / "stdout.txt", folder / "stderr.txt", seconds, env)
+        receipt = execute_child(self.command_argv(["/bin/sh", "-c", command]), self.repo, None, folder / "stdout.txt", folder / "stderr.txt", seconds, env)
         after = snapshot(self.repo)
         receipt.update(command=command, declared_paths=declared, before=state_summary(before), after=state_summary(after))
         changed = {name: (old, after["files"].get(name, ("missing", b"", 0)))
@@ -539,13 +546,34 @@ class Host:
                 errors.append(f"symlink source path: {name}")
         receipt["custody_errors"] = errors
         receipt["pending_paths"] = list(changed)
+        # A forgotten chmod declaration is reversible without replacing source
+        # bytes. Keep the proposed modes pending for an explicit edit/discard;
+        # content, Git-state and arbitrary permission changes still fail closed.
+        recover_modes = bool(errors and changed) and all(
+            error.startswith("source change outside declared paths: ") for error in errors
+        ) and all(
+            old[0] == new[0] == "file" and old[1] == new[1]
+            and {old[2], new[2]} == {0o644, 0o755}
+            for old, new in changed.values()
+        ) and receipt["exit_code"] == 0 and not receipt["timed_out"] and not receipt["cancelled_signal"] and time.monotonic() < self.deadline
+        if recover_modes:
+            try:
+                for name, (old, _) in changed.items():
+                    (self.repo / name).chmod(old[2])
+                self.unchanged()
+            except (OSError, Fatal) as exc:
+                errors.append(f"executable-mode restoration failed: {exc}")
+                recover_modes = False
+            else:
+                receipt["recovered_mode_paths"] = list(changed)
         save_json(folder / "receipt.json", receipt)
         self.event("command_result", receipt=str(folder / "receipt.json"), status=receipt["exit_code"], timed_out=receipt["timed_out"], custody_errors=errors)
         self.evidence("HOST CHECK", f"command: {command}\nstatus: {receipt['exit_code']}; timed_out: {receipt['timed_out']}\nstdout: {folder / 'stdout.txt'}\nstderr: {folder / 'stderr.txt'}")
-        if errors:
+        if errors and not recover_modes:
             raise Fatal("; ".join(errors) + "; actual state retained")
         for name, (old, new) in changed.items():
-            write_state(self.repo / name, old)
+            if not recover_modes:
+                write_state(self.repo / name, old)
             self.pending[name] = {"after": new, "artifact": str(folder / "pending"), "diff": pending_diffs[name]}
         self.unchanged()
         if receipt["cancelled_signal"] or receipt["timed_out"] or time.monotonic() >= self.deadline:
@@ -555,13 +583,17 @@ class Host:
             path = folder / f"{stream}.txt"
             output.append(f"{stream}:\n" + render_output(path.read_bytes().decode("utf-8", errors="replace")))
         pending = "\n" + self.pending_feedback() if self.pending else ""
-        return f"Host command completed.\ncommand: {command}\nstatus: {receipt['exit_code']}\n" + "\n".join(output) + pending
+        recovery = ("\nUndeclared executable-bit changes were rejected and restored; source bytes are unchanged. "
+                    "The command has already run; do not repeat successful checks. Publish the required modes with an explicit edit, or discard them.\n"
+                    if recover_modes else "")
+        return f"Host command completed.\ncommand: {command}\nstatus: {receipt['exit_code']}\n" + "\n".join(output) + recovery + pending
 
     def pending_feedback(self):
         diff = "\n".join(self.pending[name]["diff"] for name in self.pending_changes)
         return (f"Standalone command captured tracked file changes\nfiles: {', '.join(self.pending_changes)}\n"
                 "Review cannot start until command-produced tracked changes are saved in a provisional commit or explicitly discarded.\n"
                 "These changes are pending and restored in the checkout. If required, submit an equivalent structured `@standalone edit <reason>` using the full diff below; the host applies and commits it through the ordinary edit path.\n"
+                "To publish a file mode, put `*** Mode: 100755` (executable) or `*** Mode: 100644` (non-executable) immediately after its `*** Update File: path` header; no @@ hunks are needed for a mode-only edit.\n"
                 "If not required, emit `@standalone discard <reason>` to clear this pending output without writing or committing it.\n"
                 "In your next response, emit one edit block or one discard directive for these files, then stop; do not repeat the block or include DONE until acceptance or explicit discard.\n"
                 "Current tracked diff:\n" + diff + ("" if diff.endswith("\n") else "\n"))

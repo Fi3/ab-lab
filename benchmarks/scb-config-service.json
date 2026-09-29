@@ -1,0 +1,16 @@
+{
+  "name": "scb-config-service",
+  "repo": "../.benchmarks/scb-empty",
+  "revision": "HEAD",
+  "slopcodebench": {
+    "dataset": "../.benchmarks/scb-problems",
+    "revision": "38d627ecf668a88f88f8d260f8df8df6116e9b03",
+    "problem": "dynamic_config_service_api",
+    "runner": "../.benchmarks/slop-code-bench",
+    "runner_revision": "31ceea3add480edb33431e70475c4c70597e6b31",
+    "seconds": 600
+  },
+  "checks": ["test -f config_server.py && test -f requirements.txt && python -m compileall -q config_server.py"],
+  "instructions": "Implement in Python 3.12. Keep all runtime dependencies in requirements.txt.",
+  "defer_documentation": false
+}

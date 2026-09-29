@@ -17,16 +17,16 @@ Python runner uses only the standard library and invokes `scb-check` as a
 separately installed local program. No other agent orchestrator, service or
 dashboard is required.
 
-**Validation status:** a complete three-all-on versus three-all-off comparison
-is not established. The retained six-run test has two all-off time-limit failures
-and one complete all-off workflow with all three external feature checks passing.
-Two complete all-on workflows pass repository checks but only two of three
-external feature checks. A third all-on run has a retained host-test failure
-that passes a later unchanged-source diagnostic. No model workflow is repeated
-to improve its result. Real subscription checks cover interruption, Git writes,
-nested launch/resume and cost-preserving recovery. See the
-[six-run results and limits](experiments/on-off-20260918-r4/RESULT.md) and
-[implementation verification](VERIFICATION.md).
+Agent Behavior Lab uses Codex through an existing ChatGPT subscription. It does
+not use API keys or API credits. It is a standalone Python command-line tool;
+no other agent orchestrator, service, dashboard or third-party Python package
+is required.
+
+**Measurement limitation:** the full all-on/all-off validation is incomplete.
+Interrupting after an intermediate host-request message can leave missing token
+reports. Partial totals cannot establish a saving percentage. See the
+[recorded failure and validation status](experiments/on-off-20260917/RESULT.md)
+before starting an expensive comparison.
 
 - [How a benchmark runs](#how-a-benchmark-runs)
 - [Quick start](#quick-start)
@@ -35,6 +35,7 @@ nested launch/resume and cost-preserving recovery. See the
 - [Choosing behaviors](#choosing-behaviors)
 - [Every behavior explained](#every-behavior-explained)
 - [Using your own benchmark](#using-your-own-benchmark)
+- [SlopCodeBench tasks](#slopcodebench-tasks)
 - [Reading results and combined effects](#reading-results-and-combined-effects)
 - [Optional research background](#optional-research-background)
 
@@ -53,30 +54,160 @@ Features run **one after another, not in parallel**. For each feature:
 
 1. An author implements the feature and its tests.
 2. An independent reviewer checks the changes.
-3. If the reviewer finds problems, the same author repairs them and the same
-   reviewer checks again. This continues until review is clean or a run limit
-   or execution failure stops the run.
+3. If the reviewer finds problems at a selected blocking priority, the same
+   author repairs them and the same reviewer checks again. This continues until
+   no selected findings remain, a progress/budget rule requests attention, or
+   a run limit or execution failure stops the run.
+
+Stalled attempts have a separate terminal status, **`needs_attention`**. They
+are finished automated attempts, not reviewer approvals. In ordinary workflows,
+later dependent features do not start; independent batch repetitions continue.
+SlopCodeBench instead retains and grades each stopped attempt and proceeds to
+the next cumulative checkpoint, within the global run limits. The runner does
+not automatically ask another model or person to take over.
+
+The default progress policy stops on any of these conditions:
+
+- The same rejected source tree appears again, including a return to an earlier
+  tree after intervening changes. Different commit messages do not hide a cycle.
+- A blocking finding repeats in three consecutive reviews (two claimed repairs).
+  Matching ignores whitespace only; it does not guess semantic similarity or
+  infer progress from the number of findings.
+- A cycle of one, two or three host operations repeats three times with the
+  same source state and operation results. This detector applies to host-managed
+  operations; native tool runs still have review and budget limits.
+- Three repair attempts have each been reviewed and still have blocking findings.
+- A feature reaches its token allowance, or a bounded review conclusion cannot finish.
+
+Each feature has **3,000,000 observed raw tokens**, including author/reviewer
+work, compaction and nested verification. **500,000** of those tokens are
+reserved for one final review; author implementation/repair work uses at most
+the other **2,500,000**. An ordinary review can use the remaining feature budget.
+At **500,000 tokens or 300 seconds**, exploration stops and the same reviewer gets
+one request to conclude using its existing evidence. The conclusion has a hard
+**200,000 additional-token** limit and a **90-second** stop threshold, within the
+remaining feature and global budgets. An already completed, fully accounted
+ordinary-review verdict is retained.
+The threshold alone does not flag a loop or end the feature: findings enter the
+normal repair cycle, and approval allows the next checkpoint.
+These are configurable policy values, not claims about the
+optimal budget for every problem. Global run limits always still apply. Limits
+are enforced inside both providers as well as between turns; in-flight responses
+can overshoot observed-token limits before cancellation and their usage remains
+charged.
+
+Policy `bounded-feature-review-v3` gives an in-flight response up to **600 seconds**
+after a review time threshold to supply its usage receipt before cancellation.
+The first timeout and settlement outcome are recorded separately. New reasoning
+or message activity invalidates an earlier receipt; repeated counters do not
+qualify. A conclusion or final review that exceeds its time threshold remains
+stopped and unapproved even if its final text arrives during settlement.
+Global time/token limits and feature/review token limits preempt this wait.
+Missing receipts at the end of the wait still stop further generation. This
+changes v2's immediate cancellation at review time limits; it does not change
+past results or grant approval because a budget expired.
+
+When the author stops, the current clean committed code gets at most one final
+independent review, with a hard 500,000-token limit and 300-second stop threshold within the reserve
+and remaining global budget. An approval
+allows normal progression, retaining the stop flag in the result. A rejection,
+unfinished conclusion, explicitly incomplete review, dirty checkout or pending
+host changes requires attention.
+A review-loop stop already has a rejection and does not buy another review.
+The same applies when a rejection leaves no author allowance, or a stopped
+repair leaves a source tree that was already rejected: the existing verdict is
+retained, without a fake repair attempt or another review of unchanged code.
+Missing usage evidence or execution failures remain failures, not approvals.
+
+`result.json` records `review_wrapups` separately from terminal `loop_flags`, the effective `loop_policy`, and (when
+escalated) `attention` and `blocked_features`. Each flag links to
+`attention/<feature>/event-NN/handoff.json`, with a human-readable README,
+requirements, review history and a tracked-source patch. The owned checkout and
+provider/host artifacts retain untracked work, operation results and test
+evidence. A human or stronger model can inspect this packet without rerunning
+the stalled author. Summaries show these handoffs, including flags on runs that
+subsequently passed review. The CLI exits nonzero for `needs_attention`.
+
+Use `--loop-policy policy.json` on `plan` or `run` to override selected defaults:
+
+```json
+{
+  "max_feature_raw": 3000000,
+  "max_repair_attempts": 3,
+  "repeat_limit": 3,
+  "max_review_raw": 500000,
+  "max_review_seconds": 300,
+  "max_review_wrapup_raw": 200000,
+  "max_review_wrapup_seconds": 90,
+  "max_review_settle_seconds": 600,
+  "final_review": true
+}
+```
+
+Set `final_review` to false to escalate immediately after an author stop.
+`--no-loop-detection` disables the feature policy while retaining global limits.
+Policy values and version participate in comparison matching, are forwarded to
+batch workers, and are preserved by supported continuations. Compare runs using
+the same policy; do not change a past run's recorded result or reclassify a
+budget stop as a detected repetition loop.
+
+`--review-priorities P0,P1,P2` selects which review findings require repairs and
+block the next feature. This is the default: P0 is critical, P1 is high priority,
+P2 is a meaningful defect, and P3 covers minor issues or nits. The independent
+review still runs in full; findings outside the selected priorities are retained
+as advisory and do not trigger another repair round. Each blocking finding must
+identify the affected requirement, a concrete problem or reproducer, and its
+impact. Priority selection applies to both harnesses and parallel repetitions.
+It is recorded in plans, manifests, results and comparison settings; use the
+same selection when comparing behavior switches.
+
+For example, inspect a plan with only P0 and P1 findings blocking, or include
+all four priorities:
+
+```sh
+python3 -m lab plan benchmarks/example.json --review-priorities P0,P1
+python3 -m lab plan benchmarks/example.json --review-priorities P0,P1,P2,P3
+```
+
+The same option can be added to any `python3 -m lab run` command. Omitting it
+keeps P0, P1 and P2 blocking; a nonempty comma-separated selection from P0 through
+P3 is required when the option is supplied.
 
 If the requested feature already exists, the author need not invent source
 changes. The independent reviewer checks the complete requested behavior and its
 tests; an empty diff is not approval. A verified unchanged feature receives an
-explicit verification-only empty commit during final integration. It still has
+explicit verification-only empty commit during final integration unless
+`--skip-linearization` is set. It still has
 an author, review, any necessary repairs and the same final checks.
 
 Only then does the next feature begin, with a new author and reviewer. After all
-features pass review, a separate integration agent proposes how to assemble the
-finished work. The runner accepts that plan, and the same agent carries it out:
-required documentation and repairs belong with their feature, and the final Git
-history must have **one commit per feature**. The runner executes the benchmark's
+features pass review, a separate integration agent proposes how to finish the
+remaining work. The runner accepts that plan, and the same agent carries it out.
+By default, required documentation and repairs belong with their feature, and
+the final Git history has **one commit per feature**. The runner executes the benchmark's
 final checks and requires a clean working directory. This history cleanup does
 not mean summarizing or shortening the agent's conversation.
+
+`--skip-linearization` preserves the reviewed commits instead of reordering or
+squashing them into one commit per feature. The final integration agent still
+plans and completes required documentation, validation and genuine repairs,
+appending new commits only when needed. Reviews, final checks, clean-checkout
+requirements and all three code-quality measurements remain enabled. The flag
+works with `plan`, single runs and parallel repetitions, for both Codex and Pi.
+It is recorded in the JSON and comparison settings; compare runs using the same
+setting. Without the flag, the default history cleanup remains required.
 
 The switches mainly affect the author, including review repairs. They do not
 remove the independent reviews, the final integration stage, required behavior,
 or the final checks. They also do not change the number or order of features.
 
-Each run uses a separate clone of the chosen starting commit; the source
-repository is not edited. Prompts, responses, command output, temporary commits,
+Each new run uses a separate Git checkout containing only the chosen starting
+commit and its ancestors. Later commits, unrelated branches, tags, object-store
+links and remotes are not copied. The source repository is not edited. This
+isolates the checkout's Git history; it is not a filesystem-wide read barrier
+against deliberately opening the original repository. Existing saved runs and
+explicit continuations retain their original history policy.
+Prompts, responses, command output, temporary commits,
 token records and failures are retained in its output directory. An invocation
 starts one workflow unless explicit repetitions are requested. Repetitions run
 the same benchmark and settings in separate checkouts; they do not parallelize
@@ -122,11 +253,55 @@ python3 -m lab doctor --out runs/login-check
 login and configuration without asking a model to generate a response. Its
 output directory must not already exist.
 
+### Pi and Codex controls
+
+Both `--harness pi` and `--harness codex` default to `gpt-5.5` with `xhigh`
+reasoning. `--model` and `--effort` explicitly override those defaults; Pi's
+global default model is not used. Pi requires its installed Node SDK and the
+Codex CLI, and uses the `openai-codex` ChatGPT-subscription provider. Its actual
+model, provider and reasoning setting are checked before generation.
+
+The benchmark requests, factor prompts, review/repair sequence, final integration
+and checks are shared. Pi's shell commands and native file operations run inside
+the Codex OS sandbox: read-only for mediated authors and integration planning;
+workspace writes for native authors, reviewers and accepted integration.
+Reviewers may run checks that create ignored build output, but any change to
+source, nonignored files, the index or history fails the review's snapshot guard.
+Reviewers must report repairs for the author, not perform them. Network access,
+including localhost sockets, is enabled in both read-only and writable modes.
+Host-run commands and final checks use the same writable sandbox as native tests.
+Writable roots include the owned checkout and its Git directory, temporary
+scratch space, the run's child-call receipts and the existing Codex state directory
+needed by command-launched verification agents. Other filesystem paths remain
+read-only. No credentials are copied. Read-only roles do not gain these writes.
+Permission changes between stages preserve the agent conversation.
+Automatic Pi extensions are disabled; the
+runner loads only its permission wrapper, retaining Pi's native tool definitions.
+Pi's shell-output capture runs outside the command sandbox, so large outputs can
+be saved to temporary logs and read back without granting commands write access.
+
+Both harnesses use the same guarded launcher for command-launched Codex checks.
+Child launch/resume uses the benchmark model and reasoning setting, contributes
+to the token limit and reported total, and must finish with complete usage before
+further work. With Pi, `--codex` selects the CLI used for the sandbox and children;
+`--pi` selects Pi itself. Missing sandbox support or mismatched models stop the
+run before generation rather than falling back to unrestricted execution.
+
+These are controlled harness comparisons, not identical internal agent
+implementations: Pi and Codex retain their own system prompts, native tools and
+execution strategies. Older Pi results without the sandbox/child policy do not
+have equivalent controls and their parent-only counts are not whole-workflow
+token totals.
+
 Each workflow checks native Git index-write access in its fresh clone before
 asking the model to work. The check uses no model tokens and saves
 `provider/git-write-preflight.json`. Writable author and integration turns may
-write only that checkout and its `.git` directory; read-only roles stay read-only
-and command network access stays disabled. `doctor` checks login/configuration
+use the shared writable scope above; reviewer checks have the same
+write scope with the additional unchanged-source guard. Read-only roles stay read-only.
+Provider identities record `shared-checks-network-enabled-v1`, so comparisons
+distinguish these execution conditions from earlier network-restricted runs.
+Token accounting is independent of this permission policy; saved historical
+results remain unchanged. `doctor` checks login/configuration
 only and does not refresh a repository's Git index.
 
 For a small example, initialize the included Python project as a Git repository
@@ -249,14 +424,14 @@ the table. Neither setting promises better results or lower token usage.
 | ID and detailed explanation | On | Off |
 | --- | --- | --- |
 | [C08: Short updates after an outdated edit](#c08-short-updates-after-an-outdated-edit) | Send the changed lines relative to text already delivered | Send the complete changed file, subject to the shared fallback rules |
-| [C13: Focus checks during implementation](#c13-focus-checks-during-implementation) | Focus author checks; keep broad final checks | No extra validation guidance |
-| [C14: Submit code and tests together](#c14-submit-code-and-tests-together) | Group related code and tests in one edit | No instruction about grouping or separating edits |
-| [C15: Make the failing-test demonstration optional](#c15-make-the-failing-test-demonstration-optional) | No required failing test run before implementation | Keep the repository's and agent's normal test-order rules |
+| [C13 *: Focus checks during implementation](#c13-focus-checks-during-implementation) | Focus author checks; keep broad final checks | No extra validation guidance |
+| [C14 *: Submit code and tests together](#c14-submit-code-and-tests-together) | Group related code and tests in one edit | No instruction about grouping or separating edits |
+| [C15 *: Make the failing-test demonstration optional](#c15-make-the-failing-test-demonstration-optional) | No required failing test run before implementation | Keep the repository's and agent's normal test-order rules |
 | [C16: Choose the edit format](#c16-choose-the-edit-format) | Structured exact-text patches | No format instruction; native tools remain available, or the host accepts either supported patch format |
 | [C17: Let the local program carry out operations](#c17-let-the-local-program-carry-out-operations) | Host executes edits, commits and checks | Agent uses its own editing and command tools |
-| [C20: Remind the agent how to use command results](#c20-remind-the-agent-how-to-use-command-results) | Include a next-action reminder | Omit that reminder, retaining actual results |
+| [C20 *: Remind the agent how to use command results](#c20-remind-the-agent-how-to-use-command-results) | Include a next-action reminder | Omit that reminder, retaining actual results |
 | [C25: Stop generation when a host request is ready](#c25-stop-generation-when-a-host-request-is-ready) | Interrupt after a complete request and a short usage-report wait | Let the turn end naturally before acting |
-| [C38: Remind the author when to hand over](#c38-remind-the-author-when-to-hand-over) | Explicitly finish when required work and checks are done | Omit those extra finishing reminders |
+| [C38 *: Remind the author when to hand over](#c38-remind-the-author-when-to-hand-over) | Explicitly finish when required work and checks are done | Omit those extra finishing reminders |
 
 Presets are starting settings; `--on` and `--off` override them:
 
@@ -427,6 +602,16 @@ and reject invalid edits without partially applying them. With C17 off, enabled
 C16 prefers the native structured patch tool, while disabled C16 says nothing
 about editing tools. Keep the same edit ownership when measuring the effect.
 
+Host structured patches support `*** Mode: 100755` (executable) or
+`*** Mode: 100644` (non-executable) immediately after an Add/Update File header.
+A mode-only Update needs no text hunks; the host commits the permission change.
+Command declarations must include paths whose permissions they change. A
+successful command that only toggles regular files between 0644 and 0755, but
+omits their declarations, now has those modes restored and retained as pending
+changes. The agent must publish them through an explicit edit or discard them
+before review. Undeclared content changes and other source/Git-state violations
+remain fatal and retain the actual state for inspection.
+
 ### C17: Let the local program carry out operations
 
 This asks: **does the author ask the host to perform edits and commands, or use
@@ -512,6 +697,9 @@ why a message boundary or fixed short wait is insufficient.
 
 The trigger is a complete operation in the current agent's own completed
 message, not a partial stream, quoted tool output or another conversation.
+For Codex host turns, the message must be a validated structured final response;
+commentary is not an operation boundary. This versioned response format is
+described below under [usage and behavior records](#what-the-usage-and-behavior-records-mean).
 In either setting, additional messages are retained but not executed as extra
 host operations. C17 must be on. This switch does not change the subscription
 login, model or underlying Codex connection between the two settings.
@@ -609,6 +797,7 @@ could look like this; replace the repository and task with your actual ones:
 | `instructions` | Optional instructions shared across the tasks, reviews and integration planning |
 | `defer_documentation` | Optional; defaults to `true`. Leave prose/documentation edits to final integration instead of feature implementation and repair. |
 | `after_read` | Optional controlled file change for conflict experiments, explained below |
+| `slopcodebench` | Optional pinned SlopCodeBench task/evaluator settings; supplies `features` from the upstream problem instead of an inline list. See below. |
 
 The runner has no hard-coded language, feature names or requirement for exactly
 three tasks. Change the JSON, not the workflow code. A final check can call an
@@ -634,15 +823,181 @@ benchmark arrange an intervening file change without adding parallel agents:
 
 See [benchmarks/conflict-example.json](benchmarks/conflict-example.json) for a
 complete example. The command has a 30-second limit and may change only its
-declared tracked text file, not Git state or other source. Its commit must be
-folded into the corresponding feature during final integration, not left as an
-extra final commit. This facility requires host-managed operations (C17 on).
+declared tracked text file, not Git state or other source. Its commit is folded
+into the corresponding feature during final integration, or preserved when
+`--skip-linearization` is set. This facility requires host-managed operations
+(C17 on).
 
 Use the **same** controlled update in both compared settings. It is part of the
 benchmark, not an extra change secretly enabled by C08. Nothing runs unless the
 JSON declares it. In the results, `fixture_executed` says whether this controlled
 update ran; it does not prove that the author later submitted an outdated edit.
 Inspect the saved messages and host events too. The agent may avoid the conflict.
+
+## SlopCodeBench tasks
+
+These optional definitions exercise building and extending a project from scratch:
+
+| Definition | Program | Checkpoints |
+| --- | --- | --- |
+| [scb-code-search-smoke.json](benchmarks/scb-code-search-smoke.json) | Code-search CLI, complete workflow for the first checkpoint | 1 |
+| [scb-code-search.json](benchmarks/scb-code-search.json) | Code-search CLI | 5 |
+| [scb-config-service.json](benchmarks/scb-config-service.json) | Configuration HTTP API | 4 |
+| [scb-log-query.json](benchmarks/scb-log-query.json) | Log-query language | 5 |
+
+Install the pinned public [tasks](https://github.com/gabeorlanski/scb-problems)
+and [evaluator](https://github.com/SprocketLab/slop-code-bench) once. This requires
+Git, `uv`, and a running Docker daemon. Setup downloads Python 3.12 if needed,
+installs the evaluator in its own environment, builds its Docker image, and
+creates an empty starting Git repository under the ignored `.benchmarks/` directory.
+It generates no model responses. `plan` and `run` never bootstrap this installation;
+grading installs the submission's requirements and the upstream test dependencies
+inside its disposable environment.
+
+```sh
+python3 -m lab.slopcodebench setup
+python3 -m lab plan benchmarks/scb-code-search.json
+python3 -m lab run benchmarks/scb-code-search.json \
+  --out runs/scb-code-search --harness codex \
+  --seconds 10800 --max-raw 15000000 --max-turns 400 \
+  --scb-check .venv/bin/scb-check
+python3 summarize.py runs/scb-code-search/result.json
+```
+
+For a smaller test, use the smoke definition. It keeps implementation, independent
+review and repairs, final integration, all three quality phases, and upstream
+correctness grading of both the reviewed checkpoint and the final assembly:
+
+```sh
+python3 -m lab run benchmarks/scb-code-search-smoke.json \
+  --out runs/scb-code-search-smoke --harness codex \
+  --model gpt-5.5 --effort xhigh --preset all \
+  --seconds 3600 --max-raw 3000000 --max-turns 240 \
+  --scb-check .venv/bin/scb-check
+```
+
+The optional `slopcodebench.checkpoint_limit` selects the first N checkpoints;
+it must be a positive integer no greater than the task's checkpoint count.
+Omitting it runs the full task. The smoke definition sets it to 1. Its result
+records the limit, and `solved` applies to that selected scope. This is a complete
+test of the workflow for one checkpoint, not a solve of the five-checkpoint task.
+The normalized selection participates in comparison matching.
+
+The launch interface, behavior switches, presets, harness/model selection,
+repetitions, and parallelism are the same as for other benchmarks. Each checkpoint
+is an ordinary feature with implementation, independent review, and repairs.
+The agent keeps its own code; each fresh author/reviewer receives the current
+requirements together with earlier revealed requirements. Final integration and
+the JSON's ordinary final checks still run. These definitions use
+`defer_documentation: false` because `requirements.txt` is an executable dependency
+contract that must stay current during implementation.
+
+The adapter saves each checkpoint's source tree before final integration can rewrite
+history. After all provider sessions close, the authors' evaluator grades copies
+of those snapshots and the final assembled source. Earlier snapshots remain
+available even if a later step fails. Hidden-test reports never enter agent prompts,
+ordinary `checks`, review repairs, or subsequent checkpoints. The upstream rules
+decide which prior tests apply; intentionally superseded tests are not reintroduced.
+
+If a workflow time, token or turn limit is reached, the runner stops agent work
+and preserves `result.json`, the checkout (including accepted work in an unfinished
+checkpoint), commits, logs and reviewed snapshots. Captured reviewed checkpoints
+still receive upstream grading after provider shutdown; unfinished checkpoints
+remain ungraded. The overall run is failed/incomplete, with the stop reason and
+observed usage retained. `python3 summarize.py runs/<run>/result.json` displays these
+partial results. Budget stops do not automatically resume. The token limit uses
+observed counters, so an in-flight response can exceed it before cancellation.
+Feature progress-policy stops end only that checkpoint's automatic repair loop.
+The stopped attempt enters the checkpoint list with `status: needs_attention`,
+`review_approved: false` (or `null` for an incomplete review), and no approved
+`reviewed_head`. Its immutable snapshot is graded after provider shutdown, and
+the next checkpoint starts with a fresh feature allowance and the earlier
+unresolved findings. Applied native edits that were not committed are retained
+in an explicitly labelled unapproved checkpoint commit; pending host proposals
+remain in their handoff artifacts and are not silently applied. The handoff
+links to the exact captured snapshot even after later checkpoints change the
+checkout. This policy is recorded as `retain-grade-and-continue-v1` in the manifest
+and comparison settings. Ordinary legacy workflows keep their previous stop behavior.
+
+`execution_status: completed` means all checkpoint attempts, integration, and
+final checks ran successfully. Unresolved reviews still leave the overall status
+`needs_attention` and a nonzero CLI exit; they do not prevent upstream grading.
+The evaluator's `status: completed` means every snapshot was graded, and
+`all_tests_passed` reports their actual test outcome separately from review
+approval. No stopped attempt becomes approved merely because the run continued.
+Global limits, provider failures, invalid source state, and missing usage evidence
+still stop execution. Integration does not reopen stopped repair loops.
+
+`result.json` retains all existing fields and adds `slopcodebench`. Its
+`workflow_status` records whether the usual agent workflow completed; `solved`
+requires that workflow plus every checkpoint and final assembly to pass strict
+correctness. Failing correctness or evaluator infrastructure makes the overall run
+fail, so existing comparison commands cannot count incomplete work as a token
+saving. Core and isolated correctness, test counts, raw evaluator reports, and
+per-checkpoint quality are retained separately. Existing summary tables remain;
+SCB runs add correctness tables. Empty-project initial quality is explicitly
+`not_applicable`, with no fabricated zero score. The usual three quality phases
+are still reported.
+
+The usual `--seconds`, token, and turn limits apply to the agent workflow. Hidden
+grading has a separate per-snapshot `slopcodebench.seconds` limit (300 by default;
+600 for the HTTP pilot), plus bounded container cleanup. Total run duration includes
+grading; its duration is also recorded separately. No model is used for grading.
+Interrupted grading retains completed results and stops before another snapshot.
+
+Dataset and evaluator checkouts must match the full commit hashes in the JSON
+and have no local changes. Their identities, installed evaluator packages, and
+Docker image identity participate in comparison matching. To use another local
+installation, change the two paths in `slopcodebench` and the empty `repo` path;
+relative paths start at the definition file. The optional `environment` path is
+relative to the pinned evaluator. The initial adapter supports problems without
+static workspace assets, including all three pilots.
+
+The upstream evaluator resolves test and submission dependencies during grading;
+those container package resolutions are not fully locked by the host evaluator's
+package inventory. Pinning the task and evaluator does not freeze package registries.
+
+This is the lab's reviewed workflow on SCBench tasks, not a reproduction of the
+paper's session/environment-reset protocol. Existing agent filesystem and network
+permissions are preserved: tests and future requirements are withheld from prompts
+and the working checkout, but a deliberately searching agent could discover the
+public dataset or the host's input manifest. This is not hardened protection against
+benchmark lookup or training contamination.
+
+## Codex context and output recovery
+
+Codex threads use an automatic compaction threshold of at most 131,072 tokens,
+preserving a lower configured threshold. Before a new request, the runner also
+requests compaction when recent context plus the incoming prompt reaches that
+limit or 60% of the reported context window, whichever is lower. This uses
+recent context usage, not cumulative billed tokens. The prompt's UTF-8 byte
+length provides a conservative estimate for this preflight check.
+
+The runner watches streamed assistant messages for replacement-character floods,
+8,192 consecutive whitespace characters, messages above 4 MiB, or a message
+stream lasting over ten minutes. It quarantines suspicious output immediately;
+no host command from that response executes. For whitespace or replacement floods,
+it waits for the response to finish or reach a priced boundary within the existing
+ten-minute streaming limit. A completed-only violation has the same ten-minute
+settlement ceiling from detection. There is no earlier soft-guard cancellation
+timer that could cut off the token receipt. The 4 MiB ceiling and existing run,
+feature, and review budgets still interrupt immediately. Streamed assistant text
+is retained in each turn's `agent-message-deltas.jsonl`, including unfinished
+responses absent from `reply.txt`.
+
+A structured context-window failure or a guarded output interruption can trigger
+one compaction and continuation on the same thread.
+The continuation preserves task and review requirements and asks the agent to
+inspect existing tool results rather than repeat completed work.
+
+Compaction, failed attempts and retries retain their own artifacts and count
+against the run's existing time, turn and observed-token limits. Recovery requires
+complete usage coverage; missing counters, unrelated failures (including terminal
+provider policy errors), failed compaction and exhausted limits still stop the run.
+Context policy version 4 records the bounded settlement policy in provider
+identity and comparison matching. The review phase and its selected blocking
+priorities are unchanged. This recovery applies to new runs; it does not resume
+an already terminated run.
 
 ## Reading results and combined effects
 
@@ -728,6 +1083,28 @@ are already part of output. Neither is added a second time. Each increase in a
 conversation's cumulative usage counter is counted once; repeated notifications
 do not count as new usage.
 
+For Codex, parent accounting also reads the exact owned rollout path returned by
+the app-server. Native response receipts include compaction costs that the
+app-server's cumulative counters can omit. Response IDs deduplicate receipts
+embedded in compaction checkpoints. The overlapping native and app-server
+totals are reconciled, not added together; their separate baselines survive
+continuation. `provider/native-usage.json` retains numeric receipts and source
+provenance. Manual and automatic compactions require correlated numeric
+evidence, and ordinary responses wait for their native receipts before a host
+command can execute. Missing evidence stops the run instead of charging zero.
+
+The installed-Codex integration test exercises both compaction paths, continues
+the same conversations, and executes fixture tests through the real framework:
+
+```sh
+python3 tests/real_compaction.py --out runs/compaction-verification --scenario both
+```
+
+Use a new output directory. This opt-in test makes bounded subscription calls
+(300 seconds, 250,000 observed raw tokens, six turns) and compares accounting
+against independently deduplicated native receipts. Ordinary unit-test discovery
+runs the offline regressions without generating model responses.
+
 With `--harness pi`, completed response counts are added once and reconciled
 with Pi's cumulative session totals after each turn. Streaming counters may
 reset between responses and are not used as conversation totals. Pi reports
@@ -743,11 +1120,45 @@ their source paths, model/effort, reported subscription plan and turn coverage.
 The launcher and environment hooks live outside measured source. They do not
 copy credentials or change the user's global Codex configuration.
 
-The host accepts trailing spaces and tabs on `@standalone done` and
-`@standalone end`. Patch content and command text are not trimmed. Empty or
-whitespace-only trailing messages do not replace the last substantive reply;
-the first accepted host request still takes precedence. Quoted, fenced and
-malformed operations remain rejected.
+Codex host-managed author turns use the app-server's per-turn
+[`outputSchema`](https://learn.chatgpt.com/docs/app-server#start-a-turn) to request
+one typed operation, for example
+`{"operation":{"kind":"run","paths":[],"command":"python3 -m unittest"}}`.
+The schema has separate fields for read, run, edit, discard and done operations;
+extra fields and text outside the JSON object are rejected. The adapter validates
+the complete final response and translates it into the existing host protocol,
+checking that paths, command text and patch content round-trip without changing
+meaning. Commentary cannot authorize an operation. Older responses with no phase
+still require a fully valid JSON object. Single-line command, path and reason
+requirements remain; native, reviewer, integration and Pi response formats are
+unchanged.
+
+Each typed turn retains `output-schema.json`, its actual `prompt.txt`, the raw
+JSON in `reply.txt` and `messages.json`, and the delivered text in
+`host-operation.txt`. The canonical operation is delivered only after all existing
+usage, budget, error and permission checks. C25 acts after a validated final
+operation and covering usage, instead of an unconstrained commentary directive.
+The `json-schema-host-operation-v1` provider identity keeps these runs distinct
+from prior protocol versions in comparisons. This format prevents exterior prose
+from corrupting a conforming operation; it does not guarantee correct commands,
+task completion, or acceptance by provider policy checks. Provider rejections
+remain terminal and are never retried as formatting failures.
+
+The underlying text host still accepts trailing spaces and tabs on
+`@standalone done` and `@standalone end`. Patch content and command text are not
+trimmed. Empty or whitespace-only trailing messages do not replace the last
+substantive reply; the first accepted host request still takes precedence.
+Quoted, fenced and malformed text operations remain rejected.
+
+The opt-in live verifier exercises every typed operation with the configured
+GPT-5.6-sol/xhigh subscription, real host effects and independent usage receipts:
+
+```sh
+python3 -B tests/real_host_response.py --out runs/typed-host-verification
+```
+
+Use a new output directory. This bounded fixture is not a full benchmark rerun
+or a replay of a provider-rejected conversation.
 
 Missing final usage reports and decreasing counters are flagged, not treated as
 zero usage. A returned incomplete measurement stops the workflow before another

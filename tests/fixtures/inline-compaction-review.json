@@ -1,0 +1,657 @@
+{
+  "provenance": {
+    "run": "runs/scb-continuation-verification-20260927/full-benchmark",
+    "transport_path": "runs/scb-continuation-verification-20260927/full-benchmark/provider/transport.jsonl",
+    "native_path": "/home/user/.codex/sessions/2026/09/27/rollout-2026-09-27T16-52-40-01a0e35a-9886-7fa2-a861-341867f8d575.jsonl",
+    "sanitization": "Only usage, completed ordinary-message boundaries, compaction lifecycle and terminal events retained. Ordinary text replaced; identifiers replaced consistently. Numeric receipts, timestamps and selected event order unchanged. Compacted replacement history, prompts and generated code excluded."
+  },
+  "transport_before": {
+    "source_line": 37929,
+    "time": 1790521369.960828,
+    "direction": "receive",
+    "event": {
+      "method": "thread/tokenUsage/updated",
+      "params": {
+        "threadId": "thread",
+        "turnId": "previous",
+        "tokenUsage": {
+          "total": {
+            "totalTokens": 885522,
+            "inputTokens": 857640,
+            "cachedInputTokens": 729088,
+            "cacheWriteInputTokens": 0,
+            "outputTokens": 27882,
+            "reasoningOutputTokens": 17380
+          },
+          "last": {
+            "totalTokens": 86987,
+            "inputTokens": 84730,
+            "cachedInputTokens": 81280,
+            "cacheWriteInputTokens": 0,
+            "outputTokens": 2257,
+            "reasoningOutputTokens": 1672
+          },
+          "modelContextWindow": 258400
+        }
+      },
+      "emittedAtMs": 1790521369960
+    }
+  },
+  "native_before": {
+    "source_line": 242,
+    "timestamp": "2026-09-27T15:02:49.956Z",
+    "ordinal": 241,
+    "type": "token_usage_record",
+    "payload": {
+      "thread_id": "thread",
+      "turn_id": "previous",
+      "session_id": "thread",
+      "root_turn_id": "previous",
+      "response_id": "previous-response",
+      "usage": {
+        "input_tokens": 84730,
+        "cached_input_tokens": 81280,
+        "cache_write_input_tokens": 0,
+        "output_tokens": 2257,
+        "reasoning_output_tokens": 1672,
+        "total_tokens": 86987
+      },
+      "turn_token_usage": {
+        "input_tokens": 379261,
+        "cached_input_tokens": 348032,
+        "cache_write_input_tokens": 0,
+        "output_tokens": 9389,
+        "reasoning_output_tokens": 6019,
+        "total_tokens": 388650
+      },
+      "thread_token_usage": {
+        "input_tokens": 857640,
+        "cached_input_tokens": 729088,
+        "cache_write_input_tokens": 0,
+        "output_tokens": 27882,
+        "reasoning_output_tokens": 17380,
+        "total_tokens": 885522
+      }
+    }
+  },
+  "transport": [
+    {
+      "source_line": 39557,
+      "time": 1790521503.1965165,
+      "direction": "receive",
+      "event": {
+        "method": "item/completed",
+        "params": {
+          "item": {
+            "type": "agentMessage",
+            "id": "ordinary-message-0",
+            "text": "Review observation retained separately.",
+            "phase": "commentary",
+            "memoryCitation": null,
+            "delivery": null,
+            "questions": null
+          },
+          "threadId": "thread",
+          "turnId": "review",
+          "completedAtMs": 1790521503192
+        },
+        "emittedAtMs": 1790521503196
+      }
+    },
+    {
+      "source_line": 39581,
+      "time": 1790521503.9978685,
+      "direction": "receive",
+      "event": {
+        "method": "thread/tokenUsage/updated",
+        "params": {
+          "threadId": "thread",
+          "turnId": "review",
+          "tokenUsage": {
+            "total": {
+              "totalTokens": 972427,
+              "inputTokens": 944093,
+              "cachedInputTokens": 789888,
+              "cacheWriteInputTokens": 0,
+              "outputTokens": 28334,
+              "reasoningOutputTokens": 17494
+            },
+            "last": {
+              "totalTokens": 86905,
+              "inputTokens": 86453,
+              "cachedInputTokens": 60800,
+              "cacheWriteInputTokens": 0,
+              "outputTokens": 452,
+              "reasoningOutputTokens": 114
+            },
+            "modelContextWindow": 258400
+          }
+        },
+        "emittedAtMs": 1790521503997
+      }
+    },
+    {
+      "source_line": 39639,
+      "time": 1790521516.0833335,
+      "direction": "receive",
+      "event": {
+        "method": "item/completed",
+        "params": {
+          "item": {
+            "type": "agentMessage",
+            "id": "ordinary-message-2",
+            "text": "Review observation retained separately.",
+            "phase": "commentary",
+            "memoryCitation": null,
+            "delivery": null,
+            "questions": null
+          },
+          "threadId": "thread",
+          "turnId": "review",
+          "completedAtMs": 1790521516081
+        },
+        "emittedAtMs": 1790521516083
+      }
+    },
+    {
+      "source_line": 39703,
+      "time": 1790521570.3387225,
+      "direction": "receive",
+      "event": {
+        "method": "item/completed",
+        "params": {
+          "item": {
+            "type": "agentMessage",
+            "id": "ordinary-message-3",
+            "text": "Review observation retained separately.",
+            "phase": "commentary",
+            "memoryCitation": null,
+            "delivery": null,
+            "questions": null
+          },
+          "threadId": "thread",
+          "turnId": "review",
+          "completedAtMs": 1790521570333
+        },
+        "emittedAtMs": 1790521570338
+      }
+    },
+    {
+      "source_line": 39710,
+      "time": 1790521570.563186,
+      "direction": "receive",
+      "event": {
+        "method": "thread/tokenUsage/updated",
+        "params": {
+          "threadId": "thread",
+          "turnId": "review",
+          "tokenUsage": {
+            "total": {
+              "totalTokens": 1076575,
+              "inputTokens": 1044660,
+              "cachedInputTokens": 876288,
+              "cacheWriteInputTokens": 0,
+              "outputTokens": 31915,
+              "reasoningOutputTokens": 20077
+            },
+            "last": {
+              "totalTokens": 104148,
+              "inputTokens": 100567,
+              "cachedInputTokens": 86400,
+              "cacheWriteInputTokens": 0,
+              "outputTokens": 3581,
+              "reasoningOutputTokens": 2583
+            },
+            "modelContextWindow": 258400
+          }
+        },
+        "emittedAtMs": 1790521570563
+      }
+    },
+    {
+      "source_line": 39780,
+      "time": 1790521598.7371004,
+      "direction": "receive",
+      "event": {
+        "method": "item/completed",
+        "params": {
+          "item": {
+            "type": "agentMessage",
+            "id": "ordinary-message-5",
+            "text": "Review observation retained separately.",
+            "phase": "commentary",
+            "memoryCitation": null,
+            "delivery": null,
+            "questions": null
+          },
+          "threadId": "thread",
+          "turnId": "review",
+          "completedAtMs": 1790521598733
+        },
+        "emittedAtMs": 1790521598736
+      }
+    },
+    {
+      "source_line": 39787,
+      "time": 1790521598.9052603,
+      "direction": "receive",
+      "event": {
+        "method": "thread/tokenUsage/updated",
+        "params": {
+          "threadId": "thread",
+          "turnId": "review",
+          "tokenUsage": {
+            "total": {
+              "totalTokens": 1182818,
+              "inputTokens": 1149448,
+              "cachedInputTokens": 976000,
+              "cacheWriteInputTokens": 0,
+              "outputTokens": 33370,
+              "reasoningOutputTokens": 20580
+            },
+            "last": {
+              "totalTokens": 106243,
+              "inputTokens": 104788,
+              "cachedInputTokens": 99712,
+              "cacheWriteInputTokens": 0,
+              "outputTokens": 1455,
+              "reasoningOutputTokens": 503
+            },
+            "modelContextWindow": 258400
+          }
+        },
+        "emittedAtMs": 1790521598904
+      }
+    },
+    {
+      "source_line": 39863,
+      "time": 1790521639.1857872,
+      "direction": "receive",
+      "event": {
+        "method": "item/completed",
+        "params": {
+          "item": {
+            "type": "agentMessage",
+            "id": "ordinary-message-7",
+            "text": "Review observation retained separately.",
+            "phase": "commentary",
+            "memoryCitation": null,
+            "delivery": null,
+            "questions": null
+          },
+          "threadId": "thread",
+          "turnId": "review",
+          "completedAtMs": 1790521639182
+        },
+        "emittedAtMs": 1790521639185
+      }
+    },
+    {
+      "source_line": 39870,
+      "time": 1790521639.3570545,
+      "direction": "receive",
+      "event": {
+        "method": "thread/tokenUsage/updated",
+        "params": {
+          "threadId": "thread",
+          "turnId": "review",
+          "tokenUsage": {
+            "total": {
+              "totalTokens": 1291505,
+              "inputTokens": 1255998,
+              "cachedInputTokens": 1079808,
+              "cacheWriteInputTokens": 0,
+              "outputTokens": 35507,
+              "reasoningOutputTokens": 21974
+            },
+            "last": {
+              "totalTokens": 108687,
+              "inputTokens": 106550,
+              "cachedInputTokens": 103808,
+              "cacheWriteInputTokens": 0,
+              "outputTokens": 2137,
+              "reasoningOutputTokens": 1394
+            },
+            "modelContextWindow": 258400
+          }
+        },
+        "emittedAtMs": 1790521639356
+      }
+    },
+    {
+      "source_line": 39872,
+      "time": 1790521639.3589265,
+      "direction": "receive",
+      "event": {
+        "method": "item/started",
+        "params": {
+          "item": {
+            "type": "contextCompaction",
+            "id": "inline-compaction"
+          },
+          "threadId": "thread",
+          "turnId": "review",
+          "startedAtMs": 1790521639357
+        },
+        "emittedAtMs": 1790521639358
+      }
+    },
+    {
+      "source_line": 39873,
+      "time": 1790521675.7122993,
+      "direction": "receive",
+      "event": {
+        "method": "thread/tokenUsage/updated",
+        "params": {
+          "threadId": "thread",
+          "turnId": "review",
+          "tokenUsage": {
+            "total": {
+              "totalTokens": 1291505,
+              "inputTokens": 1255998,
+              "cachedInputTokens": 1079808,
+              "cacheWriteInputTokens": 0,
+              "outputTokens": 35507,
+              "reasoningOutputTokens": 21974
+            },
+            "last": {
+              "totalTokens": 23135,
+              "inputTokens": 0,
+              "cachedInputTokens": 0,
+              "cacheWriteInputTokens": 0,
+              "outputTokens": 0,
+              "reasoningOutputTokens": 0
+            },
+            "modelContextWindow": 258400
+          }
+        },
+        "emittedAtMs": 1790521675712
+      }
+    },
+    {
+      "source_line": 39874,
+      "time": 1790521675.718448,
+      "direction": "send",
+      "event": {
+        "id": 111,
+        "method": "turn/interrupt",
+        "params": {
+          "threadId": "thread",
+          "turnId": "review"
+        }
+      }
+    },
+    {
+      "source_line": 39876,
+      "time": 1790521675.7185397,
+      "direction": "receive",
+      "event": {
+        "method": "item/completed",
+        "params": {
+          "item": {
+            "type": "contextCompaction",
+            "id": "inline-compaction"
+          },
+          "threadId": "thread",
+          "turnId": "review",
+          "completedAtMs": 1790521675712
+        },
+        "emittedAtMs": 1790521675712
+      }
+    },
+    {
+      "source_line": 39879,
+      "time": 1790521675.726452,
+      "direction": "receive",
+      "event": {
+        "method": "turn/completed",
+        "params": {
+          "threadId": "thread",
+          "turn": {
+            "id": "review",
+            "items": [],
+            "itemsView": "notLoaded",
+            "status": "interrupted",
+            "error": null,
+            "startedAt": 1790521491,
+            "completedAt": 1790521675,
+            "durationMs": 184260
+          }
+        },
+        "emittedAtMs": 1790521675726
+      }
+    }
+  ],
+  "native": [
+    {
+      "source_line": 259,
+      "timestamp": "2026-09-27T15:05:03.401Z",
+      "ordinal": 258,
+      "type": "token_usage_record",
+      "payload": {
+        "thread_id": "thread",
+        "turn_id": "review",
+        "session_id": "thread",
+        "root_turn_id": "review",
+        "response_id": "review-response-1",
+        "usage": {
+          "input_tokens": 86453,
+          "cached_input_tokens": 60800,
+          "cache_write_input_tokens": 0,
+          "output_tokens": 452,
+          "reasoning_output_tokens": 114,
+          "total_tokens": 86905
+        },
+        "turn_token_usage": {
+          "input_tokens": 86453,
+          "cached_input_tokens": 60800,
+          "cache_write_input_tokens": 0,
+          "output_tokens": 452,
+          "reasoning_output_tokens": 114,
+          "total_tokens": 86905
+        },
+        "thread_token_usage": {
+          "input_tokens": 944093,
+          "cached_input_tokens": 789888,
+          "cache_write_input_tokens": 0,
+          "output_tokens": 28334,
+          "reasoning_output_tokens": 17494,
+          "total_tokens": 972427
+        }
+      }
+    },
+    {
+      "source_line": 276,
+      "timestamp": "2026-09-27T15:06:10.448Z",
+      "ordinal": 275,
+      "type": "token_usage_record",
+      "payload": {
+        "thread_id": "thread",
+        "turn_id": "review",
+        "session_id": "thread",
+        "root_turn_id": "review",
+        "response_id": "review-response-2",
+        "usage": {
+          "input_tokens": 100567,
+          "cached_input_tokens": 86400,
+          "cache_write_input_tokens": 0,
+          "output_tokens": 3581,
+          "reasoning_output_tokens": 2583,
+          "total_tokens": 104148
+        },
+        "turn_token_usage": {
+          "input_tokens": 187020,
+          "cached_input_tokens": 147200,
+          "cache_write_input_tokens": 0,
+          "output_tokens": 4033,
+          "reasoning_output_tokens": 2697,
+          "total_tokens": 191053
+        },
+        "thread_token_usage": {
+          "input_tokens": 1044660,
+          "cached_input_tokens": 876288,
+          "cache_write_input_tokens": 0,
+          "output_tokens": 31915,
+          "reasoning_output_tokens": 20077,
+          "total_tokens": 1076575
+        }
+      }
+    },
+    {
+      "source_line": 291,
+      "timestamp": "2026-09-27T15:06:38.790Z",
+      "ordinal": 290,
+      "type": "token_usage_record",
+      "payload": {
+        "thread_id": "thread",
+        "turn_id": "review",
+        "session_id": "thread",
+        "root_turn_id": "review",
+        "response_id": "review-response-3",
+        "usage": {
+          "input_tokens": 104788,
+          "cached_input_tokens": 99712,
+          "cache_write_input_tokens": 0,
+          "output_tokens": 1455,
+          "reasoning_output_tokens": 503,
+          "total_tokens": 106243
+        },
+        "turn_token_usage": {
+          "input_tokens": 291808,
+          "cached_input_tokens": 246912,
+          "cache_write_input_tokens": 0,
+          "output_tokens": 5488,
+          "reasoning_output_tokens": 3200,
+          "total_tokens": 297296
+        },
+        "thread_token_usage": {
+          "input_tokens": 1149448,
+          "cached_input_tokens": 976000,
+          "cache_write_input_tokens": 0,
+          "output_tokens": 33370,
+          "reasoning_output_tokens": 20580,
+          "total_tokens": 1182818
+        }
+      }
+    },
+    {
+      "source_line": 307,
+      "timestamp": "2026-09-27T15:07:19.306Z",
+      "ordinal": 306,
+      "type": "token_usage_record",
+      "payload": {
+        "thread_id": "thread",
+        "turn_id": "review",
+        "session_id": "thread",
+        "root_turn_id": "review",
+        "response_id": "review-response-4",
+        "usage": {
+          "input_tokens": 106550,
+          "cached_input_tokens": 103808,
+          "cache_write_input_tokens": 0,
+          "output_tokens": 2137,
+          "reasoning_output_tokens": 1394,
+          "total_tokens": 108687
+        },
+        "turn_token_usage": {
+          "input_tokens": 398358,
+          "cached_input_tokens": 350720,
+          "cache_write_input_tokens": 0,
+          "output_tokens": 7625,
+          "reasoning_output_tokens": 4594,
+          "total_tokens": 405983
+        },
+        "thread_token_usage": {
+          "input_tokens": 1255998,
+          "cached_input_tokens": 1079808,
+          "cache_write_input_tokens": 0,
+          "output_tokens": 35507,
+          "reasoning_output_tokens": 21974,
+          "total_tokens": 1291505
+        }
+      }
+    },
+    {
+      "source_line": 314,
+      "timestamp": "2026-09-27T15:07:55.702Z",
+      "ordinal": 313,
+      "type": "token_usage_record",
+      "payload": {
+        "thread_id": "thread",
+        "turn_id": "review",
+        "session_id": "thread",
+        "root_turn_id": "review",
+        "response_id": "review-response-5",
+        "usage": {
+          "input_tokens": 127606,
+          "cached_input_tokens": 63872,
+          "cache_write_input_tokens": 0,
+          "output_tokens": 1873,
+          "reasoning_output_tokens": 0,
+          "total_tokens": 129479
+        },
+        "turn_token_usage": {
+          "input_tokens": 525964,
+          "cached_input_tokens": 414592,
+          "cache_write_input_tokens": 0,
+          "output_tokens": 9498,
+          "reasoning_output_tokens": 4594,
+          "total_tokens": 535462
+        },
+        "thread_token_usage": {
+          "input_tokens": 1383604,
+          "cached_input_tokens": 1143680,
+          "cache_write_input_tokens": 0,
+          "output_tokens": 37380,
+          "reasoning_output_tokens": 21974,
+          "total_tokens": 1420984
+        }
+      }
+    },
+    {
+      "source_line": 315,
+      "timestamp": "2026-09-27T15:07:55.707Z",
+      "type": "compacted",
+      "payload": {
+        "compaction_response_id": "review-response-5",
+        "latest_token_usage_record": {
+          "thread_id": "thread",
+          "turn_id": "review",
+          "session_id": "thread",
+          "root_turn_id": "review",
+          "response_id": "review-response-5",
+          "usage": {
+            "input_tokens": 127606,
+            "cached_input_tokens": 63872,
+            "cache_write_input_tokens": 0,
+            "output_tokens": 1873,
+            "reasoning_output_tokens": 0,
+            "total_tokens": 129479
+          },
+          "turn_token_usage": {
+            "input_tokens": 525964,
+            "cached_input_tokens": 414592,
+            "cache_write_input_tokens": 0,
+            "output_tokens": 9498,
+            "reasoning_output_tokens": 4594,
+            "total_tokens": 535462
+          },
+          "thread_token_usage": {
+            "input_tokens": 1383604,
+            "cached_input_tokens": 1143680,
+            "cache_write_input_tokens": 0,
+            "output_tokens": 37380,
+            "reasoning_output_tokens": 21974,
+            "total_tokens": 1420984
+          }
+        }
+      }
+    }
+  ],
+  "expected": {
+    "ordinary_raw_tokens": 405983,
+    "compaction_raw_tokens": 129479,
+    "review_raw_tokens": 535462,
+    "native_raw_after": 1420984
+  }
+}

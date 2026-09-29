@@ -24,14 +24,14 @@ class GitPermissionTests(unittest.TestCase):
         p.rpc = rpc
         p.turn("t", "commit the feature", "author", writable=True)
         self.assertEqual(calls[0][1]["sandboxPolicy"], {"type": "workspaceWrite",
-            "writableRoots": [str(p.repo), str(p.repo / ".git")], "networkAccess": False})
+            "writableRoots": [str(p.repo), str(p.repo / ".git")], "networkAccess": True})
 
     def test_read_only_turn_does_not_gain_git_write_access(self):
         p = self.provider([stream.message("NO_FINDINGS"), stream.price(), stream.completed()])
         calls = []
         p.rpc = lambda method, params: calls.append(params) or {"turn": {"id": "u"}}
         p.turn("t", "review", "review")
-        self.assertEqual(calls[0]["sandboxPolicy"], {"type": "readOnly"})
+        self.assertEqual(calls[0]["sandboxPolicy"], {"type": "readOnly", "networkAccess": True})
 
     def test_preflight_records_native_failure_without_starting_a_model_turn(self):
         p = self.provider([])

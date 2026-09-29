@@ -8,6 +8,7 @@ import shutil
 import uuid
 
 from lab.host import Fatal, git, save_json
+from lab.review import DEFAULT_PRIORITIES
 
 
 def read(path):
@@ -114,9 +115,17 @@ def archive_boundary(record, output):
         stream.write('\n')
 
 
+def restore_usage_counters(target, usage):
+    """Retain each source's baseline so ordinary updates do not erase compaction cost."""
+    target.totals = {k: tuple(v) for k, v in usage['thread_totals'].items()}
+    target.transport_totals = {k: tuple(v) for k, v in
+        usage.get('app_server_thread_totals', usage['thread_totals']).items()}
+    target.native_totals = {k: tuple(v) for k, v in usage.get('native_thread_totals', {}).items()}
+    target.uncertain = list(usage.get('uncertainties', []))
+
+
 def restore_provider(provider, manifest, usage, author):
-    provider.usage.totals = {k: tuple(v) for k, v in usage['thread_totals'].items()}
-    provider.usage.uncertain = list(usage.get('uncertainties', []))
+    restore_usage_counters(provider.usage, usage)
     provider.turns = copy.deepcopy(usage['turns'])
     provider.parent_threads = set(usage['thread_totals'])
     provider.nested.started = manifest['created_at_unix']
@@ -126,6 +135,9 @@ def restore_provider(provider, manifest, usage, author):
         'config': {'model_reasoning_effort': provider.effort}})
     if resumed['thread']['id'] != author:
         raise Fatal('resume returned a different author conversation')
+    if hasattr(provider, 'register_native_thread'):
+        original = usage.get('native_usage', {}).get(author, {})
+        provider.register_native_thread(resumed['thread'], cwd=original.get('cwd'))
 
 
 def continue_native(previous, output, expected_head, *, backend=None, redundant_trust=()):
@@ -138,5 +150,8 @@ def continue_native(previous, output, expected_head, *, backend=None, redundant_
         record['remaining_seconds'], manifest['limits']['observed_raw_tokens'],
         manifest['limits']['turns'], manifest['model'], manifest['effort'],
         backend=backend or Codex, _prepared=record,
+        skip_linearization=manifest.get('skip_linearization', False),
+        review_priorities=manifest.get('review_priorities', DEFAULT_PRIORITIES),
+        loop_options=manifest.get('loop_policy', {'enabled': False}),
         scb_check=manifest.get('scb_check', {}).get('executable'),
         scb_seconds=manifest.get('scb_check', {}).get('seconds_per_check', 300))

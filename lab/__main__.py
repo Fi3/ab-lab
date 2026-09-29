@@ -8,6 +8,8 @@ import time
 from .config import FACTORS, author_policy, load_benchmark, settings
 from .provider import Codex, Pi
 from .host import Fatal
+from .review import DEFAULT_PRIORITIES, normalize_priorities
+from .loops import POLICY_VERSION, loop_policy
 from .workflow import compare, interaction, run
 from .batch import run_batch
 from .summary import records
@@ -18,6 +20,13 @@ def positive_integer(value):
     if number <= 0:
         raise argparse.ArgumentTypeError('must be a positive integer')
     return number
+
+
+def review_priorities(value):
+    try:
+        return normalize_priorities(value)
+    except ValueError as exc:
+        raise argparse.ArgumentTypeError(str(exc)) from exc
 
 
 def factors_from(args):
@@ -44,6 +53,14 @@ def main():
         p.add_argument("--off", default="", help="comma-separated C identifiers")
         p.add_argument("--model", default=None)
         p.add_argument("--effort", choices=("minimal", "low", "medium", "high", "xhigh"), default="xhigh")
+        p.add_argument("--skip-linearization", action="store_true",
+                       help="preserve reviewed commits; keep final documentation, repairs and checks")
+        p.add_argument("--review-priorities", type=review_priorities, default=DEFAULT_PRIORITIES,
+                       metavar="P0,P1,P2",
+                       help="comma-separated review priorities that require repairs (P0 through P3; default: P0,P1,P2)")
+        progress = p.add_mutually_exclusive_group()
+        progress.add_argument("--loop-policy", type=Path, help="JSON overrides for feature budgets, review conclusion thresholds and loop detection")
+        progress.add_argument("--no-loop-detection", action="store_true", help="disable feature stopping rules; retain global run limits")
         p.add_argument("--scb-check", default="scb-check", help="scb-check executable; required for the three quality measurements")
         p.add_argument("--scb-seconds", type=float, default=300, help="maximum seconds per quality measurement, within the workflow deadline")
         if name == "plan":
@@ -80,10 +97,16 @@ def main():
             value = {key: dict(zip(("description", "on", "off"), meaning)) for key, meaning in FACTORS.items()}
         elif args.command in ("run", "plan"):
             benchmark, factors = load_benchmark(args.benchmark), factors_from(args)
+            progress_policy = loop_policy({"enabled": False} if args.no_loop_detection else
+                                          json.loads(args.loop_policy.read_text()) if args.loop_policy else None)
             if args.command == "plan":
                 harness = getattr(args, "harness", "codex")
-                model = args.model or ("gemini-3.8-flash" if harness == "pi" else "gpt-5.5")
+                model = args.model or "gpt-5.5"
                 value = {"benchmark": benchmark, "factors": factors, "model": model, "effort": args.effort,
+                         "skip_linearization": args.skip_linearization,
+                         "review_priorities": list(args.review_priorities),
+                         "loop_policy": progress_policy,
+                         "loop_policy_version": POLICY_VERSION,
                          "author_policy": author_policy(factors), "generation": "none",
                          "scb_check": {"executable": args.scb_check, "seconds_per_check": args.scb_seconds,
                                        "phases": ["before_changes", "after_implementation", "after_assembly"]}}
@@ -91,7 +114,7 @@ def main():
                 if args.harness == "pi":
                     backend = Pi
                     executable = args.pi
-                    model = args.model
+                    model = args.model or "gpt-5.5"
                 else:
                     backend = Codex
                     executable = args.codex
@@ -101,22 +124,27 @@ def main():
                     value = run_batch(benchmark, factors, args.out, repeat, args.parallel,
                         seconds=args.seconds, max_raw=args.max_raw, max_turns=args.max_turns,
                         model=model, effort=args.effort, executable=executable, harness=args.harness,
-                        scb_check=args.scb_check, scb_seconds=args.scb_seconds)
+                        scb_check=args.scb_check, scb_seconds=args.scb_seconds, child_codex=args.codex,
+                        skip_linearization=args.skip_linearization, review_priorities=args.review_priorities,
+                        loop_options=progress_policy)
                 else:
                     value = run(benchmark, factors, args.out, args.seconds, args.max_raw, args.max_turns,
                                 model, args.effort, executable, backend=backend, harness=args.harness,
-                                scb_check=args.scb_check, scb_seconds=args.scb_seconds)
+                                scb_check=args.scb_check, scb_seconds=args.scb_seconds, child_codex=args.codex,
+                                skip_linearization=args.skip_linearization, review_priorities=args.review_priorities,
+                                loop_options=progress_policy)
         elif args.command == "doctor":
             harness = getattr(args, "harness", "codex")
             if harness == "pi":
                 backend = Pi
                 executable = getattr(args, "pi", "pi")
-                model = getattr(args, "model", None)
+                model = getattr(args, "model", None) or "gpt-5.5"
             else:
                 backend = Codex
                 executable = getattr(args, "codex", "codex")
                 model = getattr(args, "model", None) or "gpt-5.5"
-            provider = backend(args.repo.resolve(strict=True), args.out, model, "xhigh", time.monotonic()+30, 1, 1, executable)
+            provider = backend(args.repo.resolve(strict=True), args.out, model, "xhigh", time.monotonic()+30, 1, 1, executable,
+                               **({"codex_executable": args.codex} if backend is Pi else {}))
             try:
                 value = {**provider.identity, "generation": "none"}
             finally:
@@ -133,7 +161,7 @@ def main():
                           "scb_check": r.get("scb_check"), "error": r.get("error")}
                          for p in args.results for r in records(read(p))]
         print(json.dumps(value, indent=2))
-        return 1 if isinstance(value, dict) and value.get("status") == "failed" else 0
+        return 1 if isinstance(value, dict) and value.get("status") in ("failed", "needs_attention") else 0
     except (OSError, ValueError, RuntimeError, Fatal) as exc:
         print(f"agent-behavior-lab: {exc}", file=sys.stderr)
         return 2

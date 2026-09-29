@@ -11,6 +11,7 @@ import tomllib
 
 from .environment import BLOCKED, clean_env
 from .child_process import Children, launch
+from .sandbox import CommandSandbox
 
 
 def pinned_arguments(config, arguments):
@@ -58,8 +59,14 @@ class CommandEnvironment:
         config = {'repo': str(Path(repo).resolve()), 'model': model, 'effort': effort,
                   'executable': str(Path(resolved).absolute())}
         self.children = Children(self.bin / 'children', deadline if deadline is not None else time.monotonic()+300)
-        config.update(calls=str(self.children.folder), deadline=self.children.deadline, owner_pid=os.getpid())
+        config.update(calls=str(self.children.folder), deadline=self.children.deadline, owner_pid=os.getpid(),
+                      owner_lock=str(self.children.folder / 'owner.lock'))
         self.executable = config['executable']
+        # Verification programs can start Codex. Its existing state and the
+        # owned child receipts must be writable in every test execution route.
+        # Auth stays in its original location; nothing is copied into the run.
+        codex_state = Path(os.environ.get('CODEX_HOME', Path.home() / '.codex'))
+        self.sandbox = CommandSandbox(repo, self.executable, (self.children.folder, codex_state))
         config_path = self.bin / 'settings.json'
         config_path.write_text(json.dumps(config))
         launcher = self.bin / 'codex'

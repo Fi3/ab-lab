@@ -95,15 +95,18 @@ class NativeResumeTests(unittest.TestCase):
             provider.repo = previous / 'checkout'
             provider.model, provider.effort = 'gpt-5.5', 'xhigh'
             provider.usage, provider.turns, provider.parent_threads = Usage(), [], set()
+            provider.native_usage = {}
             provider.nested = Mock()
             provider.nested.started = 99
-            provider.rpc = Mock(return_value={'thread': {'id': 'author'}})
+            rollout = previous / 'owned-rollout.jsonl'
+            provider.rpc = Mock(return_value={'thread': {'id': 'author', 'path': str(rollout)}})
             prior = copy.deepcopy(result['usage'])
             restore_provider(provider, manifest, prior, 'author')
             self.assertEqual(provider.usage.raw, 110)
             self.assertEqual(provider.turns, prior['turns'])
             self.assertEqual(provider.nested.started, 1)
             self.assertEqual(provider.parent_threads, {'author'})
+            self.assertEqual(provider.native_usage['author'].path, rollout)
             method, params = provider.rpc.call_args.args
             self.assertEqual(method, 'thread/resume')
             self.assertEqual(params['threadId'], 'author')
@@ -131,6 +134,66 @@ class NativeResumeTests(unittest.TestCase):
                 row = sample([output], {})['runs'][0]
             self.assertEqual(row['observed_raw'], 110)
             self.assertEqual(row['completed_turns'], 1)
+
+    def test_resume_keeps_native_and_transport_baselines_and_original_workspace(self):
+        from lab.continuation import restore_provider
+        with tempfile.TemporaryDirectory() as directory:
+            previous, _, manifest, result = self.fixture(Path(directory))
+            provider = object.__new__(Codex)
+            provider.repo = Path(directory) / 'continued' / 'checkout'
+            provider.model, provider.effort = 'gpt-5.5', 'xhigh'
+            provider.usage, provider.turns, provider.parent_threads = Usage(), [], set()
+            provider.nested = Mock()
+            metadata = {'id': 'author', 'path': '/owned/native.jsonl', 'cwd': str(provider.repo)}
+            provider.rpc = Mock(return_value={'thread': metadata})
+            provider.register_native_thread = Mock()
+            prior = copy.deepcopy(result['usage'])
+            prior.update(thread_totals={'author': [200, 20, 100]},
+                         app_server_thread_totals={'author': [100, 10, 50]},
+                         native_thread_totals={'author': [200, 20, 100]},
+                         native_usage={'author': {'cwd': str(previous / 'checkout'),
+                                                  'path': '/owned/native.jsonl'}})
+            before = copy.deepcopy(prior)
+            restore_provider(provider, manifest, prior, 'author')
+            provider.register_native_thread.assert_called_once_with(
+                metadata, cwd=str(previous / 'checkout'))
+            self.assertEqual(provider.usage.transport_totals['author'], (100, 10, 50))
+            self.assertEqual(provider.usage.native_totals['author'], (200, 20, 100))
+            self.assertEqual(provider.usage.raw, 220)
+            provider.usage.observe_tokens('author', 110, 12, 55)
+            provider.usage.observe_native('author', 210, 22, 105)
+            self.assertEqual(provider.usage.raw, 232)
+            self.assertEqual(provider.usage.uncertain, [])
+            self.assertEqual(prior, before)
+
+    def test_resumed_monitor_restores_both_counter_sources(self):
+        from unittest.mock import patch
+        from lab.monitor import sample
+        with tempfile.TemporaryDirectory() as directory:
+            root = Path(directory)
+            previous, _, manifest, result = self.fixture(root)
+            result['usage'].update(thread_totals={'author': [200, 20, 100]},
+                app_server_thread_totals={'author': [100, 10, 50]},
+                native_thread_totals={'author': [200, 20, 100]})
+            (previous/'result.json').write_text(json.dumps(result))
+            output = root/'continued'
+            (output/'provider').mkdir(parents=True)
+            manifest = dict(manifest, continuation={'previous': str(previous),
+                'original_created_at': manifest['created_at_unix']})
+            (output/'manifest.json').write_text(json.dumps(manifest))
+            (output/'provider/transport.jsonl').write_text(json.dumps({'event': {
+                'method': 'thread/tokenUsage/updated', 'params': {'threadId': 'author',
+                    'tokenUsage': {'total': {'inputTokens': 110, 'outputTokens': 12,
+                                            'cachedInputTokens': 55}}}}})+'\n')
+            (output/'provider/native-usage.json').write_text(json.dumps({'author': {
+                'thread_id': 'author', 'validated': True, 'thread_totals': [210, 22, 105],
+                'errors': [], 'missing_compactions': []}}))
+            observer = Mock()
+            observer.report.return_value = {'observed_raw_tokens': 0, 'errors': [], 'incomplete': []}
+            with patch('lab.monitor.NestedUsage', return_value=observer):
+                row = sample([output], {})['runs'][0]
+            self.assertEqual(row['observed_raw'], 232)
+            self.assertEqual(row['counter_flags'], [])
 
     def test_continuation_starts_at_review_without_replaying_implementation(self):
         from types import SimpleNamespace

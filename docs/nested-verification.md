@@ -11,6 +11,9 @@ normal live output and exit status, but killing the caller or closing its output
 pipe cannot destroy the CLI's output destination. The supervisor writes stdout,
 stderr, the request and a terminal receipt to
 `provider/commands/children/call-*/`.
+Only directories in the launcher's `call-` namespace enter child accounting.
+Unrelated directories in the artifact root are ignored, even if they contain
+a file named `result.json`.
 
 `Codex.settle_children` waits for these calls at operation boundaries and before
 another model response. It then requires the independently saved native session
@@ -24,12 +27,29 @@ cancels remaining supervisors; timeouts, incomplete receipts and missing usage
 remain failures, not zero-token results. Usage already generated is never
 refunded. An old failed run's missing usage is not reconstructed by this repair.
 
+Each child supervisor inherits an already-held filesystem lock before startup.
+The lock stays held until the supervisor publishes its terminal receipt. If the
+lock is released without a valid receipt, the runner reports an abandoned child
+immediately instead of waiting until the workflow deadline. It rereads the
+receipt after checking the lock to avoid misclassifying concurrent completion.
+A call directory with neither a supervisor lock nor a receipt has a five-second
+startup grace. Abandoned calls retain their output, appear in
+`usage.nested.processes.abandoned`, and keep measurement incomplete. No exit
+code, completion event or token amount is invented to fill the missing record.
+
+Runner liveness is checked through a held filesystem lock, so a sandbox's
+private process-ID namespace cannot make a live runner appear dead. Runner
+termination releases the lock; cancellation and deadlines remain enforced.
+
 The supervisor inherits the caller's environment, stdin and OS restrictions;
 it grants no extra sandbox access. Its artifacts require write access. Native
 read-only commands cannot use this mechanism to bypass restrictions on local
-Codex state or artifact writes. Subscription keys are not copied and API-key
-environment variables remain excluded. Factor prompts and the Pi backend do
-not use a different policy because of this supervisor.
+Codex state or artifact writes. The shared writable test policy permits the
+run's child-call receipts and existing Codex state directory, in addition to
+checkout and temporary writes. Network access is enabled for native tools,
+host-run tests and final checks alike. Subscription keys are not copied and
+API-key environment variables remain excluded. Codex and Pi share this
+supervision and accounting policy; the supervisor grants no extra permissions.
 
 The provider identity records `same-model-subscription-supervised-native-history-v2`.
 The comparison guard therefore distinguishes this lifecycle policy from older
@@ -47,6 +67,11 @@ Run local tests with `python3 -m unittest discover -s tests -v`.
 ordinary input/output/exit preservation, subscription/model restrictions,
 deadline and owner cancellation, concurrent children, missing receipts and
 blocking further model work on missing usage.
+`tests/test_child_liveness.py` covers abrupt supervisor death, live locks,
+startup grace, completion races and preservation of partial output without
+fabricated completion receipts. It also checks that unrelated directories never
+become pending, abandoned or completed children, while missing receipts for
+actual calls still fail. These tests generate no model responses.
 
 The explicit real-agent check is:
 

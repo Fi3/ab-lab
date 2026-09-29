@@ -76,7 +76,7 @@ class FakePi:
             else:
                 reply = "@standalone done"
         elif "-review-" in label:
-            reply = "FINDINGS\n- Change one.py value to 2" if label == "one-review-1" else "NO_FINDINGS"
+            reply = "FINDINGS\n- [P2] Change one.py value to 2" if label == "one-review-1" else "NO_FINDINGS"
         elif "-fix-" in label:
             n = self.fixes.get(label, 0)
             self.fixes[label] = n+1
@@ -152,7 +152,7 @@ class PiCliTests(unittest.TestCase):
             with patch.object(sys, "argv", ["lab", "plan", str(path), "--harness", "pi"]), contextlib.redirect_stdout(output):
                 self.assertEqual(main(), 0)
             plan_data = json.loads(output.getvalue())
-            self.assertEqual(plan_data["model"], "gemini-3.8-flash")
+            self.assertEqual(plan_data["model"], "gpt-5.5")
 
     def test_doctor_with_harness_pi(self):
         with tempfile.TemporaryDirectory() as d:
@@ -210,6 +210,40 @@ class PiWorkflowIntegrationTests(unittest.TestCase):
 
 
 class PiProviderStreamTests(unittest.TestCase):
+    def test_review_threshold_preserves_completed_verdict_but_not_interrupted_text(self):
+        from lab.loops import ReviewConclusionRequested
+        for threshold, completed_reply in ((100, "NO_FINDINGS"), (50, None)):
+            with self.subTest(threshold=threshold):
+                p = self.fake_pi_provider([
+                    {"type": "message_end", "message": {"role": "assistant",
+                        "content": [{"type": "text", "text": "NO_FINDINGS"}],
+                        "usage": {"input": 40, "output": 10, "cacheRead": 0}}},
+                    {"type": "agent_settled"},
+                ])
+                p.work_limits = [{"reason": "review_token_threshold", "metric": "observed_raw_tokens",
+                                  "start": 0, "limit": threshold, "action": "conclude_review"}]
+                with self.assertRaises(ReviewConclusionRequested) as stopped:
+                    p.turn("t1", "review", "review-1")
+                self.assertEqual(stopped.exception.completed_reply, completed_reply)
+                self.assertEqual(p.usage.raw, 125)
+                self.assertTrue(p.report()["measurement_complete"])
+
+    def test_feature_budget_interrupts_inside_native_turn_and_retains_session_usage(self):
+        from lab.loops import WorkLimitReached
+        p = self.fake_pi_provider([
+            {"type": "message_end", "message": {"role": "assistant",
+                "content": [{"type": "text", "text": "@standalone run -- never_execute"}],
+                "usage": {"input": 40, "output": 10, "cacheRead": 0}}},
+            {"type": "agent_settled"},
+        ])
+        p.work_limits = [{"reason": "feature_token_limit", "metric": "observed_raw_tokens", "start": 0, "limit": 50}]
+        with self.assertRaises(WorkLimitReached):
+            p.turn("t1", "implement", "author", writable=True)
+        self.assertEqual([m["type"] for m in p.sent_messages], ["prompt", "abort"])
+        self.assertEqual(p.usage.raw, 125)
+        self.assertTrue(p.report()["measurement_complete"])
+        self.assertEqual(p.turns[0]["work_limit"]["observed"], 125)
+
     def fake_pi_provider(self, events):
         tmp = tempfile.TemporaryDirectory()
         self.addCleanup(tmp.cleanup)
@@ -218,6 +252,7 @@ class PiProviderStreamTests(unittest.TestCase):
         p.turns, p.missing_turns = [], []
         p.max_turns, p.max_raw, p.deadline = 10, 100000, time.monotonic() + 30
         p.usage = Usage()
+        p.prepare_turn = MagicMock()
         p.model, p.effort, p.repo = "test-model", "xhigh", p.artifacts
         p.log = (p.artifacts / "transport.jsonl").open("w")
         self.addCleanup(p.log.close)

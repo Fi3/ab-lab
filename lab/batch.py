@@ -10,6 +10,8 @@ import time
 
 from .environment import clean_env
 from .host import git, save_json
+from .review import DEFAULT_PRIORITIES, normalize_priorities
+from .loops import loop_policy
 from .workflow import run, source_hashes
 
 ROOT = Path(__file__).resolve().parents[1]
@@ -20,6 +22,9 @@ def failure(config, output, error, *, status='failed', duration=None):
     benchmark = config['benchmark']
     return {'schema': 'agent-behavior-lab/v1', 'status': status, 'output': str(output),
         'benchmark': benchmark['name'], 'factors': config['factors'],
+        'skip_linearization': config['options'].get('skip_linearization', False),
+        'review_priorities': list(config['options'].get('review_priorities', DEFAULT_PRIORITIES)),
+        'loop_policy': loop_policy(config['options'].get('loop_options')),
         'feature_count': len(benchmark['features']), 'check_count': len(benchmark['checks']),
         'checkpoints': [], 'checks': [], 'duration_seconds': duration, 'error': error,
         'usage': {'observed_raw_tokens': None, 'measurement_complete': False}}
@@ -29,7 +34,7 @@ def collect(config, output, exit_code, duration):
     path = output/'result.json'
     try:
         value = json.loads(path.read_text())
-        if not isinstance(value, dict) or value.get('status') not in ('passed', 'failed') or not isinstance(value.get('usage'), dict):
+        if not isinstance(value, dict) or value.get('status') not in ('passed', 'failed', 'needs_attention') or not isinstance(value.get('usage'), dict):
             raise ValueError('invalid workflow result')
         if exit_code != 0 and value['status'] == 'passed':
             value.update(status='failed', error=f'worker exited with code {exit_code} despite a passed report')
@@ -45,7 +50,11 @@ def collect(config, output, exit_code, duration):
 
 def run_batch(benchmark, factors, output, repeat, parallel, *, seconds, max_raw, max_turns,
               model='gpt-5.5', effort='xhigh', executable='codex', harness=None,
-              scb_check=None, scb_seconds=300, _worker_command=None):
+              scb_check=None, scb_seconds=300, child_codex='codex', skip_linearization=False,
+              review_priorities=DEFAULT_PRIORITIES, loop_options=None,
+              _worker_command=None):
+    review_priorities = normalize_priorities(review_priorities)
+    progress_policy = loop_policy(loop_options)
     for name, value in (('repeat', repeat), ('parallel', parallel), ('seconds', seconds),
                         ('max_raw', max_raw), ('max_turns', max_turns)):
         if type(value) is not int or value <= 0:
@@ -63,8 +72,10 @@ def run_batch(benchmark, factors, output, repeat, parallel, *, seconds, max_raw,
     config = {'benchmark': benchmark, 'base_commit': base, 'factors': factors,
         'source_sha256': source_hashes(), 'repeat': repeat, 'parallel': parallel,
         'options': {'seconds': seconds, 'max_raw': max_raw, 'max_turns': max_turns,
-            'model': model, 'effort': effort, 'executable': executable, 'harness': harness,
-            'scb_check': str(scb_check) if scb_check is not None else None, 'scb_seconds': scb_seconds}}
+            'model': model, 'effort': effort, 'executable': executable, 'harness': harness, 'child_codex': child_codex,
+            'scb_check': str(scb_check) if scb_check is not None else None, 'scb_seconds': scb_seconds,
+            'skip_linearization': skip_linearization, 'review_priorities': list(review_priorities),
+            'loop_options': progress_policy}}
     config_path = output/'batch-input.json'
     save_json(config_path, config)
     prefix = _worker_command or [sys.executable, '-m', 'lab.batch']
@@ -149,6 +160,9 @@ def run_batch(benchmark, factors, output, repeat, parallel, *, seconds, max_raw,
                 'status': 'passed' if not interrupted and not controller_error and all(r['status'] == 'passed' for r in results) else 'failed',
                 'output': str(output), 'benchmark': benchmark['name'], 'base_commit': base,
                 'factors': factors, 'repeat': repeat, 'parallel': parallel,
+                'skip_linearization': skip_linearization,
+                'review_priorities': list(review_priorities),
+                'loop_policy': progress_policy,
                 'interrupted': bool(interrupted), 'cancelled_signal': interrupted,
                 'duration_seconds': time.monotonic()-started, 'results': results}
             if controller_error:

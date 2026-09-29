@@ -17,8 +17,9 @@ OPTIONAL = ("C13", "C14", "C15", "C16")
 
 
 class NeutralPolicyTests(unittest.TestCase):
-    def test_enabled_instructions_remain_byte_identical(self):
-        cases = (({}, "ab33906084fac020594870436f67e3eab96c222efdb602ebc03f7f01a1ed88ec"),
+    def test_enabled_instructions_match_pinned_protocol(self):
+        # Host protocol includes file-mode publication; native instructions stay unchanged.
+        cases = (({}, "e1919918ab08d9c52619121c297927fc4ba962e710f82265194a084294d58ed5"),
                  ({"C08": False, "C17": False, "C25": False},
                   "30b77197f17af01ae6701d6859e93e88bee015b93df6203d7350962e5a27842f"))
         for overrides, expected in cases:

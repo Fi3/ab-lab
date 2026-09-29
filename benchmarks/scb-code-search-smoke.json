@@ -1,0 +1,17 @@
+{
+  "name": "scb-code-search-smoke",
+  "repo": "../.benchmarks/scb-empty",
+  "revision": "HEAD",
+  "slopcodebench": {
+    "dataset": "../.benchmarks/scb-problems",
+    "revision": "38d627ecf668a88f88f8d260f8df8df6116e9b03",
+    "problem": "code_search",
+    "runner": "../.benchmarks/slop-code-bench",
+    "runner_revision": "31ceea3add480edb33431e70475c4c70597e6b31",
+    "checkpoint_limit": 1,
+    "seconds": 300
+  },
+  "checks": ["test -f code_search.py && test -f requirements.txt && python -m compileall -q code_search.py"],
+  "instructions": "Implement in Python 3.12. Keep all runtime dependencies in requirements.txt.",
+  "defer_documentation": false
+}

@@ -13,8 +13,31 @@ import time
 import uuid
 
 from .host import Fatal, Rejected, parse_operations, save_json
+from .host_response import (HOST_RESPONSE_FORMAT, HOST_OUTPUT_SCHEMA,
+                            HOST_RESPONSE_INSTRUCTIONS, decode_host_response)
 from .environment import clean_env
 from .nested import CommandEnvironment, NestedUsage
+from .native_usage import NativeUsage
+from .pi_sandbox import PiSandbox
+from .sandbox import EXECUTION_POLICY
+from .context import AUTO_COMPACT_TOKENS, CONTEXT_POLICY, OUTPUT_SETTLE_SECONDS, OutputGuard, compaction_threshold
+from .loops import work_limit_error, WorkLimitReached, ReviewConclusionRequested
+
+
+class RecoverableTurn(Fatal):
+    """A settled turn may continue after compaction if its usage is covered."""
+
+
+MESSAGE_SECONDS = OUTPUT_SETTLE_SECONDS
+RECOVERY_PROMPT = (
+    "The previous turn was stopped because of a context or output limit. "
+    "Continue the pending task from the current repository and recorded tool results. "
+    "Tools may already have completed: inspect current state before taking further action; "
+    "do not replay completed commands or accepted edits. The previous assistant response "
+    "was not delivered to the host, so any host directive in it was not executed. "
+    "Keep all existing task requirements, permissions, review findings and completion "
+    "protocol in force. Produce a fresh, complete response for the next unfinished step."
+)
 
 
 class Usage:
@@ -25,6 +48,8 @@ class Usage:
     """
     def __init__(self):
         self.totals = {}
+        self.transport_totals = {}
+        self.native_totals = {}
         self.uncertain = []
 
     def observe_tokens(self, thread, input_tokens, output_tokens, cached_input_tokens=0):
@@ -32,12 +57,34 @@ class Usage:
             self.uncertain.append("invalid usage notification")
             return False
         now = (input_tokens, output_tokens, cached_input_tokens)
-        before = self.totals.get(thread, (0, 0, 0))
+        before = self.transport_totals.get(thread, self.totals.get(thread, (0, 0, 0))
+                                           if thread not in self.native_totals else (0, 0, 0))
         if any(a < b for a, b in zip(now, before)):
             self.uncertain.append(f"provider counters decreased for {thread}; no negative charge inferred")
             return False
-        self.totals[thread] = now
+        self.transport_totals[thread] = now
+        self._merge(thread)
         return now[:2] != before[:2]
+
+    def observe_native(self, thread, input_tokens, output_tokens, cached_input_tokens=0):
+        now = (input_tokens, output_tokens, cached_input_tokens)
+        if not thread or any(type(v) is not int or v < 0 for v in now):
+            self.uncertain.append("invalid native usage counters")
+            return False
+        before = self.native_totals.get(thread, (0, 0, 0))
+        if any(a < b for a, b in zip(now, before)):
+            self.uncertain.append(f"native counters decreased for {thread}; no negative charge inferred")
+            return False
+        # Both sources include ordinary responses. Native totals additionally
+        # include compactions; adding the two sources would double-charge work.
+        self.native_totals[thread] = now
+        self._merge(thread)
+        return now[:2] != before[:2]
+
+    def _merge(self, thread):
+        self.totals[thread] = tuple(max(a, b) for a, b in zip(
+            self.transport_totals.get(thread, (0, 0, 0)),
+            self.native_totals.get(thread, (0, 0, 0))))
 
     def observe(self, params):
         thread = params.get("threadId")
@@ -59,6 +106,8 @@ class Usage:
         return {"observed_raw_tokens": self.raw, "cached_input_tokens": self.cached,
                 "uncertainties": list(dict.fromkeys(self.uncertain)),
                 "thread_totals": self.totals,
+                "app_server_thread_totals": self.transport_totals,
+                "native_thread_totals": self.native_totals,
                 "definition": "sum of observed per-thread input+output counters; cache/reasoning not added again"}
 
 
@@ -83,13 +132,105 @@ class InterruptGate:
         return None
 
 
-class Codex:
+class ReviewSettlement:
+    """Retain a review time stop while its current response supplies usage."""
+    def __init__(self):
+        self.error = None
+        self.started = None
+        self.outcome = None
+
+    @staticmethod
+    def eligible(error):
+        return (isinstance(error, WorkLimitReached) and error.signal["metric"] == "seconds"
+                and error.settle_seconds > 0)
+
+    def wait(self, error, covered, now):
+        if not self.eligible(error):
+            if self.error is not None:
+                self.outcome = "hard_limit"
+            return False
+        if self.error is None:
+            self.error, self.started = error, now
+        if covered:
+            self.outcome = "priced_boundary"
+        elif now - self.started >= self.error.settle_seconds:
+            self.outcome = "timeout"
+        else:
+            return True
+        return False
+
+    def resolve(self, error):
+        # A later global or token stop takes precedence over the saved time stop.
+        return self.error if self.error is not None and self.eligible(error) else error
+
+    def record(self, row, now):
+        if self.error is not None:
+            row["work_limit_settlement"] = {
+                "trigger": self.error.signal, "settle_seconds": self.error.settle_seconds,
+                "outcome": self.outcome or "turn_completed", "elapsed_seconds": now - self.started}
+
+
+class ChildAccounting:
+    """Shared controls for native command-launched verification agents."""
+    def command_argv(self, argv):
+        return self.commands.sandbox.command(True, argv)
+
+    def budget_error(self):
+        raw = self.observed_raw()
+        now = time.monotonic()
+        if now >= self.deadline or raw >= self.max_raw:
+            return Fatal("workflow wall-time/observed-token limit reached")
+        return work_limit_error(getattr(self, "work_limits", ()), raw, now)
+
+    def child_report(self, force=False):
+        if not hasattr(self, "nested"):
+            return {"observed_raw_tokens": 0, "cached_input_tokens": 0,
+                    "measurement_complete": True, "errors": [], "incomplete": []}
+        parents = self.parent_threads | set(self.usage.totals)
+        self.nested.refresh(parents, force=force)
+        report = self.nested.report(parents)
+        if hasattr(self, "commands"):
+            processes = self.commands.children.report()
+            report["processes"] = processes
+            report["measurement_complete"] &= processes["measurement_complete"]
+            report["errors"].extend(processes["errors"])
+        return report
+
+    def settle_children(self):
+        if not hasattr(self, "commands"):
+            return
+        def check_budget():
+            error = self.budget_error()
+            if error:
+                raise error
+        try:
+            processes = self.commands.children.settle(check_budget)
+        except BaseException:
+            self.commands.close()
+            raise
+        child = self.child_report(force=True)
+        if not processes["measurement_complete"] or not child["measurement_complete"]:
+            detail = processes["pending"] + processes["errors"] + child["errors"] + child["incomplete"]
+            raise Fatal("incomplete nested token measurement; no further generation: "+"; ".join(detail))
+
+    def observed_raw(self):
+        child = self.child_report()
+        if child["errors"]:
+            raise Fatal("nested agent isolation/accounting failure: "+"; ".join(child["errors"]))
+        return self.usage.raw+child["observed_raw_tokens"]
+
+
+class Codex(ChildAccounting):
     def __init__(self, repo, artifacts, model, effort, deadline, max_raw, max_turns, executable="codex", *, require_git_write=False):
         self.repo, self.artifacts = Path(repo), Path(artifacts)
         self.artifacts.mkdir(parents=True, exist_ok=False)
         self.deadline, self.max_raw, self.max_turns = deadline, max_raw, max_turns
         self.model, self.effort = model, effort
+        self.host_response_format = HOST_RESPONSE_FORMAT
         self.usage, self.turns, self.missing_turns = Usage(), [], []
+        self.native_usage = {}
+        self.context_usage = {}
+        self.auto_compact_limit = AUTO_COMPACT_TOKENS
         self.counter, self.events, self.pending = 0, queue.Queue(), deque()
         self.active = None
         self.log = (self.artifacts / "transport.jsonl").open("x")
@@ -100,6 +241,7 @@ class Codex:
         self.commands = CommandEnvironment(self.repo, self.artifacts / "commands", model, effort, executable,
                                            deadline=deadline)
         self.command_env = self.commands.env
+        self.sandbox = self.commands.sandbox
         self.nested = NestedUsage(self.repo, model, effort)
         self.parent_threads = set()
         argv = [self.commands.executable, "--disable", "apps", "-c", 'forced_login_method="chatgpt"',
@@ -120,6 +262,9 @@ class Codex:
             if (account.get("account") or {}).get("type") != "chatgpt":
                 raise Fatal("existing ChatGPT subscription login required; no API fallback")
             config = self.rpc("config/read", {"includeLayers": False}).get("config", {})
+            configured_limit = config.get("model_auto_compact_token_limit")
+            if type(configured_limit) is int and configured_limit > 0:
+                self.auto_compact_limit = min(configured_limit, AUTO_COMPACT_TOKENS)
             if config.get("model_provider", "openai") != "openai" or config.get("forced_login_method") != "chatgpt":
                 raise Fatal("effective provider/login configuration does not match subscription-only policy")
             provider = config.get("model_providers", {}).get("openai", {})
@@ -129,6 +274,10 @@ class Codex:
             self.identity = {"codex_version": subprocess.check_output([self.commands.executable, "--version"], text=True, env=clean_env()).strip(),
                 "auth": "chatgpt", "model": model, "effort": effort,
                 "effective_config_sha256": hashlib.sha256(normalized_config.encode()).hexdigest(),
+                "execution_policy": EXECUTION_POLICY,
+                "host_response_format": self.host_response_format,
+                "context_policy": {**CONTEXT_POLICY, "auto_compact_tokens": self.auto_compact_limit,
+                                   "message_seconds": MESSAGE_SECONDS, "recovery_attempts": 1},
                 "nested_policy": "same-model-subscription-supervised-native-history-v2"}
             save_json(self.artifacts / "provider.json", self.identity)
             if require_git_write:
@@ -174,7 +323,22 @@ class Codex:
             params = message.get("params", {})
             fresh = self.usage.observe(params)
             message["_fresh_usage"] = fresh
+            self.remember_context(params)
         return message
+
+    def remember_context(self, params):
+        value = params.get("tokenUsage", {})
+        last = value.get("last", {})
+        count = last.get("totalTokens")
+        if count is None:
+            counts = [last.get("inputTokens"), last.get("outputTokens")]
+            count = sum(counts) if all(type(n) is int and n >= 0 for n in counts) else None
+        # A zeroed error notification is not a successful reduction of context.
+        if params.get("threadId") and type(count) is int and count > 0:
+            if not hasattr(self, "context_usage"):
+                self.context_usage = {}
+            self.context_usage[params["threadId"]] = {
+                "tokens": count, "window": value.get("modelContextWindow")}
 
     def rpc(self, method, params, timeout=30):
         self.counter += 1
@@ -194,12 +358,7 @@ class Codex:
         raise Fatal(f"{method} timed out")
 
     def writable_policy(self):
-        # Workspace write protects Git metadata unless it is an explicit root.
-        # Workflows own fresh plain clones; no parent or unrelated repository
-        # receives write permission. Read-only roles do not use this policy.
-        return {"type": "workspaceWrite",
-                "writableRoots": [str(self.repo), str(self.repo / ".git")],
-                "networkAccess": False}
+        return self.sandbox.policy(True)
 
     def verify_git_write(self):
         # Called only for a newly cloned workflow, never by readback/doctor.
@@ -213,153 +372,443 @@ class Codex:
             raise Fatal("Git-write preflight failed before model generation: "+receipt.get("stderr", "unknown error"))
 
     def start_thread(self, writable=False):
+        options = self.sandbox.thread_options(writable)
+        options['config']['model_reasoning_effort'] = self.effort
+        options['config']['model_auto_compact_token_limit'] = getattr(self, "auto_compact_limit", AUTO_COMPACT_TOKENS)
         result = self.rpc("thread/start", {"cwd": str(self.repo), "model": self.model,
             "modelProvider": "openai", "approvalPolicy": "never",
-            "sandbox": "workspace-write" if writable else "read-only",
-            "config": {"model_reasoning_effort": self.effort},
+            **options,
             "experimentalRawEvents": False})
         self.parent_threads.add(result["thread"]["id"])
+        self.register_native_thread(result["thread"])
         return result["thread"]["id"]
 
-    def child_report(self, force=False):
-        if not hasattr(self, "nested"):
-            return {"observed_raw_tokens": 0, "cached_input_tokens": 0,
-                    "measurement_complete": True, "errors": [], "incomplete": []}
-        parents = self.parent_threads | set(self.usage.totals)
-        self.nested.refresh(parents, force=force)
-        report = self.nested.report(parents)
-        if hasattr(self, "commands"):
-            processes = self.commands.children.report()
-            report["processes"] = processes
-            report["measurement_complete"] &= processes["measurement_complete"]
-            report["errors"].extend(processes["errors"])
-        return report
+    def register_native_thread(self, thread, cwd=None):
+        path = thread.get("path")
+        if not isinstance(path, str) or not path:
+            raise Fatal("Codex did not return an owned rollout path; native token accounting is unavailable")
+        self.native_usage[thread["id"]] = NativeUsage(path, thread["id"], cwd or self.repo)
 
-    def settle_children(self):
-        if not hasattr(self, "commands"):
+    def refresh_native_usage(self, force=False):
+        readers = getattr(self, "native_usage", {})
+        now = time.monotonic()
+        if not readers or (not force and now - getattr(self, "_native_refresh_at", -1) < 0.25):
             return
-        def check_budget():
-            if time.monotonic() >= self.deadline or self.observed_raw() >= self.max_raw:
-                raise Fatal("workflow wall-time/observed-token limit reached while waiting for nested verification")
-        try:
-            processes = self.commands.children.settle(check_budget)
-        except BaseException:
-            self.commands.close()
-            raise
-        child = self.child_report(force=True)
-        if not processes["measurement_complete"] or not child["measurement_complete"]:
-            detail = processes["pending"] + processes["errors"] + child["errors"] + child["incomplete"]
-            raise Fatal("incomplete nested token measurement; no further generation: "+"; ".join(detail))
+        self._native_refresh_at = now
+        changed = False
+        for thread, reader in readers.items():
+            before = reader.offset, len(reader.errors)
+            reader.refresh()
+            changed |= before != (reader.offset, len(reader.errors))
+            if reader.totals and not reader.errors:
+                self.usage.observe_native(thread, *reader.totals)
+        if changed or force:
+            path = self.artifacts / "native-usage.json"
+            temporary = path.with_suffix(".json.tmp")
+            save_json(temporary, {thread: reader.report() for thread, reader in readers.items()})
+            temporary.replace(path)
 
     def observed_raw(self):
-        child = self.child_report()
-        if child["errors"]:
-            raise Fatal("nested agent isolation/accounting failure: "+"; ".join(child["errors"]))
-        return self.usage.raw+child["observed_raw_tokens"]
+        self.refresh_native_usage()
+        errors = [error for reader in getattr(self, "native_usage", {}).values() for error in reader.errors]
+        if errors:
+            raise Fatal("native token accounting failure: " + "; ".join(errors))
+        return super().observed_raw()
+
+    def check_limits(self):
+        if len(self.turns) >= self.max_turns:
+            raise Fatal("workflow turn limit reached")
+        error = self.budget_error()
+        if error:
+            raise error
+
+    def compact(self, thread, label):
+        self._turn_once(thread, "Compact the existing conversation history.", label + "-compact",
+                        compacting=True)
+        getattr(self, "context_usage", {}).pop(thread, None)
 
     def turn(self, thread, prompt, label, interrupt=False, host_request=False, writable=False):
         self.settle_children()
-        if len(self.turns) >= self.max_turns:
-            raise Fatal("workflow turn limit reached")
-        if time.monotonic() >= self.deadline or self.observed_raw() >= self.max_raw:
-            raise Fatal("workflow wall-time/observed-token limit reached")
+        self.check_limits()
+        context = getattr(self, "context_usage", {}).get(thread)
+        if context:
+            threshold = compaction_threshold(context["window"],
+                getattr(self, "auto_compact_limit", AUTO_COMPACT_TOKENS))
+            # UTF-8 bytes are a conservative upper bound for incoming text tokens.
+            format_bytes = (len(HOST_RESPONSE_INSTRUCTIONS.encode("utf-8")) + 2
+                            + len(json.dumps(HOST_OUTPUT_SCHEMA).encode("utf-8"))
+                            if host_request and getattr(self, "host_response_format", None) == HOST_RESPONSE_FORMAT else 0)
+            if context["tokens"] + len(prompt.encode("utf-8")) + format_bytes >= threshold:
+                self.compact(thread, label)
+        for attempt in range(2):
+            try:
+                return self._turn_once(thread, prompt, label, interrupt, host_request, writable)
+            except RecoverableTurn as exc:
+                if attempt:
+                    raise Fatal("context/output recovery exhausted after one retry: " + str(exc)) from exc
+                # Never turn a missing usage tail into invented zero-cost work.
+                if not self.report()["measurement_complete"]:
+                    raise Fatal("context/output recovery stopped: incomplete token measurement; "
+                                "failed output retained, no further generation") from exc
+                self.compact(thread, label)
+                prompt = RECOVERY_PROMPT
+
+    def _turn_once(self, thread, prompt, label, interrupt=False, host_request=False, writable=False,
+                   *, compacting=False):
+        self.settle_children()
+        self.refresh_native_usage(force=True)
+        self.check_limits()
+        transport_before = self.usage.transport_totals.get(thread, (0, 0, 0))
         folder = self.artifacts / f"turn-{len(self.turns)+1:04d}"
         folder.mkdir()
+        structured_host = (host_request and not compacting and
+                           getattr(self, "host_response_format", None) == HOST_RESPONSE_FORMAT)
+        if structured_host:
+            prompt += "\n\n" + HOST_RESPONSE_INSTRUCTIONS
+            save_json(folder / "output-schema.json", HOST_OUTPUT_SCHEMA)
         (folder / "prompt.txt").write_text(prompt)
         row = {"label": label, "thread_id": thread, "status": "started", "prompt_file": str(folder / "prompt.txt")}
+        if structured_host:
+            row["response_format"] = HOST_RESPONSE_FORMAT
+            row["output_schema_file"] = str(folder / "output-schema.json")
+        if compacting:
+            row["kind"] = "compaction"
         self.turns.append(row)
-        result = self.rpc("turn/start", {"threadId": thread, "input": [{"type": "text", "text": prompt}],
-            "model": self.model, "effort": self.effort, "approvalPolicy": "never",
-            "sandboxPolicy": (self.writable_policy()
-                              if writable else {"type": "readOnly"})})
-        turn_id = result["turn"]["id"]
-        self.active = thread, turn_id
-        row["turn_id"] = turn_id
-        gate = InterruptGate(interrupt)
+        turn_id = None
+        gate, guard = InterruptGate(interrupt), OutputGuard()
         selected, replies, interrupted = None, [], None
+        selected_operation = None
         priced, last_output, last_usage = False, 0.0, 0.0
-        stop_reason, stop_at = None, None
-        try:
-            while True:
-                now = time.monotonic()
-                if stop_at is not None and now-stop_at > 15:
-                    raise Fatal("interrupted turn did not close within 15 seconds; retained with unknown tail")
-                if interrupted is None:
-                    budget = now >= self.deadline or self.observed_raw() >= self.max_raw
-                    reason = "budget" if budget else gate.reason(now)
-                    if reason:
-                        self.counter += 1
-                        self.send({"id": self.counter, "method": "turn/interrupt", "params": {"threadId": thread, "turnId": turn_id}})
-                        interrupted, stop_at = reason, now
-                        if budget:
-                            stop_reason = "workflow wall-time/observed-token limit reached"
-                message = self.pending.popleft() if self.pending else self.incoming(0.1)
-                if message is None:
-                    continue
-                params = message.get("params", {})
-                if params.get("threadId") != thread:
-                    continue
-                event_turn = params.get("turnId") or params.get("turn", {}).get("id")
-                if event_turn != turn_id:
-                    continue
-                method = message.get("method")
-                now = time.monotonic()
-                if method == "thread/tokenUsage/updated" and message.get("_fresh_usage"):
-                    priced, last_usage = True, now
-                    if gate.at is not None:
-                        gate.fresh_usage = True
-                elif method == "item/completed" and params.get("item", {}).get("type") == "agentMessage":
-                    text = params["item"]["text"]
-                    replies.append(text)
-                    last_output = now
-                    gate.fresh_usage = False
-                    if selected is None and host_request:
+        last_compaction = 0.0
+        stop_reason, stop_at, failure = None, None, None
+        failure_error = None
+        output_guard_at = None
+        output_rejected = False
+        stream_log = None
+        stop_budget = None
+        settlement = ReviewSettlement()
+        last_response_activity = 0.0
+        recoverable, compacted = False, False
+        compaction_items = set()
+        compaction_active = False
+        streaming = {}
+        operation_end = min(self.deadline, time.monotonic() + 300) if compacting else self.deadline
+
+        def compaction_covered():
+            reader = getattr(self, "native_usage", {}).get(thread)
+            if not compaction_items or reader is None:
+                return True
+            return (not reader.errors and not reader.missing_compactions and
+                    len(reader.completed_compactions(turn_id)) >= len(compaction_items))
+
+        def output_covered():
+            if compaction_active:
+                return False
+            reader = getattr(self, "native_usage", {}).get(thread)
+            if reader is not None:
+                # The rollout may be flushed later than the app-server event.
+                # Wait for all observed ordinary response costs as well as the
+                # compaction receipt before accepting a directive or continuing.
+                ordinary = [receipt for response_id, receipt in reader.responses.items()
+                            if receipt["turn_id"] == turn_id and response_id not in reader.compactions]
+                observed = self.usage.transport_totals.get(thread, (0, 0, 0))
+                needed = tuple(a - b for a, b in zip(observed, transport_before))
+                covered = tuple(sum(receipt["usage"][i] for receipt in ordinary) for i in range(3))
+                if reader.errors or any(a < b for a, b in zip(covered, needed)):
+                    return False
+            if (reader is not None and compaction_items and not replies and not streaming
+                    and last_response_activity <= last_compaction):
+                return compaction_covered()
+            # Owned compaction receipts cover compaction completion independently
+            # of ordinary message freshness. Automatic compaction can complete
+            # after the last transport counter, which omits its cost entirely.
+            # Without native evidence retain the transport freshness requirement.
+            required_output = max(last_output, last_response_activity,
+                                  0.0 if reader is not None else last_compaction)
+            return priced and last_usage >= required_output and compaction_covered()
+
+        def record_output(method, params, now, select=False):
+            nonlocal last_output, selected, stop_reason, recoverable, output_guard_at, stream_log, output_rejected
+            nonlocal selected_operation
+            last_output = now
+            gate.fresh_usage = False
+            if method == "item/agentMessage/delta":
+                item_id = params.get("itemId", "agent-message")
+                if stream_log is None:
+                    stream_path = folder / "agent-message-deltas.jsonl"
+                    stream_log = stream_path.open("x")
+                    row["stream_file"] = str(stream_path)
+                stream_log.write(json.dumps({"item_id": item_id, "delta": params.get("delta", "")}) + "\n")
+                stream_log.flush()
+                streaming.setdefault(item_id, now)
+                violation = guard.observe(item_id, params.get("delta", ""))
+            else:
+                item = params["item"]
+                text = item["text"]
+                replies.append(text)
+                item_id = item.get("id", "agent-message")
+                streaming.pop(item_id, None)
+                violation = guard.finish(item_id, text)
+                if select and selected is None and host_request and not stop_reason and not violation:
+                    if structured_host:
+                        # outputSchema constrains final messages, not commentary.
+                        # Older providers omit phase; they still must supply one
+                        # complete, locally validated structured operation.
+                        if item.get("phase") in (None, "final_answer"):
+                            try:
+                                operation = decode_host_response(text)
+                            except ValueError as exc:
+                                row.setdefault("host_response_errors", []).append({
+                                    "item_id": item_id, "error": str(exc)})
+                            else:
+                                selected, selected_operation = text, operation
+                                row["host_message_id"] = item_id
+                                gate.directive(now)
+                    else:
                         try:
                             if len(parse_operations(text)) == 1:
                                 selected = text
                                 gate.directive(now)
                         except Rejected:
                             pass
+            if violation:
+                output_rejected = True
+            if violation and (stop_reason is None or (
+                    violation == "agent_message_bytes" and output_guard_at is not None)):
+                stop_reason = violation
+                if failure is None and interrupted != "budget":
+                    recoverable = True
+                if output_guard_at is None:
+                    output_guard_at = now
+                    row["output_guard"] = {"reason": violation, "settle_seconds": OUTPUT_SETTLE_SECONDS}
+                if violation == "agent_message_bytes":
+                    row["output_guard"]["hard_limit"] = violation
+
+        def record_failure(error, status):
+            nonlocal failure, failure_error, recoverable
+            # Terminal provider errors take precedence over output recovery,
+            # including an error notification followed by an interrupted turn.
+            if failure is None or (error and isinstance(failure_error, dict) and
+                                   failure_error.get("codexErrorInfo") == "contextWindowExceeded"):
+                failure_error = error
+                failure = f"agent turn ended unexpectedly: {status}; {error}"
+            recoverable = (not compacting and interrupted != "budget"
+                           and isinstance(failure_error, dict)
+                           and failure_error.get("codexErrorInfo") == "contextWindowExceeded")
+
+        try:
+            if compacting:
+                self.rpc("thread/compact/start", {"threadId": thread})
+            else:
+                params = {"threadId": thread, "input": [{"type": "text", "text": prompt}],
+                    "model": self.model, "effort": self.effort, "approvalPolicy": "never",
+                    "sandboxPolicy": self.sandbox.policy(writable)}
+                if structured_host:
+                    params["outputSchema"] = HOST_OUTPUT_SCHEMA
+                result = self.rpc("turn/start", params)
+                turn_id = result["turn"]["id"]
+                self.active = thread, turn_id
+                row["turn_id"] = turn_id
+            while True:
+                now = time.monotonic()
+                if stop_at is not None and now-stop_at > 15:
+                    raise Fatal("interrupted turn did not close within 15 seconds; retained with unknown tail")
+                if interrupted is None:
+                    stop_budget = self.budget_error()
+                    if stop_budget:
+                        stop_reason = str(stop_budget)
+                        recoverable = False
+                        covered = output_covered()
+                        if settlement.eligible(stop_budget) and covered and not self.pending:
+                            # Process queued activity before using an earlier
+                            # response's receipt as a cancellation boundary.
+                            buffered = self.incoming(0)
+                            if buffered is not None:
+                                self.pending.append(buffered)
+                        waiting = settlement.wait(stop_budget, covered and not self.pending, now)
+                        reason = None if waiting else "budget"
+                        if waiting and failure:
+                            settlement.outcome, reason = "provider_error", "provider_error"
+                        elif waiting and (row.get("output_guard", {}).get("hard_limit") or
+                                          (streaming and now - min(streaming.values()) >= MESSAGE_SECONDS)):
+                            settlement.outcome, reason = "hard_limit", "runaway_output"
+                            output_rejected = True
+                        elif waiting and compacting and now >= operation_end:
+                            settlement.outcome, reason = "hard_limit", "compaction_timeout"
+                    elif compacting and now >= operation_end:
+                        stop_reason, reason = "context compaction timed out", "compaction_timeout"
+                    elif failure:
+                        reason = "provider_error"
+                    elif not compacting and streaming and now - min(streaming.values()) >= MESSAGE_SECONDS:
+                        stop_reason, reason = "agent message exceeded streaming time limit", "runaway_output"
+                        output_rejected = True
+                        recoverable = True
+                    elif stop_reason:
+                        # Soft output guards reject the response immediately,
+                        # but cancelling its stream can destroy its usage tail.
+                        # Give it a bounded chance to finish at a priced boundary.
+                        covered = output_covered()
+                        settling = (output_guard_at is not None and
+                                    stop_reason != "agent_message_bytes" and
+                                    now - output_guard_at < OUTPUT_SETTLE_SECONDS and not covered)
+                        reason = None if settling else "runaway_output"
+                        if reason and output_guard_at is not None:
+                            row["output_guard"]["settlement"] = (
+                                "hard_limit" if stop_reason == "agent_message_bytes" else
+                                "priced_boundary" if covered else "timeout")
+                    else:
+                        reason = None if compaction_active else gate.reason(now)
+                    if reason:
+                        if turn_id is None:
+                            raise Fatal(stop_reason or "cannot interrupt an unidentified turn")
+                        self.counter += 1
+                        self.send({"id": self.counter, "method": "turn/interrupt", "params": {"threadId": thread, "turnId": turn_id}})
+                        interrupted, stop_at = reason, now
+                message = self.pending.popleft() if self.pending else self.incoming(0.1)
+                if message is None:
+                    continue
+                params = message.get("params", {})
+                if params.get("threadId") != thread:
+                    continue
+                method = message.get("method")
+                event_turn = params.get("turnId") or params.get("turn", {}).get("id")
+                item = params.get("item", {})
+                if compacting and turn_id is None and event_turn and (
+                    method == "turn/started" or item.get("type") == "contextCompaction"
+                ):
+                    turn_id = event_turn
+                    row["turn_id"] = turn_id
+                    self.active = thread, turn_id
+                if event_turn != turn_id or turn_id is None:
+                    continue
+                now = time.monotonic()
+                if method == "thread/tokenUsage/updated":
+                    self.remember_context(params)
+                    if message.get("_fresh_usage"):
+                        priced, last_usage = True, now
+                        if gate.at is not None:
+                            gate.fresh_usage = True
+                elif method == "item/started" and item.get("type") in ("reasoning", "agentMessage"):
+                    last_response_activity = now
+                    gate.fresh_usage = False
+                elif method == "item/agentMessage/delta":
+                    record_output(method, params, now)
+                elif method == "item/completed" and item.get("type") == "agentMessage":
+                    record_output(method, params, now, select=True)
+                elif method == "item/completed" and item.get("type") == "contextCompaction":
+                    compacted = True
+                    compaction_items.add(item.get("id", "context-compaction"))
+                    compaction_active = False
+                    last_compaction = now
+                    gate.fresh_usage = False
+                elif method == "item/started" and item.get("type") == "contextCompaction":
+                    compaction_active = True
                 elif method == "turn/completed":
                     status = params["turn"].get("status")
                     row.update(status=status, interrupt_reason=interrupted)
-                    if status not in ("completed", "interrupted") or (status == "interrupted" and not interrupted):
-                        raise Fatal(f"agent turn ended unexpectedly: {status}; {params['turn'].get('error')}")
+                    error = params["turn"].get("error")
+                    if error or status not in ("completed", "interrupted") or (status == "interrupted" and not interrupted):
+                        record_failure(error or {}, status)
                     break
-            # Drain late usage even after cancellation. Never execute late text.
+                elif method == "error" and params.get("willRetry") is not True:
+                    record_failure(params.get("error") or {}, "failed")
+            # Terminal failures also drain and retain their usage before recovery.
             minimum_end = time.monotonic()+1.0
             end = minimum_end+4.0
+            buffered, self.pending = self.pending, deque()
             while time.monotonic() < end:
-                if priced and last_usage >= last_output and time.monotonic() >= minimum_end:
+                self.refresh_native_usage()
+                if output_covered() and time.monotonic() >= minimum_end and not buffered:
                     break
-                message = self.incoming(min(0.1, end-time.monotonic()))
+                message = buffered.popleft() if buffered else self.incoming(min(0.1, end-time.monotonic()))
                 if message:
                     p = message.get("params", {})
-                    if p.get("threadId") == thread and p.get("turnId") == turn_id and message.get("_fresh_usage"):
-                        priced, last_usage = True, time.monotonic()
-                    elif (p.get("threadId") == thread and p.get("turnId") == turn_id
-                          and message.get("method") == "item/completed"
+                    owned = p.get("threadId") == thread and p.get("turnId") == turn_id
+                    if owned and message.get("method") == "thread/tokenUsage/updated":
+                        self.remember_context(p)
+                        if message.get("_fresh_usage"):
+                            priced, last_usage = True, time.monotonic()
+                    elif owned and message.get("method") == "item/agentMessage/delta":
+                        record_output(message["method"], p, time.monotonic())
+                    elif (owned and message.get("method") == "item/started"
+                          and p.get("item", {}).get("type") in ("reasoning", "agentMessage")):
+                        last_response_activity = time.monotonic()
+                    elif (owned and message.get("method") == "item/completed"
                           and p.get("item", {}).get("type") == "agentMessage"):
-                        replies.append(p["item"]["text"])
-                        last_output = time.monotonic()
+                        record_output(message["method"], p, time.monotonic(), select=structured_host)
+                    elif owned and message.get("method") == "error" and p.get("willRetry") is not True:
+                        record_failure(p.get("error") or {}, "failed")
                     else:
                         self.pending.append(message)
-            if not priced or last_output > last_usage:
-                self.missing_turns.append({"thread_id": thread, "turn_id": turn_id, "reason": "no fresh usage covering the last delivered message"})
+            self.pending.extend(buffered)
+            self.refresh_native_usage(force=True)
+            if failure and not (not compacting and isinstance(failure_error, dict)
+                                and failure_error.get("codexErrorInfo") == "contextWindowExceeded"):
+                recoverable = False
+            if output_guard_at is not None:
+                row["output_guard"].setdefault("settlement", interrupted or "turn_completed")
+                row["output_guard"]["elapsed_seconds"] = time.monotonic() - output_guard_at
+            row["usage_observed_after_last_message"] = output_covered()
+            if compaction_items:
+                reader = getattr(self, "native_usage", {}).get(thread)
+                row["compaction_usage"] = {
+                    "completed_items": sorted(compaction_items),
+                    "response_ids": [receipt["response_id"] for receipt in reader.completed_compactions(turn_id)]
+                                    if reader else [],
+                    "covered": compaction_covered(),
+                }
+            if failure and not recoverable:
+                # An unknown generation failure is not a certified response
+                # boundary, even if an earlier counter happened to arrive.
+                row["usage_observed_after_last_message"] = False
             final = selected if selected is not None else next((text for text in reversed(replies) if text.strip()), "")
             (folder / "reply.txt").write_text(final)
             save_json(folder / "messages.json", replies)
-            row["usage_observed_after_last_message"] = priced and last_usage >= last_output
-            if stop_reason:
-                raise Fatal(stop_reason)
-            if not final:
+            stop_budget = self.budget_error()
+            if settlement.error is not None:
+                if failure:
+                    settlement.outcome = "provider_error"
+                elif stop_budget and not settlement.eligible(stop_budget):
+                    settlement.outcome = "hard_limit"
+                stop_budget = settlement.resolve(stop_budget)
+                settlement.record(row, time.monotonic())
+            if stop_budget:
+                stop_reason, recoverable = str(stop_budget), False
+            if stop_reason or failure:
+                row["recovery_eligible"] = recoverable and not compacting
+                if isinstance(stop_budget, WorkLimitReached) and not failure:
+                    row["work_limit"] = stop_budget.signal
+                    if (isinstance(stop_budget, ReviewConclusionRequested) and not compacting and not output_rejected
+                            and row["status"] == "completed" and row["usage_observed_after_last_message"]):
+                        stop_budget.completed_reply = final
+                    raise stop_budget
+                error_class = RecoverableTurn if row["recovery_eligible"] else Fatal
+                raise error_class(failure or stop_reason)
+            if compacting and not compacted:
+                raise Fatal("compaction completed without a contextCompaction item")
+            if not compacting and not final:
                 raise Fatal("turn supplied no executable request or final reply")
+            if structured_host and selected_operation is None:
+                raise Fatal("turn supplied no valid structured host operation; no host action executed")
+            if not row["usage_observed_after_last_message"]:
+                self.missing_turns.append({"thread_id": thread, "turn_id": turn_id,
+                    "reason": "no fresh usage covering the last delivered message"})
+            if (compacting or compaction_items) and not self.report()["measurement_complete"]:
+                raise Fatal("incomplete token measurement after compaction; no further generation")
+            if (structured_host or thread in getattr(self, "native_usage", {})) and not row["usage_observed_after_last_message"]:
+                raise Fatal("incomplete native token measurement; no host directive or further generation")
             self.settle_children()
+            if structured_host:
+                path = folder / "host-operation.txt"
+                path.write_text(selected_operation)
+                row["host_operation_file"] = str(path)
+                return selected_operation
             return final
         except BaseException as exc:
-            if interrupted is None and row.get("status") == "started":
-                # A user cancellation or client-side failure still owns a live
-                # generation. Request cancellation and retain accounting tails.
+            if settlement.error is not None and "work_limit_settlement" not in row:
+                settlement.outcome = settlement.outcome or "provider_error"
+                settlement.record(row, time.monotonic())
+            if turn_id is not None and interrupted is None and row.get("status") == "started":
                 try:
                     self.counter += 1
                     self.send({"id": self.counter, "method": "turn/interrupt", "params": {"threadId": thread, "turnId": turn_id}})
@@ -368,11 +817,19 @@ class Codex:
                         self.incoming(min(0.1, drain_end-time.monotonic()))
                 except (OSError, Fatal):
                     self.usage.uncertain.append("transport unavailable during cancellation drain")
+            if row["status"] == "started":
+                row["status"] = "failed"
             row.update(error=str(exc))
-            if not row.get("usage_observed_after_last_message"):
-                self.missing_turns.append({"thread_id": thread, "turn_id": turn_id, "reason": "failed/incomplete turn; inspect retained transport"})
+            if not row.get("usage_observed_after_last_message") and not any(
+                missing.get("turn_id") == turn_id and missing.get("thread_id") == thread
+                for missing in self.missing_turns
+            ):
+                self.missing_turns.append({"thread_id": thread, "turn_id": turn_id,
+                    "reason": "failed/incomplete turn; inspect retained transport"})
             raise
         finally:
+            if stream_log is not None:
+                stream_log.close()
             save_json(folder / "result.json", row)
             with (self.artifacts / "coverage.jsonl").open("a") as journal:
                 journal.write(json.dumps({"turn_id": turn_id, "label": label,
@@ -381,14 +838,18 @@ class Codex:
             self.active = None
 
     def report(self):
+        self.refresh_native_usage(force=True)
+        native = {thread: reader.report() for thread, reader in getattr(self, "native_usage", {}).items()}
+        native_complete = all(not value["errors"] and not value["missing_compactions"] for value in native.values())
         child = self.child_report(force=True)
         return {**self.usage.report(), "turns": self.turns, "unpriced_or_incomplete_turns": self.missing_turns,
+                "native_usage": native,
                 "parent_observed_raw_tokens": self.usage.raw, "nested": child,
                 "observed_raw_tokens": self.usage.raw+child["observed_raw_tokens"],
                 "cached_input_tokens": self.usage.cached+child["cached_input_tokens"],
                 "measurement_complete": (not self.missing_turns and not self.usage.uncertain and bool(self.turns)
-                                         and child["measurement_complete"]),
-                "qualification": "parent per-turn last-message coverage plus owned native child lifecycle/model/counters; not a proof that every internal response was priced"}
+                                         and native_complete and child["measurement_complete"]),
+                "qualification": "parent response coverage with owned native compaction receipts, plus owned native child lifecycle/model/counters; not a proof that every internal response was priced"}
 
     def close(self):
         if self.process is not None and self.process.poll() is None:
@@ -522,20 +983,19 @@ def pi_usage_tokens(value):
     return inputs + reads + writes, outputs, reads
 
 
-class Pi:
+class Pi(ChildAccounting):
     transport = "pi-rpc-stdio"
 
-    def __init__(self, repo, artifacts, model, effort, deadline, max_raw, max_turns, executable="pi", *, require_git_write=False):
-        self.repo, self.artifacts = Path(repo), Path(artifacts)
+    def __init__(self, repo, artifacts, model, effort, deadline, max_raw, max_turns, executable="pi", *, require_git_write=False, codex_executable="codex"):
+        self.repo, self.artifacts = Path(repo).resolve(), Path(artifacts).resolve()
         self.artifacts.mkdir(parents=True, exist_ok=False)
         self.deadline, self.max_raw, self.max_turns = deadline, max_raw, max_turns
-        self.model, self.effort = model, effort
+        self.model, self.effort = model or "gpt-5.5", effort
         self.usage, self.turns, self.missing_turns = Usage(), [], []
         self.threads = {}
         self.thread_counter = 0
         self.log = (self.artifacts / "transport.jsonl").open("x")
         self.stderr = (self.artifacts / "stderr.txt").open("x")
-        self.command_env = clean_env()
         self.sessions_dir = self.artifacts / "sessions"
         self.sessions_dir.mkdir(parents=True, exist_ok=True)
         if os.environ.get("AGENT_LAB_CHILD") == "1":
@@ -545,6 +1005,13 @@ class Pi:
             raise ValueError(f"Pi executable not found: {executable}")
         self.executable = str(Path(resolved).absolute())
         try:
+            self.commands = CommandEnvironment(self.repo, self.artifacts / "commands", self.model, effort,
+                                               codex_executable, deadline=deadline)
+            self.command_env = self.commands.env
+            self.nested = NestedUsage(self.repo, self.model, effort)
+            self.parent_threads = set()
+            self.sandbox = PiSandbox(self.repo, self.commands.executable, self.executable,
+                                     execution=self.commands.sandbox)
             self._probe()
             if require_git_write:
                 self.verify_git_write()
@@ -553,104 +1020,69 @@ class Pi:
             raise
 
     def _probe(self):
-        version = subprocess.check_output([self.executable, "--version"], text=True, env=self.command_env).strip()
-        auth = "default"
-        probe = subprocess.Popen(
-            [self.executable, "--mode", "rpc", "--approve", "--no-session"],
-            cwd=self.repo,
-            env=self.command_env,
-            stdin=subprocess.PIPE,
-            stdout=subprocess.PIPE,
-            stderr=self.stderr,
-            text=True,
-            bufsize=1,
-            start_new_session=True
-        )
+        version = subprocess.check_output([self.executable, "--version"], text=True, env=self.command_env, timeout=10).strip()
+        probe = self.new_thread("probe", writable=False, no_session=True)
         try:
-            probe.stdin.write(json.dumps({"id": "probe-state", "type": "get_state"}) + "\n")
-            probe.stdin.flush()
-            line = probe.stdout.readline()
-            probe_state = json.loads(line) if line else {}
-            data = probe_state.get("data") or {}
-            model_info = data.get("model") or {}
-            if not self.model:
-                self.model = model_info.get("id") or "default"
-            auth = model_info.get("provider") or auth
+            self.prepare_turn(probe, False)
         finally:
-            if probe.stdin is not None:
-                try:
-                    probe.stdin.close()
-                except Exception:
-                    pass
-            if probe.poll() is None:
-                try:
-                    probe.terminate()
-                    probe.wait(timeout=2)
-                except (OSError, subprocess.TimeoutExpired):
-                    probe.kill()
-            if probe.stdout is not None:
-                try:
-                    probe.stdout.close()
-                except Exception:
-                    pass
+            probe.close()
+        controls = {"pi_version": version, "model": self.model, "effort": self.effort,
+                    "auth": "openai-codex", "sandbox": "codex-native-tools-v1",
+                    "execution_policy": EXECUTION_POLICY,
+                    "nested_policy": "same-model-subscription-supervised-native-history-v2"}
         self.identity = {
-            "pi_version": version,
+            **controls,
             "harness": "pi",
-            "auth": auth,
-            "model": self.model,
-            "effort": self.effort,
+            "codex_version": subprocess.check_output([self.commands.executable, "--version"], text=True, env=clean_env(), timeout=10).strip(),
             "usage_accounting": "pi-session-totals-with-cache-v2",
-            "effective_config_sha256": hashlib.sha256(json.dumps({
-                "pi_version": version, "model": self.model, "effort": self.effort, "auth": auth
-            }, sort_keys=True).encode()).hexdigest(),
+            "effective_config_sha256": hashlib.sha256(json.dumps(controls, sort_keys=True).encode()).hexdigest(),
         }
         save_json(self.artifacts / "provider.json", self.identity)
 
     def verify_git_write(self):
-        proc = subprocess.Popen(
-            [self.executable, "--mode", "rpc", "--approve", "--no-session"],
-            cwd=self.repo,
-            env=self.command_env,
-            stdin=subprocess.PIPE,
-            stdout=subprocess.PIPE,
-            stderr=self.stderr,
-            text=True,
-            bufsize=1,
-            start_new_session=True
-        )
-        try:
-            req = {"id": "git-preflight", "type": "bash", "command": "git update-index --refresh"}
-            proc.stdin.write(json.dumps(req) + "\n")
-            proc.stdin.flush()
-            receipt = {}
-            while line := proc.stdout.readline():
-                try:
-                    msg = json.loads(line)
-                except json.JSONDecodeError:
-                    continue
-                if msg.get("id") == "git-preflight" and msg.get("type") == "response":
-                    receipt = msg.get("data", {})
-                    break
-            save_json(self.artifacts / "git-write-preflight.json", {"request": req, "response": receipt})
-            if receipt.get("exitCode") != 0:
-                raise Fatal("Git-write preflight failed before model generation: " + str(receipt.get("output", "unknown error")))
-        finally:
-            if proc.stdin is not None:
-                try:
-                    proc.stdin.close()
-                except Exception:
-                    pass
-            if proc.poll() is None:
-                try:
-                    proc.terminate()
-                    proc.wait(timeout=2)
-                except (OSError, subprocess.TimeoutExpired):
-                    proc.kill()
-            if proc.stdout is not None:
-                try:
-                    proc.stdout.close()
-                except Exception:
-                    pass
+        argv = self.sandbox.command(True, ["git", "update-index", "--refresh"])
+        receipt = subprocess.run(argv, cwd=self.repo, env=self.command_env, text=True, capture_output=True,
+                                 timeout=max(0.001, min(10, self.deadline-time.monotonic())))
+        save_json(self.artifacts / "git-write-preflight.json", {"request": argv,
+                  "response": {"exitCode": receipt.returncode, "stdout": receipt.stdout, "stderr": receipt.stderr}})
+        if receipt.returncode != 0:
+            raise Fatal("Git-write preflight failed before model generation: " + receipt.stderr)
+
+    def launch_arguments(self):
+        return [self.executable, "--mode", "rpc", "--approve", "--provider", "openai-codex",
+                "--model", self.model, "--thinking", self.effort, "--no-extensions",
+                "--extension", str(PiSandbox.extension), "--tools", "read,bash,edit,write"]
+
+    def validate_state(self, response):
+        data = response.get("data") or {}
+        model = data.get("model") or {}
+        if (not response.get("success") or model.get("provider") != "openai-codex"
+                or model.get("id") != self.model or data.get("thinkingLevel") != self.effort):
+            raise Fatal("Pi effective provider/model/effort differs from the benchmark; no generation")
+
+    def new_thread(self, thread_id, writable=False, no_session=False):
+        policy = self.artifacts / (thread_id + "-sandbox.json")
+        self.sandbox.configure(policy, writable, self.deadline)
+        argv = self.launch_arguments()
+        if no_session:
+            argv += ["--no-session"]
+        else:
+            session_dir = self.sessions_dir / thread_id
+            session_dir.mkdir()
+            argv += ["--session-dir", str(session_dir)]
+        env = {**self.command_env, "AGENT_LAB_PI_MODULE": self.sandbox.module,
+               "AGENT_LAB_PI_POLICY": str(policy)}
+        th = PiThread(thread_id, argv, self.repo, env, self.stderr, self.record)
+        th.policy = policy
+        return th
+
+    def prepare_turn(self, thread, writable):
+        state = thread.rpc({"type": "get_state"}, timeout=max(0.001, min(30, self.deadline-time.monotonic())))
+        self.validate_state(state)
+        ready = thread.policy.with_suffix(".json.ready")
+        if not ready.is_file() or json.loads(ready.read_text()).get("pid") != thread.process.pid:
+            raise Fatal("Pi sandbox extension did not load; refusing unsandboxed generation")
+        self.sandbox.configure(thread.policy, writable, self.deadline)
 
     def record(self, direction, event):
         self.log.write(json.dumps({"time": time.time(), "direction": direction, "event": event}) + "\n")
@@ -659,25 +1091,19 @@ class Pi:
     def start_thread(self, writable=False):
         self.thread_counter += 1
         thread_id = f"pi-thread-{self.thread_counter}"
-        session_dir = self.sessions_dir / thread_id
-        session_dir.mkdir(parents=True, exist_ok=True)
-        argv = [self.executable, "--mode", "rpc", "--approve", "--session-dir", str(session_dir)]
-        if self.model:
-            argv.extend(["--model", self.model])
-        if self.effort:
-            argv.extend(["--thinking", self.effort])
-        th = PiThread(thread_id, argv, self.repo, self.command_env, self.stderr, self.record)
+        th = self.new_thread(thread_id, writable)
         self.threads[thread_id] = th
+        self.prepare_turn(th, writable)
         return thread_id
 
-    def observed_raw(self):
-        return self.usage.raw
-
     def turn(self, thread, prompt, label, interrupt=False, host_request=False, writable=False):
+        self.settle_children()
         if len(self.turns) >= self.max_turns:
             raise Fatal("workflow turn limit reached")
-        if time.monotonic() >= self.deadline or self.observed_raw() >= self.max_raw:
-            raise Fatal("workflow wall-time/observed-token limit reached")
+        error = self.budget_error()
+        if error:
+            raise error
+        self.prepare_turn(self.threads[thread], writable)
         folder = self.artifacts / f"turn-{len(self.turns)+1:04d}"
         folder.mkdir()
         (folder / "prompt.txt").write_text(prompt)
@@ -691,6 +1117,10 @@ class Pi:
         selected, replies, interrupted = None, [], None
         priced, last_output, last_usage = False, 0.0, 0.0
         stop_reason, stop_at = None, None
+        stop_budget = None
+        settlement = ReviewSettlement()
+        last_response_activity = 0.0
+        buffered = None
         try:
             th.send({"id": turn_id, "type": "prompt", "message": prompt})
             while True:
@@ -698,14 +1128,21 @@ class Pi:
                 if stop_at is not None and now - stop_at > 15:
                     raise Fatal("interrupted turn did not close within 15 seconds; retained with unknown tail")
                 if interrupted is None:
-                    budget = now >= self.deadline or self.observed_raw() >= self.max_raw
-                    reason = "budget" if budget else gate.reason(now)
+                    stop_budget = self.budget_error()
+                    reason = "budget" if stop_budget else gate.reason(now)
+                    if stop_budget:
+                        covered = priced and last_usage >= max(last_output, last_response_activity)
+                        if settlement.eligible(stop_budget) and covered and buffered is None:
+                            buffered = th.incoming(0)
+                        if settlement.wait(stop_budget, covered and buffered is None, now):
+                            reason = None
                     if reason:
                         th.send({"type": "abort"})
                         interrupted, stop_at = reason, now
-                        if budget:
-                            stop_reason = "workflow wall-time/observed-token limit reached"
-                message = th.incoming(0.1)
+                        if stop_budget:
+                            stop_reason = str(stop_budget)
+                message = buffered if buffered is not None else th.incoming(0.1)
+                buffered = None
                 if message is None:
                     continue
                 if "_transport_error" in message:
@@ -715,6 +1152,10 @@ class Pi:
                 if message.get("type") == "response" and message.get("command") == "prompt" and message.get("id") == turn_id:
                     if not message.get("success"):
                         raise Fatal(f"prompt failed: {message.get('error')}")
+                if (message.get("type") in ("message_start", "message_update")
+                        and message.get("message", {}).get("role", "assistant") == "assistant"):
+                    last_response_activity = now
+                    gate.fresh_usage = False
                 # Streaming snapshots reset for every response; they are not
                 # cumulative conversation counters or completed usage records.
                 if message.get("type") in ("message_end", "turn_end"):
@@ -747,6 +1188,7 @@ class Pi:
                     row.update(status="interrupted" if interrupted else "completed", interrupt_reason=interrupted)
                     break
 
+            before_stats = self.usage.totals.get(thread, (0, 0, 0))
             stats = th.rpc({"type": "get_session_stats"}, timeout=5)
             if not isinstance(stats, dict) or not stats.get("success") or not isinstance(stats.get("data"), dict):
                 raise Fatal("Pi session usage could not be retrieved")
@@ -757,20 +1199,40 @@ class Pi:
                 raise Fatal("Pi session usage does not cover the observed response totals")
             if sum(totals[:2]) <= before_raw:
                 raise Fatal("Pi session usage did not advance for this turn")
-            priced, last_usage = True, time.monotonic()
-
-            if not priced or last_output > last_usage:
+            if totals[:2] != before_stats[:2]:
+                priced, last_usage = True, time.monotonic()
+            covered = priced and last_usage >= max(last_output, last_response_activity)
+            if not covered:
                 self.missing_turns.append({"thread_id": thread, "turn_id": turn_id, "reason": "no fresh usage covering the last delivered message"})
             final = selected if selected is not None else next((text for text in reversed(replies) if text.strip()), "")
             (folder / "reply.txt").write_text(final)
             save_json(folder / "messages.json", replies)
-            row["usage_observed_after_last_message"] = priced and last_usage >= last_output
+            row["usage_observed_after_last_message"] = covered
+            stop_budget = self.budget_error()
+            if settlement.error is not None:
+                if stop_budget and not settlement.eligible(stop_budget):
+                    settlement.outcome = "hard_limit"
+                stop_budget = settlement.resolve(stop_budget)
+                settlement.record(row, time.monotonic())
+            if stop_budget:
+                if isinstance(stop_budget, WorkLimitReached):
+                    row["work_limit"] = stop_budget.signal
+                    if (isinstance(stop_budget, ReviewConclusionRequested)
+                            and row["status"] == "completed" and row["usage_observed_after_last_message"]):
+                        stop_budget.completed_reply = final
+                raise stop_budget
             if stop_reason:
                 raise Fatal(stop_reason)
+            if not covered:
+                raise Fatal("incomplete Pi token measurement; no further generation")
             if not final:
                 raise Fatal("turn supplied no executable request or final reply")
+            self.settle_children()
             return final
         except BaseException as exc:
+            if settlement.error is not None and "work_limit_settlement" not in row:
+                settlement.outcome = settlement.outcome or "provider_error"
+                settlement.record(row, time.monotonic())
             if interrupted is None and row.get("status") == "started":
                 try:
                     th.send({"type": "abort"})
@@ -780,7 +1242,10 @@ class Pi:
                 except (OSError, Fatal):
                     self.usage.uncertain.append("transport unavailable during cancellation drain")
             row.update(error=str(exc))
-            if not row.get("usage_observed_after_last_message"):
+            if not row.get("usage_observed_after_last_message") and not any(
+                missing.get("turn_id") == turn_id and missing.get("thread_id") == thread
+                for missing in self.missing_turns
+            ):
                 self.missing_turns.append({"thread_id": thread, "turn_id": turn_id, "reason": "failed/incomplete turn; inspect retained transport"})
             raise
         finally:
@@ -791,21 +1256,25 @@ class Pi:
                     "usage_observed_after_last_message": row.get("usage_observed_after_last_message", False)}) + "\n")
 
     def report(self):
+        child = self.child_report(force=True)
         return {
             **self.usage.report(),
             "turns": self.turns,
             "unpriced_or_incomplete_turns": self.missing_turns,
             "parent_observed_raw_tokens": self.usage.raw,
-            "nested": {"observed_raw_tokens": 0, "cached_input_tokens": 0, "measurement_complete": True, "errors": [], "incomplete": []},
-            "observed_raw_tokens": self.usage.raw,
-            "cached_input_tokens": self.usage.cached,
-            "measurement_complete": (not self.missing_turns and not self.usage.uncertain and bool(self.turns)),
-            "qualification": "Pi finalized-message usage reconciled with session totals; cache read/write included in input"
+            "nested": child,
+            "observed_raw_tokens": self.usage.raw + child["observed_raw_tokens"],
+            "cached_input_tokens": self.usage.cached + child["cached_input_tokens"],
+            "measurement_complete": (not self.missing_turns and not self.usage.uncertain and bool(self.turns)
+                                     and child["measurement_complete"]),
+            "qualification": "Pi finalized-message/session usage plus owned native child lifecycle/model/counters; cache read/write included in input"
         }
 
     def close(self):
         for th in self.threads.values():
             th.close()
+        if hasattr(self, "commands"):
+            self.commands.close()
         if hasattr(self, "log") and not self.log.closed:
             self.log.close()
         if hasattr(self, "stderr") and not self.stderr.closed:
