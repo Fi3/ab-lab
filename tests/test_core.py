@@ -7,8 +7,8 @@ import unittest
 from unittest.mock import patch
 
 from lab.config import FACTORS, load_benchmark, settings, policy_blocks
-from lab.host import Host, Fatal, Rejected, parse_operations, plan_edit, refresh_text
-from lab.provider import Codex, Usage, InterruptGate, clean_env
+from lab.host import Host, Fatal, Rejected, plan_edit, refresh_text
+from lab.provider import Codex, Usage, clean_env
 
 
 def repo_at(path):
@@ -35,7 +35,7 @@ class ConfigurationTests(unittest.TestCase):
         for config in ({"C99": True}, {"C08": "off"}, {"C17": False}):
             with self.assertRaises(ValueError):
                 settings(config)
-        settings({"C17": False, "C08": False, "C25": False})
+        settings({"C17": False, "C08": False})
 
     def test_arbitrary_number_of_features(self):
         with tempfile.TemporaryDirectory() as directory:
@@ -63,13 +63,6 @@ class HostTests(unittest.TestCase):
         with self.assertRaises(Rejected):
             plan_edit(self.repo, patch)
         self.assertEqual((self.repo / "source.py").read_text(), "first\nmiddle\nlast\n")
-
-    def test_mixed_operations_do_not_execute(self):
-        host = Host(self.repo, self.root / "host", "one", "implement", time.monotonic()+30, settings({}))
-        reply = host.consume("@standalone run -- true\n@standalone done")
-        self.assertIn("rejected", reply)
-        self.assertFalse(host.completed)
-        self.assertEqual(host.counter, 0)
 
     def test_read_then_conflict_has_compact_or_full_same_information(self):
         old = "\n".join(str(i) for i in range(1000)) + "\n"
@@ -127,19 +120,6 @@ class AccountingTests(unittest.TestCase):
                 "total": {"inputTokens": i, "outputTokens": 10},
                 "last": {"inputTokens": i, "outputTokens": 10}}})
         self.assertTrue(usage.uncertain)
-
-    def test_interrupt_requires_usage_and_disabled_waits(self):
-        enabled = InterruptGate(True)
-        enabled.directive(10)
-        self.assertIsNone(enabled.reason(10.5))
-        self.assertIsNone(enabled.reason(11.1))
-        enabled = InterruptGate(True)
-        enabled.directive(10)
-        enabled.fresh_usage = True
-        self.assertEqual(enabled.reason(10.1), "usage_received")
-        disabled = InterruptGate(False)
-        disabled.directive(10)
-        self.assertIsNone(disabled.reason(100))
 
     def test_api_keys_and_endpoints_are_not_inherited(self):
         env = clean_env({"PATH": "/bin", "OPENAI_API_KEY": "secret", "OPENAI_BASE_URL": "elsewhere", "CODEX_API_KEY": "secret"})

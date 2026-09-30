@@ -15,7 +15,7 @@ class ReviewPermissionTests(unittest.TestCase):
         repo = repo_at(root / "input")
         benchmark = {"name": "review-checks", "repo": str(repo), "revision": "HEAD",
             "features": [{"id": "one", "request": "create one"}, {"id": "two", "request": "create two"}],
-            "checks": ["true"], "instructions": "", "defer_documentation": True}
+            "checks": ["true"]}
         return run(benchmark, settings({}), root / "run", 30, 10000, 30, backend=backend)
 
     def test_review_can_write_build_outputs_but_author_inspection_stays_read_only(self):

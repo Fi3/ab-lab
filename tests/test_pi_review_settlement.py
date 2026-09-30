@@ -9,7 +9,7 @@ import unittest
 from unittest.mock import patch
 
 from lab.host import Fatal
-from lab.loops import FeatureProgress, ReviewConclusionRequested, WorkLimitReached, loop_policy
+from lab.loops import FeatureProgress, WorkLimitReached, loop_policy
 from lab.provider import Pi, Usage
 from test_review_settlement import BEFORE, AFTER
 
@@ -29,7 +29,7 @@ def message_end(values=tuple(a-b for a,b in zip(AFTER, BEFORE)), text=""):
 
 
 class PiReviewSettlementTests(unittest.TestCase):
-    def provider(self, scheduled, *, concluding=True, stats=None):
+    def provider(self, scheduled, *, review_seconds=90, stats=None):
         directory = tempfile.TemporaryDirectory()
         self.addCleanup(directory.cleanup)
         self.now = 1000.0
@@ -47,8 +47,8 @@ class PiReviewSettlementTests(unittest.TestCase):
         provider.sent, provider.requests = [], []
         self.events = deque((1000+at, copy.deepcopy(event)) for at,event in scheduled)
         self.start = self.now
-        progress = FeatureProgress({"id": "checkpoint_5"}, loop_policy(), 0)
-        provider.work_limits = progress.limits(sum(BEFORE[:2]), reviewing=True, concluding=concluding)
+        progress = FeatureProgress({"id": "checkpoint_5"}, loop_policy({"max_review_seconds": review_seconds}), 0)
+        provider.work_limits = progress.limits(sum(BEFORE[:2]), reviewing=True)
 
         def send(event):
             provider.sent.append((self.now-self.start,event))
@@ -72,12 +72,14 @@ class PiReviewSettlementTests(unittest.TestCase):
             self.assertEqual(event["type"],"get_session_stats")
             values = stats if stats is not None else provider.usage.totals["pi-review"]
             return {"success":True,"data":{"tokens":pi_tokens(values)}}
-        provider.threads={"pi-review":SimpleNamespace(send=send,incoming=incoming,rpc=rpc)}
+        policy = provider.artifacts / "pi-review-sandbox.json"
+        policy.write_text("{}")
+        provider.threads={"pi-review":SimpleNamespace(send=send,incoming=incoming,rpc=rpc,policy=policy)}
         return provider
 
     def stop(self, provider, expected=WorkLimitReached):
         with self.assertRaises(expected) as stopped:
-            provider.turn("pi-review","Conclude from existing evidence.","checkpoint_5-review-1-conclude",writable=True)
+            provider.turn("pi-review","Review the assigned requirements.","checkpoint_5-review-1",writable=True)
         self.assertEqual(sum(v["type"]=="prompt" for _,v in provider.sent),1)
         self.assertFalse((provider.artifacts/"turn-0001/host-operation.txt").exists())
         return stopped.exception
@@ -96,7 +98,7 @@ class PiReviewSettlementTests(unittest.TestCase):
     def test_silent_first_response_waits_for_finalized_usage_before_abort(self):
         provider=self.provider([(1,message_start()),(130,message_end())])
         error=self.stop(provider)
-        self.assertEqual(error.signal["reason"],"review_wrapup_time_limit")
+        self.assertEqual(error.signal["reason"],"review_time_limit")
         self.assertGreaterEqual(self.aborts(provider)[0],130)
         self.assertLess(self.aborts(provider)[0],131)
         self.assertTrue(provider.report()["measurement_complete"])
@@ -104,11 +106,11 @@ class PiReviewSettlementTests(unittest.TestCase):
         self.assertEqual(json.loads((provider.artifacts/"turn-0001/messages.json").read_text()),[])
         self.settlement(provider,"priced_boundary")
 
-    def test_priced_natural_conclusion_remains_stopped_without_approval(self):
+    def test_priced_natural_verdict_remains_stopped_without_approval(self):
         provider=self.provider([(1,message_start()),(130,message_end(text="NO_FINDINGS")),
                                 (130,{"type":"agent_settled"})])
         error=self.stop(provider)
-        self.assertNotIsInstance(error,ReviewConclusionRequested)
+        self.assertFalse(hasattr(error,"completed_reply"))
         self.assertFalse(self.aborts(provider))
         self.assertEqual(provider.turns[0]["status"],"completed")
         self.assertTrue(provider.report()["measurement_complete"])
@@ -172,17 +174,17 @@ class PiReviewSettlementTests(unittest.TestCase):
                 else:provider.work_limits[-2]["limit"]=1
                 error=self.stop(provider,Fatal)
                 if kind=="global":self.assertNotIsInstance(error,WorkLimitReached)
-                else:self.assertEqual(error.signal["reason"],"feature_token_limit" if kind=="feature" else "review_wrapup_token_limit")
+                else:self.assertEqual(error.signal["reason"],"feature_token_limit" if kind=="feature" else "review_token_limit")
                 self.assertGreaterEqual(self.aborts(provider)[0],100)
                 self.assertLess(self.aborts(provider)[0],100.2)
                 self.assertTrue(provider.report()["measurement_complete"])
                 self.settlement(provider,"hard_limit")
 
     def test_exploration_elapsed_threshold_uses_same_receipt_settlement(self):
-        provider=self.provider([(1,message_start()),(330,message_end())],concluding=False)
-        error=self.stop(provider,ReviewConclusionRequested)
-        self.assertEqual(error.signal["reason"],"review_time_threshold")
-        self.assertIsNone(error.completed_reply)
+        provider=self.provider([(1,message_start()),(330,message_end())],review_seconds=300)
+        error=self.stop(provider,WorkLimitReached)
+        self.assertEqual(error.signal["reason"],"review_time_limit")
+        self.assertFalse(hasattr(error, "completed_reply"))
         self.assertGreaterEqual(self.aborts(provider)[0],330)
         self.assertTrue(provider.report()["measurement_complete"])
         self.settlement(provider,"priced_boundary",limit=300)

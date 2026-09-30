@@ -15,6 +15,7 @@ from unittest.mock import patch
 from lab.config import settings
 from lab.workflow import run
 from lab.host import Host, git
+from lab.host_tools import HostTools
 from lab.nested import CommandEnvironment
 from test_core import repo_at
 from test_workflow import FakeCodex
@@ -106,9 +107,11 @@ class ExecutionPermissionTests(unittest.TestCase):
             ])
             host = Host(repo, root / 'host', 'probe', 'author', time.monotonic()+20, settings({}),
                 command_env=commands.env, command_argv=lambda argv: commands.sandbox.command(True, argv))
-            host.command([], shlex.join([sys.executable, '-c', probe]))
-            receipt = json.loads((root / 'host/operation-0001/receipt.json').read_text())
-            self.assertEqual(receipt['exit_code'], 0, (root / 'host/operation-0001/stderr.txt').read_text())
+            reply = HostTools(host).execute('host_run', {'command': shlex.join([sys.executable, '-c', probe])}, 'sandbox-check')
+            self.assertTrue(reply['success'], reply)
+            folder = next((root / 'host/tools').glob('call-*'))
+            receipt = json.loads((folder / 'receipt.json').read_text())
+            self.assertEqual(receipt['exit_code'], 0, (folder / 'stderr.txt').read_text())
             self.assertEqual((repo / 'build/result').read_text(), 'ok')
             self.assertFalse((root / 'outside').exists())
             denied = subprocess.run(commands.sandbox.command(False, [sys.executable, '-c',
@@ -128,9 +131,8 @@ class ExecutionPermissionTests(unittest.TestCase):
                         *argv]
 
             def turn(self, thread, prompt, label, **options):
-                if label == 'one-implement' and self.authors.get(label) == 1:
-                    self.authors[label] += 1
-                    return '@standalone run -- test "$LAB_WRAPPED_TEST" = yes'
+                if label == 'one-implement':
+                    self.tool_call(thread, 'host_run', {'command': 'test "$LAB_WRAPPED_TEST" = yes'}, 'wrapper-check')
                 return super().turn(thread, prompt, label, **options)
 
         with tempfile.TemporaryDirectory() as directory:
@@ -138,11 +140,11 @@ class ExecutionPermissionTests(unittest.TestCase):
             repo = repo_at(root / 'input')
             benchmark = {'name': 'permissions', 'repo': str(repo), 'revision': 'HEAD',
                 'features': [{'id': 'one', 'request': 'create one'}, {'id': 'two', 'request': 'create two'}],
-                'checks': ['test "$LAB_WRAPPED_TEST" = yes'], 'instructions': '', 'defer_documentation': True}
+                'checks': ['test "$LAB_WRAPPED_TEST" = yes']}
             result = run(benchmark, settings({}), root / 'run', 30, 10000, 30, backend=Wrapped)
             self.assertEqual(result['status'], 'passed', result)
             self.assertEqual(Wrapped.wrapped, [['/bin/sh', '-c', benchmark['checks'][0]]] * 2)
-            receipts = list((root / 'run/one-host').glob('operation-*/receipt.json'))
+            receipts = list((root / 'run/one-host').glob('tools/call-*/receipt.json'))
             commands = [json.loads(path.read_text()) for path in receipts if 'exit_code' in json.loads(path.read_text())]
             self.assertEqual(len(commands), 1)
             self.assertEqual(commands[0]['exit_code'], 0)

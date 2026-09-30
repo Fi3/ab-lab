@@ -43,10 +43,14 @@ class FakePi:
         self.max_turns = max_turns
         self.require_git_write = require_git_write
         self.threads = 0
+        self.handlers = {}
 
-    def start_thread(self, writable=False):
+    def start_thread(self, writable=False, tools=None, tool_handler=None):
         self.threads += 1
-        return f"fake-pi-thread-{self.threads}"
+        thread = f"fake-pi-thread-{self.threads}"
+        if tools:
+            self.handlers[thread] = tool_handler
+        return thread
 
     def report(self):
         return {
@@ -68,19 +72,22 @@ class FakePi:
         folder.mkdir(parents=True, exist_ok=True)
         (folder / "prompt.txt").write_text(prompt)
         if label.endswith("-implement"):
-            n = self.authors.get(label, 0)
-            self.authors[label] = n+1
-            if n == 0:
-                name = label.removesuffix("-implement")
-                reply = f"@standalone edit implement {name}\n*** Begin Patch\n*** Add File: {name}.py\n+value = 1\n*** End Patch\n@standalone end"
-            else:
-                reply = "@standalone done"
+            name = label.removesuffix("-implement")
+            result = self.handlers[thread]("host_edit", {
+                "reason": f"implement {name}",
+                "patch": f"*** Begin Patch\n*** Add File: {name}.py\n+value = 1\n*** End Patch\n",
+            }, f"{thread}:{label}:edit")
+            assert result["success"], result
+            reply = "Implemented."
         elif "-review-" in label:
             reply = "FINDINGS\n- [P2] Change one.py value to 2" if label == "one-review-1" else "NO_FINDINGS"
         elif "-fix-" in label:
-            n = self.fixes.get(label, 0)
-            self.fixes[label] = n+1
-            reply = ("@standalone edit resolve review\n*** Begin Patch\n*** Update File: one.py\n@@\n-value = 1\n+value = 2\n*** End Patch\n@standalone end" if n == 0 else "@standalone done")
+            result = self.handlers[thread]("host_edit", {
+                "reason": "resolve review",
+                "patch": "*** Begin Patch\n*** Update File: one.py\n@@\n-value = 1\n+value = 2\n*** End Patch\n",
+            }, f"{thread}:{label}:edit")
+            assert result["success"], result
+            reply = "Fixed."
         elif label == "integration-plan":
             reply = "One final commit for each feature, with its tests and repairs."
         elif label == "integration-accept":
@@ -210,9 +217,9 @@ class PiWorkflowIntegrationTests(unittest.TestCase):
 
 
 class PiProviderStreamTests(unittest.TestCase):
-    def test_review_threshold_preserves_completed_verdict_but_not_interrupted_text(self):
-        from lab.loops import ReviewConclusionRequested
-        for threshold, completed_reply in ((100, "NO_FINDINGS"), (50, None)):
+    def test_review_limit_never_returns_an_approval_after_exhaustion(self):
+        from lab.loops import WorkLimitReached
+        for threshold in (100, 50):
             with self.subTest(threshold=threshold):
                 p = self.fake_pi_provider([
                     {"type": "message_end", "message": {"role": "assistant",
@@ -220,11 +227,11 @@ class PiProviderStreamTests(unittest.TestCase):
                         "usage": {"input": 40, "output": 10, "cacheRead": 0}}},
                     {"type": "agent_settled"},
                 ])
-                p.work_limits = [{"reason": "review_token_threshold", "metric": "observed_raw_tokens",
-                                  "start": 0, "limit": threshold, "action": "conclude_review"}]
-                with self.assertRaises(ReviewConclusionRequested) as stopped:
+                p.work_limits = [{"reason": "review_token_limit", "metric": "observed_raw_tokens",
+                                  "start": 0, "limit": threshold}]
+                with self.assertRaises(WorkLimitReached) as stopped:
                     p.turn("t1", "review", "review-1")
-                self.assertEqual(stopped.exception.completed_reply, completed_reply)
+                self.assertFalse(hasattr(stopped.exception, "completed_reply"))
                 self.assertEqual(p.usage.raw, 125)
                 self.assertTrue(p.report()["measurement_complete"])
 
@@ -232,7 +239,7 @@ class PiProviderStreamTests(unittest.TestCase):
         from lab.loops import WorkLimitReached
         p = self.fake_pi_provider([
             {"type": "message_end", "message": {"role": "assistant",
-                "content": [{"type": "text", "text": "@standalone run -- never_execute"}],
+                "content": [{"type": "text", "text": "Implementation in progress."}],
                 "usage": {"input": 40, "output": 10, "cacheRead": 0}}},
             {"type": "agent_settled"},
         ])
@@ -260,6 +267,8 @@ class PiProviderStreamTests(unittest.TestCase):
         # Mock thread
         th = MagicMock()
         th.thread_id = "t1"
+        th.policy = p.artifacts / "t1-sandbox.json"
+        th.policy.write_text("{}")
         sent_messages = []
         th.send = lambda msg: sent_messages.append(msg)
         th_events = deque(events)
@@ -303,28 +312,6 @@ class PiProviderStreamTests(unittest.TestCase):
         rep = p.report()
         self.assertTrue(rep["measurement_complete"])
         self.assertEqual(rep["observed_raw_tokens"], 125)
-
-    def test_turn_interruption_at_host_request(self):
-        events = [
-            {"id": "turn-0001", "type": "response", "command": "prompt", "success": True},
-            {"type": "agent_start"},
-            {"type": "turn_start"},
-            {"type": "message_end", "message": {
-                "role": "assistant",
-                "content": [{"type": "text", "text": '@standalone read "foo.py"'}],
-                "usage": {"input": 40, "output": 10, "cacheRead": 0}
-            }},
-            # After abort is sent:
-            {"type": "agent_settled"}
-        ]
-        p = self.fake_pi_provider(events)
-        reply = p.turn("t1", "read please", "author-implement", interrupt=True, host_request=True)
-        self.assertEqual(reply, '@standalone read "foo.py"')
-        self.assertEqual(p.turns[0]["status"], "interrupted")
-        self.assertEqual(p.turns[0]["interrupt_reason"], "usage_received")
-        # Check abort was sent
-        aborts = [m for m in p.sent_messages if m.get("type") == "abort"]
-        self.assertTrue(len(aborts) >= 1)
 
     def test_turn_limit_reached_raises_fatal(self):
         p = self.fake_pi_provider([])

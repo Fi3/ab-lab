@@ -29,10 +29,10 @@ out.mkdir()
 index = int(out.name.split('-')[-1])
 start = time.time()
 (out/'started').touch()
-time.sleep(10 if config['benchmark']['instructions'] == 'slow' else (0.3 if index == 1 else 0.15))
-if config['benchmark']['instructions'] == 'crash-middle' and index == 2:
+time.sleep(10 if config['benchmark']['name'] == 'slow' else (0.3 if index == 1 else 0.15))
+if config['benchmark']['name'] == 'crash-middle' and index == 2:
     sys.exit(7)
-failed = config['benchmark']['instructions'] == 'fail-middle' and index == 2
+failed = config['benchmark']['name'] == 'fail-middle' and index == 2
 result = {'status': 'failed' if failed else 'passed', 'output': str(out),
           'factors': config['factors'], 'usage': {'observed_raw_tokens': index*100,
           'measurement_complete': True}, 'start': start, 'finish': time.time(),
@@ -77,7 +77,7 @@ class BatchTests(unittest.TestCase):
 
     def test_failed_workflows_are_retained_without_replacement_or_lost_siblings(self):
         root, bench, command = self.setup_batch()
-        bench['instructions'] = 'fail-middle'
+        bench['name'] = 'fail-middle'
         result = self.execute(bench, root/'batch', command, repeat=3, parallel=3)
         self.assertEqual(result['status'], 'failed')
         self.assertEqual([r['status'] for r in result['results']], ['passed', 'failed', 'passed'])
@@ -86,7 +86,7 @@ class BatchTests(unittest.TestCase):
 
     def test_crash_without_result_is_reported_as_unknown_usage_not_zero(self):
         root, bench, command = self.setup_batch()
-        bench['instructions'] = 'crash-middle'
+        bench['name'] = 'crash-middle'
         result = self.execute(bench, root/'batch', command, repeat=3, parallel=2)
         row = result['results'][1]
         self.assertEqual(row['status'], 'failed')
@@ -140,7 +140,7 @@ class BatchTests(unittest.TestCase):
 
     def test_interrupt_stops_active_jobs_and_records_unstarted_repetitions(self):
         root, bench, command = self.setup_batch()
-        bench['instructions'] = 'slow'
+        bench['name'] = 'slow'
         program = root/'controller.py'
         program.write_text('from pathlib import Path\nfrom lab.batch import run_batch\n'
             +f'run_batch({bench!r}, {settings({})!r}, Path({str(root/"batch")!r}), 3, 1, '
@@ -214,7 +214,7 @@ class BatchCliTests(unittest.TestCase):
             arguments = ['lab', 'run', str(path), '--out', str(root/'batch'),
                 '--seconds', '100', '--max-raw', '10000', '--max-turns', '20',
                 '--parallel', '3', '--harness', 'pi', '--pi', 'custom-pi',
-                '--model', 'unchanged-model', '--effort', 'high', '--off', 'C08,C25',
+                '--model', 'unchanged-model', '--effort', 'high', '--off', 'C08,C20',
                 '--scb-check', '/checker', '--scb-seconds', '10']
             with patch('lab.__main__.run_batch', return_value={'status': 'passed'}) as batch:
                 with patch.object(sys, 'argv', arguments), contextlib.redirect_stdout(io.StringIO()):
@@ -226,7 +226,7 @@ class BatchCliTests(unittest.TestCase):
                 self.assertEqual(call.kwargs['executable'], 'custom-pi')
                 self.assertEqual(call.kwargs['scb_check'], '/checker')
                 self.assertFalse(call.args[1]['C08'])
-                self.assertFalse(call.args[1]['C25'])
+                self.assertFalse(call.args[1]['C20'])
                 with patch.object(sys, 'argv', arguments+['--repeat', '9']), contextlib.redirect_stdout(io.StringIO()):
                     self.assertEqual(main(), 0)
                 self.assertEqual(batch.call_args.args[3:5], (9, 3))

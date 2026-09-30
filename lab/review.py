@@ -71,21 +71,12 @@ def format_findings(findings):
 
 def review_instructions(priorities=DEFAULT_PRIORITIES):
     selected = ", ".join(normalize_priorities(priorities))
-    return f"""Assign each finding a priority based on demonstrated impact:
+    return f"""Assess the supplied requirements without adding new obligations. Give concrete evidence and impact for each finding.
+Assign priorities by demonstrated impact:
 P0: critical blocker requiring immediate correction.
 P1: high-impact defect that breaks essential required behavior.
 P2: concrete functional defect, regression, or substantial maintainability problem with explained impact.
 P3: low-impact nit, cosmetic preference, or optional improvement.
-For each finding identify the affected requirement or code behavior, a reproducer or concrete evidence, and the impact. Missing tests must cover a concrete behavioral risk; do not invent requirements or demand unspecified invalid-input handling. Significant duplication or complexity can be P2 when its maintenance impact is demonstrated.
-Report findings at all priorities. Only {selected} trigger repairs; all other priorities are advisory. Do not inflate a priority to make a finding block. Recheck earlier blocking findings and inspect repairs for regressions.
+Report all priorities; only {selected} require repairs. Recheck previous findings and repairs for regressions. Missing tests or documentation are findings only when required by the supplied task; explain any demonstrated functional or maintainability defect independently.
 Start with exactly one standalone marker NO_FINDINGS if there are no findings at any priority, otherwise FINDINGS. If you cannot reach a supported verdict, use INCOMPLETE_REVIEW followed by the specific missing evidence; an incomplete review is never approval.
 After FINDINGS, use one top-level bullet per finding in this exact format: - [P2] description. Use its actual P0/P1/P2/P3 label, indent continuation lines, and include no other prose. Advisory-only reviews must still use FINDINGS; the runner decides whether repairs are required."""
-
-
-def conclusion_prompt(priorities=DEFAULT_PRIORITIES):
-    return ("The runner reached the review exploration threshold. Conclude this same review now using "
-            "the evidence already collected. Do not start new tools, tests, searches, edits or delegation. "
-            "Return the concrete findings you have established, applying the unchanged requirements and "
-            "priorities. Do not approve because time or tokens are limited. If the available evidence "
-            "cannot support a verdict, return INCOMPLETE_REVIEW and explain what remains unverified.\n\n" +
-            review_instructions(priorities))

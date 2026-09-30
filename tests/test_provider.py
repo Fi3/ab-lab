@@ -8,7 +8,7 @@ from unittest.mock import patch
 
 from lab.provider import Codex, Usage
 from lab.host import Fatal
-from lab.loops import ReviewConclusionRequested, WorkLimitReached
+from lab.loops import WorkLimitReached
 from lab.sandbox import CommandSandbox
 
 
@@ -52,33 +52,23 @@ class StreamTests(unittest.TestCase):
         p.incoming = incoming
         return p
 
-    def test_interrupt_runs_after_exact_owned_message_and_counts_late_usage(self):
-        p = self.provider([message("@standalone run -- true"),
-                          price(40),
-                          {"method": "item/started", "params": {"threadId": "t", "turnId": "u", "item": {"type": "reasoning"}}},
-                          completed("interrupted"), price()])
-        text = p.turn("t", "request", "author", interrupt=True, host_request=True)
-        self.assertEqual(text, "@standalone run -- true")
-        self.assertEqual([v["method"] for v in p.sent], ["turn/interrupt"])
-        self.assertEqual(p.usage.raw, 110)
-        self.assertEqual(p.missing_turns, [])
-
-    def test_disabled_waits_for_natural_finish_keeps_first_request(self):
-        p = self.provider([message("@standalone run -- true"), message("Late explanation"), price(), completed()])
-        self.assertEqual(p.turn("t", "request", "author", host_request=True), "@standalone run -- true")
+    def test_natural_completion_returns_last_assistant_message(self):
+        p = self.provider([message("Progress update"), message("Completed implementation."), price(), completed()])
+        self.assertEqual(p.turn("t", "request", "author"), "Completed implementation.")
         self.assertFalse(p.sent)
         self.assertEqual(p.usage.raw, 110)
 
-    def test_foreign_and_partial_messages_never_authorize_operations(self):
-        p = self.provider([message("@standalone run -- false", thread="foreign"),
-                          {"method": "item/agentMessage/delta", "params": {"threadId": "t", "turnId": "u", "delta": "@standalone run -- false"}},
-                          message("Not a directive"), price(), completed()])
-        self.assertEqual(p.turn("t", "request", "author", interrupt=True, host_request=True), "Not a directive")
+    def test_foreign_and_partial_messages_do_not_replace_owned_final_answer(self):
+        p = self.provider([message("Foreign or partial explanation", thread="foreign"),
+                          {"method": "item/agentMessage/delta", "params": {"threadId": "t", "turnId": "u", "delta": "Foreign or partial explanation"}},
+                          message("Final answer"), price(), completed()])
+        self.assertEqual(p.turn("t", "request", "author"), "Final answer")
         self.assertFalse(p.sent)
 
     def test_unpriced_tail_remains_missing(self):
-        p = self.provider([price(), message("@standalone done"), completed()])
-        p.turn("t", "request", "author", host_request=True)
+        p = self.provider([price(), message("Finished"), completed()])
+        with self.assertRaisesRegex(Fatal, "incomplete native token measurement"):
+            p.turn("t", "request", "author")
         self.assertEqual(len(p.missing_turns), 1)
         self.assertFalse(p.report()["measurement_complete"])
 
@@ -100,7 +90,7 @@ class StreamTests(unittest.TestCase):
         self.assertEqual([v["method"] for v in p.sent], ["turn/interrupt"])
 
     def test_feature_budget_interrupts_a_native_turn_and_retains_late_usage(self):
-        p = self.provider([message("@standalone run -- never_execute"), price(40),
+        p = self.provider([message("Implementation in progress."), price(40),
                            completed("interrupted"), price(100)])
         p.work_limits = [{"reason": "feature_token_limit", "metric": "observed_raw_tokens", "start": 0, "limit": 50}]
         with self.assertRaises(WorkLimitReached) as stopped:
@@ -132,23 +122,24 @@ class StreamTests(unittest.TestCase):
             p.check_limits()
         self.assertNotIsInstance(stopped.exception, WorkLimitReached)
 
-    def test_review_threshold_preserves_completed_verdict_but_not_interrupted_text(self):
+    def test_review_limit_retains_reply_as_evidence_without_returning_a_verdict(self):
         for status, threshold in (("completed", 100), ("interrupted", 50)):
             with self.subTest(status=status):
                 p = self.provider([message("NO_FINDINGS"), price(40), completed(status), price(100)])
-                p.work_limits = [{"reason": "review_token_threshold", "metric": "observed_raw_tokens",
-                                  "start": 0, "limit": threshold, "action": "conclude_review"}]
-                with self.assertRaises(ReviewConclusionRequested) as stopped:
+                p.work_limits = [{"reason": "review_token_limit", "metric": "observed_raw_tokens",
+                                  "start": 0, "limit": threshold}]
+                with self.assertRaises(WorkLimitReached) as stopped:
                     p.turn("t", "review", "review-1")
-                self.assertEqual(stopped.exception.completed_reply, "NO_FINDINGS" if status == "completed" else None)
+                self.assertFalse(hasattr(stopped.exception, "completed_reply"))
+                self.assertEqual((p.artifacts / "turn-0001/reply.txt").read_text(), "NO_FINDINGS")
                 self.assertEqual(p.usage.raw, 110)
                 self.assertTrue(p.report()["measurement_complete"])
-                self.assertEqual(p.turns[0]["work_limit"]["kind"], "review_wrapup")
+                self.assertEqual(p.turns[0]["work_limit"]["kind"], "budget_exhausted")
 
     def test_time_and_token_limits_interrupt_and_retain_priced_partial_turn(self):
         for limit in ("time", "tokens"):
             with self.subTest(limit=limit):
-                directive = "@standalone run -- should_not_run"
+                directive = "Partial author response"
                 p = self.provider([message(directive), price(40),
                                    completed("interrupted"), price(100)])
                 if limit == "tokens":
@@ -164,10 +155,10 @@ class StreamTests(unittest.TestCase):
 
                     p.incoming = expire_after_usage
 
-                # A directive delivered before exhaustion must not reach the
-                # host after the budget cancellation, even with complete usage.
+                # Partial output is retained as evidence; complete accounting does
+                # not turn a cancelled response into a successful return.
                 with self.assertRaisesRegex(Fatal, "workflow wall-time/observed-token limit reached"):
-                    p.turn("t", "request", "author", host_request=True)
+                    p.turn("t", "request", "author")
 
                 self.assertEqual(p.sent, [{"id": 1, "method": "turn/interrupt",
                     "params": {"threadId": "t", "turnId": "u"}}])

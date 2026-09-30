@@ -76,7 +76,7 @@ class SkipLinearizationTests(unittest.TestCase):
         class AlreadySatisfied(FakeCodex):
             def turn(self, thread, prompt, label, **kwargs):
                 if label.endswith("-implement"):
-                    return "@standalone done"
+                    return "Finished."
                 if "-review-" in label:
                     return "NO_FINDINGS"
                 return "No documentation or repairs needed."
@@ -87,23 +87,6 @@ class SkipLinearizationTests(unittest.TestCase):
         self.assertEqual(result["final_commits"], [])
         self.assertTrue(all(c["already_satisfied"] for c in result["checkpoints"]))
 
-    def test_continuation_inherits_original_setting_including_legacy_default(self):
-        from lab.continuation import continue_native
-        manifest = {"benchmark": self.benchmark, "factors": settings({}),
-                    "limits": {"observed_raw_tokens": 10000, "turns": 30},
-                    "model": "test", "effort": "xhigh"}
-        record = {"manifest": manifest, "remaining_seconds": 20}
-        for setting in (None, True):
-            if setting is not None:
-                manifest["skip_linearization"] = setting
-            with patch("lab.continuation.inspect_boundary", return_value=record):
-                with patch("lab.workflow.run") as launch:
-                    continue_native(self.root / "old", self.root / "new", "head")
-            self.assertEqual(launch.call_args.kwargs["skip_linearization"], bool(setting))
-        with self.assertRaisesRegex(ValueError, "original linearization setting"):
-            run(self.benchmark, settings({}), self.root / "invalid", 30, 10000, 30,
-                skip_linearization=False, _prepared=record)
-        self.assertFalse((self.root / "invalid").exists())
 
     def test_default_still_linearizes_and_has_distinct_comparison_key(self):
         normal = self.run_workflow("normal", backend=FakeCodex, skip=False)
@@ -116,7 +99,7 @@ class SkipLinearizationTests(unittest.TestCase):
     def test_cli_supports_plan_single_and_parallel_with_either_harness(self):
         path = self.root / "benchmark.json"
         path.write_text(json.dumps(self.benchmark))
-        common = [str(path), "--skip-linearization", "--off", "C08,C16,C17,C25"]
+        common = [str(path), "--skip-linearization", "--off", "C08,C16,C17"]
         output = io.StringIO()
         with patch.object(sys, "argv", ["lab", "plan", *common]), contextlib.redirect_stdout(output):
             self.assertEqual(main(), 0)

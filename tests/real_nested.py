@@ -66,8 +66,7 @@ call(['resume','--json',thread,'-'],'Reply exactly CHILD_RESUME_OK without tools
     request += '\nVerification command:\npython3 -c '+shlex.quote(child_check)
     benchmark = {'name': 'existing-feature-and-nested-codex', 'repo': str(source), 'revision': before,
         'features': [{'id': 'existing-parity', 'request': request}],
-        'checks': ['python3 -m unittest discover -s tests -v'], 'defer_documentation': True,
-        'instructions': 'Use only Python standard library. Keep source unchanged if already correct.'}
+        'checks': ['python3 -m unittest discover -s tests -v']}
     save_json(out / 'admission.json', {'purpose': 'real nested and no-change qualification',
         'benchmark': benchmark, 'seconds': 600, 'observed_raw': 500000, 'turns': 16,
         'created_at_unix': time.time()})

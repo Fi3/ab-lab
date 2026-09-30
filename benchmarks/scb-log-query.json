@@ -10,7 +10,7 @@
     "runner_revision": "31ceea3add480edb33431e70475c4c70597e6b31",
     "seconds": 300
   },
-  "checks": ["test -f logql.py && test -f requirements.txt && python -m compileall -q logql.py"],
-  "instructions": "Implement in Python 3.12. Keep all runtime dependencies in requirements.txt.",
-  "defer_documentation": false
+  "checks": [
+    "test -f logql.py && test -f requirements.txt && python -m compileall -q logql.py"
+  ]
 }

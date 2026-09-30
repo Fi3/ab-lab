@@ -11,7 +11,7 @@ import unittest
 from unittest.mock import patch
 
 from lab.host import Fatal
-from lab.loops import ReviewConclusionRequested, WorkLimitReached
+from lab.loops import WorkLimitReached
 from lab.native_usage import NativeUsage
 import test_context_recovery as recovery
 
@@ -56,9 +56,9 @@ class OutputSettlementTests(unittest.TestCase):
                 sent = self.acknowledge_interrupt(provider)
 
                 reply = provider.turn("thread", "Implement the next step.", "author",
-                                      host_request=True, writable=True)
+                                      writable=True)
 
-                self.assertEqual(reply, "@standalone run -- fresh-proposal")
+                self.assertEqual(reply, "Recovered final answer")
                 self.assertEqual([row["raw"] for row in sent], [110])
                 self.assertEqual(self.methods(provider),
                                  ["turn/start", "thread/compact/start", "turn/start"])
@@ -79,7 +79,7 @@ class OutputSettlementTests(unittest.TestCase):
             recovery.compaction(), recovery.success()])
 
         self.assertEqual(provider.turn("thread", "Continue.", "reviewer"),
-                         "@standalone run -- fresh-proposal")
+                         "Recovered final answer")
 
         self.assertFalse(provider.sent)
         self.assertEqual(provider.turns[0]["status"], "completed")
@@ -107,8 +107,8 @@ class OutputSettlementTests(unittest.TestCase):
             return event
 
         provider.incoming = incoming
-        self.assertEqual(provider.turn("thread", "Continue.", "author", host_request=True),
-                         "@standalone run -- fresh-proposal")
+        self.assertEqual(provider.turn("thread", "Continue.", "author"),
+                         "Recovered final answer")
 
         self.assertEqual([row["raw"] for row in sent], [110])
         self.assertGreaterEqual(sent[0]["time"], price_delivered[0])
@@ -160,18 +160,17 @@ class OutputSettlementTests(unittest.TestCase):
         self.assertFalse(provider.report()["measurement_complete"])
         self.assertEqual(provider.usage.raw, 110)
 
-    def test_rejected_completed_verdict_is_not_attached_to_review_conclusion_request(self):
+    def test_rejected_completed_verdict_is_retained_as_evidence_after_hard_stop(self):
         rejected = "NO_FINDINGS" + " " * 8192
         provider = self.provider([("turn/start", "initial", [recovery.item("initial", rejected),
             recovery.completed("initial"), recovery.price("initial", 100)])])
-        provider.work_limits = [{"reason": "review_token_threshold", "action": "conclude_review",
+        provider.work_limits = [{"reason": "review_token_limit",
                                 "metric": "observed_raw_tokens", "start": 0, "limit": 100}]
 
-        with self.assertRaises(ReviewConclusionRequested) as stopped:
+        with self.assertRaises(WorkLimitReached) as stopped:
             provider.turn("thread", "Review the implementation.", "reviewer")
 
-        self.assertIsNone(stopped.exception.completed_reply,
-                          "a verdict rejected by the output guard cannot bypass conclusion")
+        self.assertFalse(hasattr(stopped.exception, "completed_reply"))
         self.assertTrue(provider.report()["measurement_complete"])
         self.assertEqual(provider.turns[0]["status"], "completed")
         self.assertEqual(provider.turns[0]["output_guard"]["reason"], "trailing_whitespace")
@@ -179,22 +178,21 @@ class OutputSettlementTests(unittest.TestCase):
         self.assertFalse(provider.sent)
         self.assertEqual((provider.artifacts / "turn-0001/reply.txt").read_text(), rejected)
 
-    def test_streaming_timeout_verdict_is_not_attached_to_review_conclusion_request(self):
+    def test_streaming_timeout_verdict_is_retained_as_evidence_after_hard_stop(self):
         verdict = recovery.item("initial", "NO_FINDINGS")
         verdict["params"]["item"]["id"] = "command"
         provider = self.provider([("turn/start", "initial", [delta("NO_FINDINGS"),
             recovery.price("initial", 100), verdict, recovery.completed("initial"),
             recovery.price("initial", 200)])])
         provider.usage.observe_tokens("thread", 100, 10)
-        provider.work_limits = [{"reason": "review_token_threshold", "action": "conclude_review",
+        provider.work_limits = [{"reason": "review_token_limit",
                                 "metric": "observed_raw_tokens", "start": 110, "limit": 100}]
 
         with patch("lab.provider.MESSAGE_SECONDS", 0.05):
-            with self.assertRaises(ReviewConclusionRequested) as stopped:
+            with self.assertRaises(WorkLimitReached) as stopped:
                 provider.turn("thread", "Review the implementation.", "reviewer")
 
-        self.assertIsNone(stopped.exception.completed_reply,
-                          "a time-rejected response remains rejected when its terminal price arrives")
+        self.assertFalse(hasattr(stopped.exception, "completed_reply"))
         self.assertTrue(provider.report()["measurement_complete"])
         self.assertEqual(provider.turns[0]["status"], "completed")
         self.assertEqual(provider.turns[0]["interrupt_reason"], "runaway_output")
@@ -211,8 +209,8 @@ class OutputSettlementTests(unittest.TestCase):
                     recovery.completed("initial", "contextWindowExceeded"), malformed,
                     recovery.price("initial", 100)]), recovery.compaction(), recovery.success()])
 
-                self.assertEqual(provider.turn("thread", "Continue.", "author", host_request=True),
-                                 "@standalone run -- fresh-proposal")
+                self.assertEqual(provider.turn("thread", "Continue.", "author"),
+                                 "Recovered final answer")
 
                 self.assertTrue(provider.turns[0]["recovery_eligible"])
                 self.assertEqual(provider.turns[0]["output_guard"]["reason"], "trailing_whitespace")
@@ -247,7 +245,7 @@ class OutputSettlementTests(unittest.TestCase):
 
                 provider.incoming = incoming
                 with self.assertRaisesRegex(Fatal, "incomplete token measurement"):
-                    provider.turn("thread", "Continue.", "author", host_request=True)
+                    provider.turn("thread", "Continue.", "author")
 
                 self.assertEqual(len(sent), 1)
                 self.assertGreaterEqual(sent[0]["time"] - started[0], 600)
@@ -272,7 +270,7 @@ class OutputSettlementTests(unittest.TestCase):
 
                 if fresh_tail:
                     self.assertEqual(provider.turn("thread", "Continue.", "author"),
-                                     "@standalone run -- fresh-proposal")
+                                     "Recovered final answer")
                     self.assertTrue(provider.report()["measurement_complete"])
                 else:
                     with self.assertRaisesRegex(Fatal, "incomplete token measurement"):
@@ -298,13 +296,11 @@ class OutputSettlementTests(unittest.TestCase):
                             provider.deadline = now + 0.3
                         else:
                             provider.work_limits = [{"reason": kind + "_time_limit",
-                                "metric": "seconds", "start": now, "limit": 0.3,
-                                **({"action": "conclude_review"} if kind == "review" else {})}]
+                                "metric": "seconds", "start": now, "limit": 0.3}]
                     return event
 
                 provider.incoming = incoming
-                expected = (Fatal if kind == "global" else WorkLimitReached
-                            if kind == "feature" else ReviewConclusionRequested)
+                expected = Fatal if kind == "global" else WorkLimitReached
                 with patch("lab.provider.OUTPUT_SETTLE_SECONDS", 600.0, create=True):
                     with self.assertRaises(expected):
                         provider.turn("thread", "Continue.", "author")
@@ -401,7 +397,7 @@ class OutputSettlementTests(unittest.TestCase):
                     self.assertFalse(provider.report()["measurement_complete"])
                 else:
                     self.assertEqual(provider.turn("thread", "Continue.", "author"),
-                                     "@standalone run -- fresh-proposal")
+                                     "Recovered final answer")
                     self.assertEqual(self.methods(provider),
                                      ["turn/start", "thread/compact/start", "turn/start"])
                     self.assertTrue(provider.turns[0]["recovery_eligible"])
@@ -448,7 +444,7 @@ class OutputSettlementTests(unittest.TestCase):
                     sent = self.acknowledge_interrupt(provider)
 
                     self.assertEqual(provider.turn("thread", "Continue.", "author"),
-                                     "@standalone run -- fresh-proposal")
+                                     "Recovered final answer")
 
                     self.assertEqual([row["raw"] for row in sent], [] if after_terminal else [110])
                     self.assertEqual(self.methods(provider),
@@ -512,7 +508,7 @@ class OutputSettlementTests(unittest.TestCase):
                     self.assertFalse(provider.report()["measurement_complete"])
                 else:
                     self.assertEqual(provider.turn("thread", "Continue.", "author"),
-                                     "@standalone run -- fresh-proposal")
+                                     "Recovered final answer")
                     self.assertEqual(idle_polls[0], 3)
                     self.assertEqual(provider.turns[0]["output_guard"]["settlement"], "priced_boundary")
                     self.assertTrue(provider.report()["measurement_complete"])

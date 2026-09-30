@@ -5,7 +5,7 @@ import json
 from pathlib import Path
 import time
 
-from .host import Fatal, git, parse_operations, Rejected, snapshot, state_summary
+from .host import Fatal, git, snapshot, state_summary
 
 
 DEFAULT_LOOP_POLICY = {
@@ -15,12 +15,10 @@ DEFAULT_LOOP_POLICY = {
     "repeat_limit": 3,
     "max_review_raw": 500_000,
     "max_review_seconds": 300,
-    "max_review_wrapup_raw": 200_000,
-    "max_review_wrapup_seconds": 90,
     "max_review_settle_seconds": 600,
     "final_review": True,
 }
-POLICY_VERSION = "bounded-feature-review-v3"
+POLICY_VERSION = "external-limits-no-coaching-v4"
 
 
 def loop_policy(value=None):
@@ -31,7 +29,7 @@ def loop_policy(value=None):
         if type(policy[key]) is not bool:
             raise ValueError(f"loop policy {key} must be boolean")
     for key in ("max_feature_raw", "max_repair_attempts", "repeat_limit", "max_review_raw", "max_review_seconds",
-                "max_review_wrapup_raw", "max_review_wrapup_seconds", "max_review_settle_seconds"):
+                "max_review_settle_seconds"):
         if type(policy[key]) is not int or policy[key] <= 0:
             raise ValueError(f"loop policy {key} must be a positive integer")
     if policy["repeat_limit"] < 2:
@@ -48,11 +46,6 @@ class WorkLimitReached(Fatal):
         super().__init__(signal["reason"])
 
 
-class ReviewConclusionRequested(WorkLimitReached):
-    """End exploration, then collect one verdict from the same reviewer."""
-    completed_reply = None
-
-
 class NeedsAttention(Fatal):
     def __init__(self, flag):
         self.flag = flag
@@ -64,9 +57,7 @@ def work_limit_error(limits, raw, now=None):
     for limit in limits:
         observed = (raw if limit["metric"] == "observed_raw_tokens" else now) - limit["start"]
         if observed >= limit["limit"]:
-            conclusion = limit.get("action") == "conclude_review"
-            error = ReviewConclusionRequested if conclusion else WorkLimitReached
-            return error({"reason": limit["reason"], "kind": "review_wrapup" if conclusion else "budget_exhausted",
+            return WorkLimitReached({"reason": limit["reason"], "kind": "budget_exhausted",
                           "metric": limit["metric"], "limit": limit["limit"], "observed": observed},
                          settle_seconds=limit.get("settle_seconds", 0))
     return None
@@ -85,7 +76,7 @@ class FeatureProgress:
         self.operation_count = 0
         self.flags = []
 
-    def limits(self, raw, *, reviewing=False, final=False, concluding=False):
+    def limits(self, raw, *, reviewing=False):
         if not self.policy["enabled"]:
             return []
         # An ongoing review can use the feature's remaining allowance. Reserve
@@ -94,38 +85,14 @@ class FeatureProgress:
         limits = [{"reason": "feature_token_limit", "metric": "observed_raw_tokens",
                    "start": self.raw_start, "limit": self.policy["max_feature_raw"] - reserve}]
         if reviewing:
-            soft = not final and not concluding
-            prefix = "max_review_wrapup" if concluding else "max_review"
-            reason = "review_wrapup" if concluding else "review"
-            suffix = "threshold" if soft else "limit"
-            action = {"action": "conclude_review"} if soft else {}
             limits += [
-                {"reason": f"{reason}_token_{suffix}", "metric": "observed_raw_tokens",
-                 "start": raw, "limit": self.policy[prefix + "_raw"], **action},
-                {"reason": f"{reason}_time_{suffix}", "metric": "seconds",
-                 "start": time.monotonic(), "limit": self.policy[prefix + "_seconds"],
-                 "settle_seconds": self.policy["max_review_settle_seconds"], **action},
+                {"reason": "review_token_limit", "metric": "observed_raw_tokens",
+                 "start": raw, "limit": self.policy["max_review_raw"]},
+                {"reason": "review_time_limit", "metric": "seconds",
+                 "start": time.monotonic(), "limit": self.policy["max_review_seconds"],
+                 "settle_seconds": self.policy["max_review_settle_seconds"]},
             ]
         return limits
-
-    def budget_note(self, raw):
-        if not self.policy["enabled"]:
-            return ""
-        remaining = max(0, self.policy["max_feature_raw"] - (raw - self.raw_start))
-        reserve = self.policy["max_review_raw"] if self.policy["final_review"] else 0
-        return (f"\n\nRunner budget for {self.feature['id']}: {remaining} observed raw tokens remain, "
-                f"including reviews and compaction ({reserve} reserved for a final review); "
-                f"ordinary reviews should conclude by {self.policy['max_review_raw']} raw tokens or "
-                f"{self.policy['max_review_seconds']} seconds. At that threshold the runner requests "
-                f"one conclusion, limited to {self.policy['max_review_wrapup_raw']} additional raw tokens "
-                f"and a {self.policy['max_review_wrapup_seconds']}-second stop threshold. "
-                f"After a review time threshold, the in-flight response has at most "
-                f"{self.policy['max_review_settle_seconds']} seconds to reach an accounted boundary; "
-                "this does not authorize another response or approve an over-time conclusion. "
-                "Feature/review token limits and global limits still apply immediately. "
-                f"{self.repairs}/{self.policy['max_repair_attempts']} "
-                "repair attempts used. Token limits count cached input once. "
-                "A runner stop is not an approval or a claim that requirements are complete.")
 
     def observe_review(self, review, tree):
         row = {**review, "tree": tree}
@@ -152,16 +119,19 @@ class FeatureProgress:
     def observe_operation(self, request, response, repo):
         if not self.policy["enabled"]:
             return None
-        try:
-            operation = parse_operations(request)
-            # The author's explanation is not a change to the requested edit.
-            operation = [(item[0], item[2]) if item[0] == "edit" else item for item in operation]
-        except Rejected:
-            operation = request.strip()
+        self.operation_count += 1
+        if request["name"] == "host_read" or response["success"]:
+            # Reading and successful polling are not failures; either breaks an
+            # unchanged failure sequence even when the source itself is stable.
+            self.operations.clear()
+            return None
+        arguments = request["arguments"]
+        if isinstance(arguments, dict):
+            arguments = {key: value for key, value in arguments.items() if key != "reason"}
+        operation = {"name": request["name"], "arguments": arguments}
         state = state_summary(snapshot(repo))
         state.pop("head")  # Empty commits do not constitute source progress.
         signature = digest({"operation": operation, "response": response, "state": state})
-        self.operation_count += 1
         self.operations.append(signature)
         repeats = self.policy["repeat_limit"]
         recent = list(self.operations)

@@ -11,11 +11,10 @@ FACTORS = {
     "C16": ("Structured edit format", "exact-context structured patches", "no edit-format instruction; host accepts either supported format"),
     "C17": ("Host-owned edits and commits", "host applies, commits and reports actual results", "agent edits, checks and commits with native tools"),
     "C20": ("Next-action guidance", "command results include next-action guidance", "command results contain facts only"),
-    "C25": ("Bound generation at a host request", "interrupt after request-covering usage arrives", "let the turn finish before executing the same request"),
     "C38": ("Completion guidance", "explicitly hand over when required work is ready", "no extra finishing reminder"),
 }
 
-
+WORKFLOW_VERSION = "host-tools-upstream-prompts-v1"
 def settings(overrides):
     if not isinstance(overrides, dict):
         raise ValueError("factors must be an object of C identifiers and booleans")
@@ -24,8 +23,8 @@ def settings(overrides):
             raise ValueError(f"unknown factor or non-boolean setting: {key}")
     result = dict.fromkeys(FACTORS, True)
     result.update(overrides)
-    if not result["C17"] and (result["C08"] or result["C25"]):
-        raise ValueError("C17=off uses native tools: also set C08=off,C25=off; host conflict refresh/interruption cannot operate without a host request")
+    if not result["C17"] and result["C08"]:
+        raise ValueError("C17=off uses native tools: also set C08=off; host conflict refresh requires host tools")
     return result
 
 
@@ -49,30 +48,17 @@ def policy_blocks(f):
 
 
 def author_policy(f):
+    blocks = []
     if f["C17"]:
-        protocol = """Native tools are read-only inspection tools. Delegate every edit, commit and verification command to this host. Do not attempt native writes or native verification.
-Send exactly one operative directive per assistant message, without prose or Markdown fences. Wait for its actual same-thread result before another operation. Do not repeat a directive.
-@standalone read <shell-quoted relative file path>
-returns complete file text and records what you have actually received. Use it before editing files when conflict refresh may be useful. Native inspections are permitted but are not treated as delivered full snapshots.
-@standalone edit <reason>
-<patch in the required format>
-@standalone end
-Structured patches may put *** Mode: 100755 (executable) or *** Mode: 100644 (non-executable) immediately after an Add/Update File header. A mode-only Update needs no @@ hunks. Use this to publish executable scripts.
-@standalone run <shell-quoted relative paths the command may write>... -- <shell command>
-Declare permission changes such as chmod as writes to their target paths too. Prefer a host edit with Mode metadata for executable-bit changes.
-Use no paths for read-only commands. Checks have a 300-second ceiling and must fit the remaining workflow budget. Raw output is saved; displayed output may have explicit omission notices. Do not infer success from omissions. Command-produced source changes must be proposed as an ordinary edit or explicitly discarded with @standalone discard <reason>.
-The stage-completion marker is exactly @standalone done. Pending source changes prevent completion. Every required test and task obligation remains in force."""
-        if not f["C16"]:
-            protocol = protocol.replace("<patch in the required format>", "<patch>")
-    else:
-        protocol = """Edit, run checks and create provisional commits yourself with native tools. Work only in this checkout; do not create extra worktrees. Leave tracked source and the index clean. The stage-completion marker is exactly @standalone done."""
-    return protocol + "\n\n" + "\n\n".join(v for v in policy_blocks(f).values() if v)
+        blocks.append("Use the host tools for edits and commands. They commit source changes automatically; the host owns the Git index and history. Native tools are available for read-only inspection.")
+    blocks.extend(v for v in policy_blocks(f).values() if v)
+    return "\n\n".join(blocks)
 
 
 def load_benchmark(path):
     path = Path(path).resolve(strict=True)
     data = json.loads(path.read_text())
-    allowed = {"name", "repo", "revision", "features", "checks", "instructions", "defer_documentation", "after_read", "slopcodebench"}
+    allowed = {"name", "repo", "revision", "features", "checks", "after_read", "slopcodebench"}
     if not isinstance(data, dict) or set(data) - allowed:
         raise ValueError("unknown benchmark fields")
     if "slopcodebench" in data:
@@ -96,8 +82,6 @@ def load_benchmark(path):
     checks = data.get("checks")
     if not isinstance(checks, list) or not checks or any(not isinstance(c, str) or not c.strip() for c in checks):
         raise ValueError("benchmark needs explicit, nonempty final checks")
-    if not isinstance(data.get("instructions", ""), str) or type(data.get("defer_documentation", True)) is not bool:
-        raise ValueError("invalid instructions/defer_documentation")
     fixture = data.get("after_read")
     if fixture is not None:
         if not isinstance(fixture, dict) or set(fixture) != {"path", "command"} or any(not isinstance(v, str) or not v.strip() for v in fixture.values()):
@@ -110,6 +94,4 @@ def load_benchmark(path):
     # clones and lets admission pin a resolved commit before any model runs.
     repo = Path(data["repo"]).expanduser()
     data["repo"] = str((repo if repo.is_absolute() else path.parent / repo).resolve(strict=True))
-    data.setdefault("instructions", "")
-    data.setdefault("defer_documentation", True)
     return data

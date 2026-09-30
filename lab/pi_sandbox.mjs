@@ -3,6 +3,8 @@ import { spawn } from 'node:child_process';
 import { readFileSync, writeFileSync } from 'node:fs';
 import { createInterface } from 'node:readline';
 import { resolve } from 'node:path';
+import { registerHostTools } from './pi_host_tools.mjs';
+import { installRequestGuard } from './pi_usage.mjs';
 
 async function executeBash(policy, request, signal, onUpdate) {
   const sdk = await import(process.env.AGENT_LAB_PI_MODULE);
@@ -86,10 +88,15 @@ export default async function (pi) {
         ? sdk.withFileMutationQueue(resolve(ctx.cwd, params.path), run) : run();
     } });
   }
+  registerHostTools(pi);
   // The lab never uses Pi's interactive !command path. It must not provide a
   // second, unsandboxed execution route through RPC.
   pi.on('user_bash', () => { throw new Error('Use the sandboxed bash tool'); });
-  pi.on('session_start', () => {
-    writeFileSync(process.env.AGENT_LAB_PI_POLICY + '.ready', JSON.stringify({ pid: process.pid }));
+  pi.on('session_start', (_event, ctx) => {
+    installRequestGuard(ctx.modelRegistry.runtime, process.env.AGENT_LAB_PI_POLICY,
+      process.env.AGENT_LAB_PI_REQUEST_JOURNAL, process.env.AGENT_LAB_PI_THREAD_ID);
+    writeFileSync(process.env.AGENT_LAB_PI_POLICY + '.ready', JSON.stringify({
+      pid: process.pid, request_guard: 'pre-dispatch-v1',
+    }));
   });
 }

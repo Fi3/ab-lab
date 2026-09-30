@@ -1,5 +1,6 @@
 """SlopCodeBench task loading and external grading; no model calls or new loop."""
 import argparse
+import hashlib
 import json
 from pathlib import Path
 import re
@@ -91,21 +92,20 @@ def expand(data, path):
     if type(limit) is not int or not 1 <= limit <= len(description["features"]):
         raise ValueError("SlopCodeBench checkpoint_limit must be a positive integer no greater than the available checkpoints")
     # Fresh author/reviewer threads need the requirements already revealed.
-    previous, features = [], []
+    previous, features, checkpoint_prompts = [], [], []
     for feature in description["features"][:limit]:
-        previous.append(f"{feature['id']}:\n{feature['request']}")
-        features.append({"id": feature["id"], "request":
-            "Implement the current checkpoint, preserving earlier requirements except where explicitly superseded.\n\n"
-            + "\n\n".join(previous)})
-    instructions = data.get("instructions", "")
-    if not isinstance(instructions, str):
-        raise ValueError("invalid benchmark instructions")
+        previous.append(feature["request"])
+        request = "\n\n".join(previous)
+        features.append({"id": feature["id"], "request": request})
+        checkpoint_prompts.append({"feature": feature["id"],
+            "request_sha256": hashlib.sha256(request.encode("utf-8")).hexdigest()})
+    provenance = {**description["prompt_provenance"],
+        "dataset_revision": config["revision"], "runner_revision": config["runner_revision"],
+        "history": "verbatim-prior-prompts-with-two-newline-separator",
+        "checkpoints": description["prompt_provenance"]["checkpoints"][:limit],
+        "cumulative_requests": checkpoint_prompts}
     data = {**data, "slopcodebench": config, "features": features,
-            "instructions": instructions + "\n" + description["instructions"]}
-    # requirements.txt is part of the execution contract, not deferred prose.
-    if data.get("defer_documentation", False):
-        raise ValueError("SlopCodeBench requires defer_documentation=false so requirements.txt can be updated")
-    data["defer_documentation"] = False
+            "prompt_provenance": provenance}
     return data
 
 
@@ -113,6 +113,7 @@ def pending(benchmark):
     config = benchmark["slopcodebench"]
     return {"problem": config["problem"], "dataset_revision": config["revision"],
             "runner_revision": config["runner_revision"], "status": "incomplete", "solved": None,
+            "prompt_provenance": benchmark["prompt_provenance"],
             **({"checkpoint_limit": config["checkpoint_limit"]} if "checkpoint_limit" in config else {}),
             "checkpoints": [{"feature": f["id"], "status": "not_run"} for f in benchmark["features"]],
             "final": None}
@@ -136,8 +137,8 @@ def capture(checkout, output, name):
 def retain_attempt(checkout, feature):
     """Checkpoint applied native edits without claiming author/reviewer completion.
 
-    Host proposals already live in separate handoff artifacts; only source
-    actually present in the checkout is retained. No patch is invented or applied.
+    Only source actually present in the checkout is retained. Tool receipts
+    preserve execution state separately; no operation is replayed.
     """
     previous = git(checkout, "rev-parse", "HEAD").decode().strip()
     dirty = git(checkout, "status", "--porcelain").decode()
@@ -227,13 +228,16 @@ def evaluate(benchmark, result, output):
         else:
             report["solved"] = True if all(i["status"] == "passed" for i in items) else None
         if report["status"] == "error" and result["status"] in ("passed", "needs_attention"):
-            result.update(status="failed", error="SlopCodeBench evaluator infrastructure failed; see slopcodebench results")
+            result.update(status="failed", error="SlopCodeBench evaluator infrastructure failed; see slopcodebench results",
+                          failure={"origin": "evaluator", "stage": "evaluation", "message": "Evaluator infrastructure failed"})
         elif not report["solved"] and result["status"] == "passed":
-            result.update(status="failed", error="SlopCodeBench correctness did not pass at every checkpoint and final assembly; see slopcodebench results")
+            result.update(status="failed", error="SlopCodeBench correctness did not pass at every checkpoint and final assembly; see slopcodebench results",
+                          failure={"origin": "agent", "stage": "evaluation", "message": "Submission failed benchmark tests"})
     except (Exception, KeyboardInterrupt) as exc:
         report.update(status="error", solved=None, error=str(exc) or "evaluation interrupted")
         if result["status"] in ("passed", "needs_attention"):
-            result.update(status="failed", error="SlopCodeBench evaluation failed: " + report["error"])
+            result.update(status="failed", error="SlopCodeBench evaluation failed: " + report["error"],
+                          failure={"origin": "evaluator", "stage": "evaluation", "message": report["error"]})
     report["duration_seconds"] = time.monotonic() - started
 
 

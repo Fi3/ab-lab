@@ -10,6 +10,7 @@ from unittest.mock import patch
 
 from lab.config import settings
 from lab.host import Host, git
+from lab.host_tools import HostTools
 from lab.workflow import run
 from test_core import repo_at
 from test_workflow import FakeCodex
@@ -21,9 +22,9 @@ class NoChangeTests(unittest.TestCase):
             def turn(self, thread, prompt, label, **options):
                 self.calls.append((label, thread, prompt, options))
                 if label.endswith('-implement'):
-                    return '@standalone done'
+                    return 'The requested behavior is already implemented.'
                 if '-review-' in label:
-                    self.assertion = 'verify the complete requested behavior' in prompt
+                    self.assertion = 'requested behavior is already satisfied' in prompt
                     return 'NO_FINDINGS'
                 if label == 'integration-accept':
                     git(self.repo, 'commit', '--allow-empty', '-qm', 'UPDATE Verify the existing feature meets its request')
@@ -33,9 +34,9 @@ class NoChangeTests(unittest.TestCase):
             repo = repo_at(root / 'input')
             benchmark = {'name': 'existing', 'repo': str(repo), 'revision': 'HEAD',
                 'features': [{'id': 'existing', 'request': 'source.py already contains middle'}],
-                'checks': ['test -f source.py'], 'instructions': '', 'defer_documentation': True}
+                'checks': ['test -f source.py']}
             for mediated in (True, False):
-                result = run(benchmark, settings({'C17': mediated, 'C08': mediated, 'C25': mediated}),
+                result = run(benchmark, settings({'C17': mediated, 'C08': mediated}),
                     root / str(mediated), 30, 10000, 10, backend=Existing)
                 self.assertEqual(result['status'], 'passed', result)
                 self.assertTrue(Existing.instances[-1].assertion)
@@ -47,20 +48,18 @@ class NoChangeTests(unittest.TestCase):
             def turn(self, thread, prompt, label, **options):
                 if label == 'one-implement':
                     self.calls.append((label, thread, prompt, options))
-                    return '@standalone done'
+                    return 'The requested behavior is already implemented.'
                 if label == 'one-fix-1':
-                    n = self.fixes.get(label, 0)
-                    self.fixes[label] = n+1
                     self.calls.append((label, thread, prompt, options))
-                    return ('@standalone edit resolve missing behavior\n*** Begin Patch\n*** Add File: one.py\n+value = 2\n*** End Patch\n@standalone end'
-                            if n == 0 else '@standalone done')
+                    self.tool_call(thread, "host_edit", {"patch": "*** Begin Patch\n*** Add File: one.py\n+value = 2\n*** End Patch\n"}, label)
+                    return "Resolved missing behavior."
                 return super().turn(thread, prompt, label, **options)
         with tempfile.TemporaryDirectory() as directory:
             root = Path(directory)
             repo = repo_at(root / 'input')
             benchmark = {'name': 'repair', 'repo': str(repo), 'revision': 'HEAD',
                 'features': [{'id': 'one', 'request': 'create one'}, {'id': 'two', 'request': 'create two'}],
-                'checks': ['test -f one.py'], 'instructions': '', 'defer_documentation': True}
+                'checks': ['test -f one.py']}
             result = run(benchmark, settings({}), root / 'run', 30, 10000, 20, backend=Rejected)
             self.assertEqual(result['status'], 'passed', result)
             self.assertEqual(result['checkpoints'][0]['review_rounds'], 2)
@@ -119,8 +118,8 @@ class NestedTests(unittest.TestCase):
             repo = repo_at(root / 'repo')
             host = Host(repo, root / 'host', 'f', 'author', time.monotonic()+30, settings({}))
             with patch.dict(os.environ, {'OPENAI_API_KEY': 'not-a-real-key', 'CODEX_API_KEY': 'not-a-real-key'}):
-                reply = host.command([], "test -z \"$OPENAI_API_KEY$CODEX_API_KEY\"")
-            self.assertIn('status: 0', reply)
+                reply = HostTools(host).execute("host_run", {"command": "test -z \"$OPENAI_API_KEY$CODEX_API_KEY\""}, "credentials")
+            self.assertTrue(reply['success'], reply)
 
     def test_wrapper_pins_subscription_and_model_and_rejects_overrides(self):
         from lab.nested import pinned_arguments

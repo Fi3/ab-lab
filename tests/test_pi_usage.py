@@ -13,11 +13,11 @@ def usage(input, output, cacheRead=0, cacheWrite=0):
 class PiUsageTests(unittest.TestCase):
     fake_pi_provider = fixtures.PiProviderStreamTests.fake_pi_provider
 
-    def play(self, provider, messages, totals, *, repeat_end=False, interrupt=False):
+    def play(self, provider, messages, totals, *, repeat_end=False):
         events = deque([{'type': 'message_update', 'usage': usage(0, 0)}])
         for index, tokens in enumerate(messages):
             message = {'role': 'assistant', 'timestamp': index,
-                       'content': [{'type': 'text', 'text': '@standalone done'}], 'usage': tokens}
+                       'content': [{'type': 'text', 'text': 'Finished.'}], 'usage': tokens}
             events.append({'type': 'message_end', 'message': message})
             if repeat_end:
                 events.append({'type': 'message_end', 'message': message})
@@ -26,17 +26,17 @@ class PiUsageTests(unittest.TestCase):
         thread = provider.threads['t1']
         thread.incoming = lambda timeout: events.popleft() if events else None
         thread.rpc = lambda message, timeout=5: {'success': True, 'data': {'tokens': totals}}
-        return provider.turn('t1', 'test', 'author', host_request=True, interrupt=interrupt)
+        return provider.turn('t1', 'test', 'author')
 
     def test_two_turns_ignore_stream_resets_and_add_smaller_second_response(self):
         p = self.fake_pi_provider([])
-        self.play(p, [usage(100, 50, 10, 3)], usage(100, 50, 10, 3), interrupt=True)
+        self.play(p, [usage(100, 50, 10, 3)], usage(100, 50, 10, 3))
         self.assertEqual(p.usage.raw, 163)
-        self.play(p, [usage(120, 20, 30, 5)], usage(220, 70, 40, 8), interrupt=True)
+        self.play(p, [usage(120, 20, 30, 5)], usage(220, 70, 40, 8))
         self.assertEqual(p.usage.raw, 338)
         self.assertEqual(p.usage.cached, 40)
         self.assertTrue(p.report()['measurement_complete'], p.report())
-        self.assertEqual(sum(m.get('type') == 'abort' for m in p.sent_messages), 2)
+        self.assertEqual(sum(m.get('type') == 'abort' for m in p.sent_messages), 0)
 
     def test_multiple_responses_count_once_despite_duplicate_end_events(self):
         p = self.fake_pi_provider([])

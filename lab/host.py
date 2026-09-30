@@ -1,23 +1,15 @@
 #!/usr/bin/env python3
-"""J04 exact-edit host, extended with explicit research factors.
-
-Only an invocation-owned final message grants operations. Commands have repository
-cwd, monitored source custody and the workflow's injected OS sandbox. All artifacts are local.
-"""
-from collections import deque
+"""Repository custody, exact edits, and process execution for native host tools."""
 import hashlib
 import json
 import os
 from pathlib import Path
-import shlex
 import signal
 import stat
 import subprocess
 import time
 import tempfile
 import re
-
-from .config import policy_blocks
 
 MAX_FINAL_BYTES = 4 * 1024 * 1024
 COMMAND_SECONDS = 300
@@ -72,58 +64,6 @@ def relative_path(repo, value, allow_root=False):
     return path.as_posix()
 
 
-def parse_operations(text):
-    if len(text.encode("utf-8")) > MAX_FINAL_BYTES:
-        raise Rejected("final/proposal exceeds 4 MiB")
-    lines = text.replace("\r\n", "\n").split("\n")
-    result, index = [], 0
-    while index < len(lines):
-        line = lines[index]
-        index += 1
-        if line.strip(" \t") == "":
-            continue
-        if line.startswith("@standalone edit ") and line[17:].strip():
-            reason = line[len("@standalone edit "):]
-            body = []
-            while index < len(lines) and lines[index].rstrip(" \t") != "@standalone end":
-                body.append(lines[index])
-                index += 1
-            if index == len(lines):
-                raise Rejected("edit lacks exact end marker")
-            index += 1
-            result.append(("edit", reason, "\n".join(body)))
-        elif line.startswith("@standalone read "):
-            try:
-                names = shlex.split(line[len("@standalone read "):])
-            except ValueError as exc:
-                raise Rejected("malformed read path") from exc
-            if len(names) != 1:
-                raise Rejected("read requires exactly one path")
-            result.append(("read", names[0]))
-        elif line.startswith("@standalone run "):
-            request = line[len("@standalone run "):]
-            if request.startswith("-- "):
-                paths, separator, command = "", " -- ", request[3:]
-            else:
-                paths, separator, command = request.partition(" -- ")
-            try:
-                paths = shlex.split(paths)
-            except ValueError as exc:
-                raise Rejected("malformed declared paths") from exc
-            if not separator or not command.strip():
-                raise Rejected("run needs exact -- command separator; writes require declared paths")
-            result.append(("run", paths, command))
-        elif line.startswith("@standalone discard ") and line[len("@standalone discard "):].strip():
-            result.append(("discard", line[len("@standalone discard "):]))
-        elif line.rstrip(" \t") == "@standalone done":
-            result.append(("done",))
-        else:
-            raise Rejected("unknown, mixed, quoted or malformed outer operation")
-    if not result or any(op[0] == "done" for op in result[:-1]):
-        raise Rejected("DONE must be the sole terminal operation")
-    return result
-
-
 def file_state(path):
     try:
         info = path.lstat()
@@ -170,7 +110,7 @@ def update_text(before, body):
     newline = "\r\n" if "\r\n" in text else "\n"
     if newline == "\r\n" and "\n" in text.replace("\r\n", ""):
         raise Rejected("mixed source newline convention")
-    terminal = text.endswith("\n")
+    terminal = text.endswith("\n") or not text
     lines = text.replace("\r\n", "\n").split("\n")
     if terminal:
         lines.pop()
@@ -204,8 +144,11 @@ def update_text(before, body):
             if line[0] in " +":
                 new.append(line[1:])
         if not old:
-            raise Rejected("hunk requires nonempty exact old block")
-        matches = occurrences(lines, old, cursor if context else 0)
+            if lines or not new:
+                raise Rejected("hunk requires nonempty exact old block unless inserting into an empty file")
+            matches = [0]
+        else:
+            matches = occurrences(lines, old, cursor if context else 0)
         if eof:
             matches = [i for i in matches if i + len(old) == len(lines)]
         if len(matches) != 1:
@@ -222,7 +165,9 @@ def update_text(before, body):
 def plan_edit(repo, patch):
     if len(patch.encode("utf-8")) > MAX_FINAL_BYTES:
         raise Rejected("patch exceeds 4 MiB")
-    lines = patch.replace("\r\n", "\n").split("\n")
+    # A normal terminal line ending follows the envelope, not another patch
+    # body line. Preserve every line inside the envelope exactly.
+    lines = patch.replace("\r\n", "\n").removesuffix("\n").split("\n")
     if not lines or lines[0] != "*** Begin Patch" or lines[-1] != "*** End Patch":
         raise Rejected("exact patch envelope required")
     changes, seen, index = {}, set(), 1
@@ -247,9 +192,10 @@ def plan_edit(repo, patch):
                 raise Rejected("mode must be 100644 or 100755 on an Add or Update file")
             mode = int(body.pop(0).split()[-1], 8) & 0o777
         if kind == "Add":
-            if before[0] != "missing" or not body or any(not line.startswith("+") for line in body):
-                raise Rejected("add requires absent regular path and + lines")
-            after = ("file", ("\n".join(line[1:] for line in body) + "\n").encode("utf-8"), mode if mode is not None else 0o644)
+            if before[0] != "missing" or any(not line.startswith("+") for line in body):
+                raise Rejected("add requires absent regular path and only + content lines")
+            content = "".join(line[1:] + "\n" for line in body).encode("utf-8")
+            after = ("file", content, mode if mode is not None else 0o644)
         elif kind == "Delete":
             if before[0] != "file" or body:
                 raise Rejected("delete requires existing regular file and no body")
@@ -424,18 +370,12 @@ class Host:
         except (Fatal, OSError, ValueError) as exc:
             save_json(self.artifacts / "initialization-error.json", {"repo": str(self.repo), "feature": feature, "stage": stage, "error": str(exc)})
             raise
-        self.initial_head = self.expected["head"]
-        self.accepted_commits, self.pending, self.invocations = [], {}, []
-        self.queued_replies = deque()
-        self.completed, self.counter, self.thread = False, 0, None
+        self.accepted_commits = []
+        self.counter = 0
         self.events_path = self.artifacts / "events.jsonl"
         self.events_path.touch(exist_ok=False)
         self.evidence_path = self.artifacts / "evidence.txt"
         self.evidence_path.touch(exist_ok=False)
-
-    @property
-    def pending_changes(self):
-        return sorted(self.pending)
 
     def event(self, kind, **fields):
         with self.events_path.open("a", encoding="utf-8") as out:
@@ -490,8 +430,6 @@ class Host:
                 expected_files[name] = value
         if after["files"] != expected_files or after["untracked"] or git(self.repo, "status", "--porcelain", "--untracked-files=no"):
             raise Fatal("commit left unexplained source effects")
-        for name in changes:
-            self.pending.pop(name, None)
         self.accepted_commits.append(commit)
         self.expected = after
         receipt = {"before_head": before_head, "commit": commit, "paths": list(changes), "reason": reason}
@@ -499,104 +437,6 @@ class Host:
         self.event("edit_accepted", **receipt)
         self.evidence("HOST EDIT", f"accepted provisional commit {commit}; changed paths: {', '.join(changes)}")
         return list(changes)
-
-    def command(self, paths, command):
-        before = self.unchanged()
-        declared = [relative_path(self.repo, path, allow_root=True) for path in paths]
-        folder = self.operation_dir()
-        save_json(folder / "request.json", {"command": command, "declared_paths": declared})
-        seconds = min(COMMAND_SECONDS, self.deadline - time.monotonic())
-        env = self.command_env
-        receipt = execute_child(self.command_argv(["/bin/sh", "-c", command]), self.repo, None, folder / "stdout.txt", folder / "stderr.txt", seconds, env)
-        after = snapshot(self.repo)
-        receipt.update(command=command, declared_paths=declared, before=state_summary(before), after=state_summary(after))
-        changed = {name: (old, after["files"].get(name, ("missing", b"", 0)))
-                   for name, old in before["files"].items() if old != after["files"].get(name)}
-        pending_diffs = {}
-        errors = []
-        if after["head"] != before["head"] or after["index"] != before["index"] or after["index_flags"] != before["index_flags"]:
-            errors.append("command changed HEAD or index")
-        if after["untracked"] != before["untracked"]:
-            errors.append("command created nonignored untracked source")
-        for number, (name, (old, new)) in enumerate(changed.items()):
-            retained = folder / "pending" / str(number)
-            retained.mkdir(parents=True)
-            (retained / "before").write_bytes(old[1])
-            (retained / "after").write_bytes(new[1])
-            save_json(retained / "identity.json", {"path": name, "before_kind": old[0], "after_kind": new[0], "before_mode": old[2], "after_mode": new[2]})
-            with (retained / "diff.txt").open("xb") as output:
-                subprocess.run(["git", "diff", "--no-index", "--", str(retained / "before"), str(retained / "after")], stdout=output, stderr=subprocess.STDOUT, check=False)
-            if after["index"] == before["index"] and after["head"] == before["head"] and new[0] in ("file", "missing"):
-                ordinary = git(self.repo, "diff", "--no-ext-diff", "--no-textconv", "--", name)
-                indexed = git(self.repo, "show", f":{name}")
-                if ordinary and indexed == old[1]:
-                    pending_diffs[name] = ordinary.decode("utf-8", errors="replace")
-                else:
-                    # Index flags/overlays can hide a real working-byte change.
-                    # Never silently omit it or claim a different beforeimage.
-                    pending_diffs[name] = f"Tracked path: {name}; exact retained before/after diff (index view unavailable or differs); before {old[0]} mode {old[2]:o}, after {new[0]} mode {new[2]:o}:\n" + (retained / "diff.txt").read_bytes().decode("utf-8", errors="replace")
-                (retained / "model-diff.txt").write_text(pending_diffs[name], encoding="utf-8")
-            if new[0] not in ("file", "missing"):
-                errors.append(f"nonregular changed source: {name}")
-            if not any(path == "." or name == path or name.startswith(path + "/") for path in declared):
-                errors.append(f"source change outside declared paths: {name}")
-            try:
-                relative_path(self.repo, name)
-            except Rejected:
-                errors.append(f"symlink source path: {name}")
-        receipt["custody_errors"] = errors
-        receipt["pending_paths"] = list(changed)
-        # A forgotten chmod declaration is reversible without replacing source
-        # bytes. Keep the proposed modes pending for an explicit edit/discard;
-        # content, Git-state and arbitrary permission changes still fail closed.
-        recover_modes = bool(errors and changed) and all(
-            error.startswith("source change outside declared paths: ") for error in errors
-        ) and all(
-            old[0] == new[0] == "file" and old[1] == new[1]
-            and {old[2], new[2]} == {0o644, 0o755}
-            for old, new in changed.values()
-        ) and receipt["exit_code"] == 0 and not receipt["timed_out"] and not receipt["cancelled_signal"] and time.monotonic() < self.deadline
-        if recover_modes:
-            try:
-                for name, (old, _) in changed.items():
-                    (self.repo / name).chmod(old[2])
-                self.unchanged()
-            except (OSError, Fatal) as exc:
-                errors.append(f"executable-mode restoration failed: {exc}")
-                recover_modes = False
-            else:
-                receipt["recovered_mode_paths"] = list(changed)
-        save_json(folder / "receipt.json", receipt)
-        self.event("command_result", receipt=str(folder / "receipt.json"), status=receipt["exit_code"], timed_out=receipt["timed_out"], custody_errors=errors)
-        self.evidence("HOST CHECK", f"command: {command}\nstatus: {receipt['exit_code']}; timed_out: {receipt['timed_out']}\nstdout: {folder / 'stdout.txt'}\nstderr: {folder / 'stderr.txt'}")
-        if errors and not recover_modes:
-            raise Fatal("; ".join(errors) + "; actual state retained")
-        for name, (old, new) in changed.items():
-            if not recover_modes:
-                write_state(self.repo / name, old)
-            self.pending[name] = {"after": new, "artifact": str(folder / "pending"), "diff": pending_diffs[name]}
-        self.unchanged()
-        if receipt["cancelled_signal"] or receipt["timed_out"] or time.monotonic() >= self.deadline:
-            raise Fatal("command cancelled or command/workflow deadline reached; no retry")
-        output = []
-        for stream in ("stdout", "stderr"):
-            path = folder / f"{stream}.txt"
-            output.append(f"{stream}:\n" + render_output(path.read_bytes().decode("utf-8", errors="replace")))
-        pending = "\n" + self.pending_feedback() if self.pending else ""
-        recovery = ("\nUndeclared executable-bit changes were rejected and restored; source bytes are unchanged. "
-                    "The command has already run; do not repeat successful checks. Publish the required modes with an explicit edit, or discard them.\n"
-                    if recover_modes else "")
-        return f"Host command completed.\ncommand: {command}\nstatus: {receipt['exit_code']}\n" + "\n".join(output) + recovery + pending
-
-    def pending_feedback(self):
-        diff = "\n".join(self.pending[name]["diff"] for name in self.pending_changes)
-        return (f"Standalone command captured tracked file changes\nfiles: {', '.join(self.pending_changes)}\n"
-                "Review cannot start until command-produced tracked changes are saved in a provisional commit or explicitly discarded.\n"
-                "These changes are pending and restored in the checkout. If required, submit an equivalent structured `@standalone edit <reason>` using the full diff below; the host applies and commits it through the ordinary edit path.\n"
-                "To publish a file mode, put `*** Mode: 100755` (executable) or `*** Mode: 100644` (non-executable) immediately after its `*** Update File: path` header; no @@ hunks are needed for a mode-only edit.\n"
-                "If not required, emit `@standalone discard <reason>` to clear this pending output without writing or committing it.\n"
-                "In your next response, emit one edit block or one discard directive for these files, then stop; do not repeat the block or include DONE until acceptance or explicit discard.\n"
-                "Current tracked diff:\n" + diff + ("" if diff.endswith("\n") else "\n"))
 
     def activation(self, key, **detail):
         self.activations[key] = self.activations.get(key, 0) + 1
@@ -642,60 +482,6 @@ class Host:
                 continue
         return "\n\n".join(sections)
 
-    def consume(self, text):
-        if self.completed:
-            raise Fatal("completed stage cannot consume another reply")
-        self.unchanged()
-        if time.monotonic() >= self.deadline:
-            raise Fatal("workflow deadline exhausted")
-        try:
-            operations = parse_operations(text)
-            if len(operations) != 1:
-                raise Rejected("exactly one operative directive is required; no operation executed")
-        except Rejected as exc:
-            self.event("proposal_rejected", reason=str(exc))
-            return f"Host proposal rejected: {exc}. Submit one corrected complete operation."
-        operation = operations[0]
-        kind = operation[0]
-        try:
-            if kind == "read":
-                return self.read(operation[1])
-            if kind == "edit":
-                changed = self.apply(operation[1], operation[2])
-                self.activation("C16", paths=changed)
-                self.activation("C17", commit=self.expected["head"])
-                # Like WL's clear_files on successful patch/edit: an ACK is
-                # not delivery of a new complete file snapshot.
-                for name in changed:
-                    self.seen.pop(name, None)
-                reply = f"Host accepted files: {', '.join(changed)}. Provisional commit: {self.expected['head']}."
-                if self.factors["C13"]:
-                    reply += " Run at most one relevant focused validation step for this accepted work; further checks and edits remain appropriate for concrete unfinished work or failures."
-                if self.factors["C38"]:
-                    reply += " When the required work and relevant checks are complete, send @standalone done. Do not resend accepted patches."
-                return reply
-            if kind == "run":
-                reply = self.command(operation[1], operation[2])
-                if self.factors["C20"]:
-                    self.activation("C20")
-                    reply += "\n" + policy_blocks(self.factors)["C20"]
-                if self.factors["C38"]:
-                    reply += "\nWhen all required work and checks are complete, send @standalone done."
-                return reply
-            if kind == "discard":
-                self.event("pending_discarded", reason=operation[1], paths=self.pending_changes)
-                self.pending.clear()
-                return "Pending command-produced changes discarded."
-            if self.pending:
-                return "DONE rejected: command-produced changes remain pending.\n" + self.pending_feedback()
-            self.completed = True
-            self.event("done", head=self.expected["head"])
-            return None
-        except Rejected as exc:
-            self.event("proposal_rejected", reason=str(exc))
-            refresh = self.refresh(operation[2]) if kind == "edit" else ""
-            return f"Host proposal rejected: {exc}. No rejected operation was applied. Inspect the current source and correct the proposal.\n{refresh}"
-
 
 def refresh_text(name, previous, current, compact):
     """Change only the successful changed-file body, as in the C08 contrast.
@@ -706,7 +492,7 @@ def refresh_text(name, previous, current, compact):
     heading = f"File refresh (not a patch to submit): {name}\ncurrent sha256: {digest(current.encode())}\n"
     if previous is None:
         if len(current.encode()) > 8 * 1024:
-            return heading + "No previous snapshot; full text omitted. Request @standalone read for this file.", "omitted"
+            return heading + "No previous snapshot; full text omitted. Request host_read for this file.", "omitted"
         return heading + "Current complete file:\n" + current, "full"
     heading += f"previous sha256: {digest(previous.encode())}\n"
     if previous == current:
@@ -720,10 +506,10 @@ def refresh_text(name, previous, current, compact):
         after.write_text(current, encoding="utf-8")
         result = subprocess.run(["git", "diff", "--no-index", "--no-ext-diff", "--no-textconv", "--no-prefix", "--", "previous/"+safe, "current/"+safe], cwd=directory, capture_output=True, timeout=10)
         if result.returncode not in (0, 1):
-            return heading + "Diff unavailable; request @standalone read for this file.", "omitted"
+            return heading + "Diff unavailable; request host_read for this file.", "omitted"
         diff = result.stdout.decode("utf-8")
     if len(diff.encode()) > 48 * 1024:
-        return heading + "Diff exceeds 49152 bytes; request @standalone read for this file.", "omitted"
+        return heading + "Diff exceeds 49152 bytes; request host_read for this file.", "omitted"
     if compact:
         return heading + "Changed since the last delivered snapshot:\n" + diff, "diff"
     return heading + "Current complete file:\n" + current, "full"

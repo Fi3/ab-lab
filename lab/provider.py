@@ -12,17 +12,14 @@ import threading
 import time
 import uuid
 
-from .host import Fatal, Rejected, parse_operations, save_json
-from .host_response import (HOST_RESPONSE_FORMAT, HOST_OUTPUT_SCHEMA,
-                            HOST_RESPONSE_INSTRUCTIONS, HostResponseOutputError,
-                            decode_host_response)
+from .host import Fatal, save_json
 from .environment import clean_env
 from .nested import CommandEnvironment, NestedUsage
 from .native_usage import NativeUsage
 from .pi_sandbox import PiSandbox
 from .sandbox import EXECUTION_POLICY
 from .context import AUTO_COMPACT_TOKENS, CONTEXT_POLICY, OUTPUT_SETTLE_SECONDS, OutputGuard, compaction_threshold
-from .loops import work_limit_error, WorkLimitReached, ReviewConclusionRequested
+from .loops import work_limit_error, WorkLimitReached
 
 
 class RecoverableTurn(Fatal):
@@ -34,10 +31,9 @@ RECOVERY_PROMPT = (
     "The previous turn was stopped because of a context or output limit. "
     "Continue the pending task from the current repository and recorded tool results. "
     "Tools may already have completed: inspect current state before taking further action; "
-    "do not replay completed commands or accepted edits. The previous assistant response "
-    "was not delivered to the host, so any host directive in it was not executed. "
-    "Keep all existing task requirements, permissions, review findings and completion "
-    "protocol in force. Produce a fresh, complete response for the next unfinished step."
+    "do not replay completed commands or accepted edits. "
+    "Keep all existing task requirements, permissions and review findings in force. "
+    "Continue from the next unfinished step."
 )
 
 
@@ -112,27 +108,6 @@ class Usage:
                 "definition": "sum of observed per-thread input+output counters; cache/reasoning not added again"}
 
 
-class InterruptGate:
-    """Only a priced response boundary permits discretionary cancellation."""
-    def __init__(self, enabled):
-        self.enabled = enabled
-        self.at = None
-        self.fresh_usage = False
-
-    def directive(self, now):
-        if self.at is None:
-            self.at = now
-
-    def reason(self, now):
-        if not self.enabled or self.at is None:
-            return None
-        if self.fresh_usage:
-            return "usage_received"
-        # A complete intermediate message or elapsed time is not a complete
-        # model response. Cancelling there can lose its numeric usage report.
-        return None
-
-
 class ReviewSettlement:
     """Retain a review time stop while its current response supplies usage."""
     def __init__(self):
@@ -173,6 +148,47 @@ class ReviewSettlement:
 
 class ChildAccounting:
     """Shared controls for native command-launched verification agents."""
+    def register_host_tools(self, thread, tools, handler):
+        if not tools:
+            if handler is not None:
+                raise ValueError("a host tool handler requires tool definitions")
+            return
+        if not callable(handler):
+            raise ValueError("host tools require a callable handler")
+        names = [tool["name"] for tool in tools]
+        if len(set(names)) != len(names):
+            raise ValueError("duplicate host tool name")
+        if not hasattr(self, "host_tools"):
+            self.host_tools = {}
+        self.host_tools[thread] = {"names": set(names), "handler": handler, "calls": {}}
+        save_json(self.artifacts / (thread + "-host-tools.json"), tools)
+
+    def dispatch_host_tool(self, thread, turn, name, arguments, call_id):
+        """Execute an owned call once; reconnect/repeated deliveries reuse its result."""
+        registered = getattr(self, "host_tools", {}).get(thread)
+        if not registered or name not in registered["names"]:
+            return {"success": False, "text": "Unknown host tool."}
+        if not isinstance(arguments, dict) or not isinstance(call_id, str) or not call_id:
+            return {"success": False, "text": "Host tool requires object arguments and a call ID."}
+        identity = f"{thread}:{turn}:{call_id}"
+        request = json.dumps([name, arguments], sort_keys=True, ensure_ascii=False)
+        previous = registered["calls"].get(identity)
+        if previous is not None:
+            if previous["request"] != request or "result" not in previous:
+                raise Fatal("conflicting or unfinished host tool call; refusing replay")
+            return previous["result"]
+        self.settle_children()
+        error = self.budget_error()
+        if error:
+            raise error
+        receipt = registered["calls"][identity] = {"request": request}
+        result = registered["handler"](name, arguments, identity)
+        if (not isinstance(result, dict) or type(result.get("success")) is not bool
+                or not isinstance(result.get("text"), str)):
+            raise Fatal("invalid host tool result; operation retained without replay")
+        receipt["result"] = result
+        return result
+
     def command_argv(self, argv):
         return self.commands.sandbox.command(True, argv)
 
@@ -227,7 +243,6 @@ class Codex(ChildAccounting):
         self.artifacts.mkdir(parents=True, exist_ok=False)
         self.deadline, self.max_raw, self.max_turns = deadline, max_raw, max_turns
         self.model, self.effort = model, effort
-        self.host_response_format = HOST_RESPONSE_FORMAT
         self.usage, self.turns, self.missing_turns = Usage(), [], []
         self.native_usage = {}
         self.context_usage = {}
@@ -276,7 +291,7 @@ class Codex(ChildAccounting):
                 "auth": "chatgpt", "model": model, "effort": effort,
                 "effective_config_sha256": hashlib.sha256(normalized_config.encode()).hexdigest(),
                 "execution_policy": EXECUTION_POLICY,
-                "host_response_format": self.host_response_format,
+                "host_tool_transport": "native-tools-v1",
                 "context_policy": {**CONTEXT_POLICY, "auto_compact_tokens": self.auto_compact_limit,
                                    "message_seconds": MESSAGE_SECONDS, "recovery_attempts": 1},
                 "nested_policy": "same-model-subscription-supervised-native-history-v2"}
@@ -317,7 +332,7 @@ class Codex(ChildAccounting):
             raise Fatal(message["_transport_error"])
         if message.get("id") != private_id or private_id is None:
             self.record("receive", message)
-        if "id" in message and "method" in message:
+        if "id" in message and "method" in message and message["method"] != "item/tool/call":
             # Never approve extra permissions, external auth or interactive work.
             self.send({"id": message["id"], "error": {"code": -32601, "message": "interactive server requests are unsupported; approval policy is never"}})
         if message.get("method") == "thread/tokenUsage/updated":
@@ -372,16 +387,20 @@ class Codex(ChildAccounting):
         if receipt.get("exitCode") != 0:
             raise Fatal("Git-write preflight failed before model generation: "+receipt.get("stderr", "unknown error"))
 
-    def start_thread(self, writable=False):
+    def start_thread(self, writable=False, tools=None, tool_handler=None):
         options = self.sandbox.thread_options(writable)
         options['config']['model_reasoning_effort'] = self.effort
         options['config']['model_auto_compact_token_limit'] = getattr(self, "auto_compact_limit", AUTO_COMPACT_TOKENS)
-        result = self.rpc("thread/start", {"cwd": str(self.repo), "model": self.model,
+        params = {"cwd": str(self.repo), "model": self.model,
             "modelProvider": "openai", "approvalPolicy": "never",
             **options,
-            "experimentalRawEvents": False})
+            "experimentalRawEvents": False}
+        if tools:
+            params["dynamicTools"] = [{"type": "function", **tool} for tool in tools]
+        result = self.rpc("thread/start", params)
         self.parent_threads.add(result["thread"]["id"])
         self.register_native_thread(result["thread"])
+        self.register_host_tools(result["thread"]["id"], tools, tool_handler)
         return result["thread"]["id"]
 
     def register_native_thread(self, thread, cwd=None):
@@ -428,7 +447,7 @@ class Codex(ChildAccounting):
                         compacting=True)
         getattr(self, "context_usage", {}).pop(thread, None)
 
-    def turn(self, thread, prompt, label, interrupt=False, host_request=False, writable=False):
+    def turn(self, thread, prompt, label, writable=False):
         self.settle_children()
         self.check_limits()
         context = getattr(self, "context_usage", {}).get(thread)
@@ -436,14 +455,11 @@ class Codex(ChildAccounting):
             threshold = compaction_threshold(context["window"],
                 getattr(self, "auto_compact_limit", AUTO_COMPACT_TOKENS))
             # UTF-8 bytes are a conservative upper bound for incoming text tokens.
-            format_bytes = (len(HOST_RESPONSE_INSTRUCTIONS.encode("utf-8")) + 2
-                            + len(json.dumps(HOST_OUTPUT_SCHEMA).encode("utf-8"))
-                            if host_request and getattr(self, "host_response_format", None) == HOST_RESPONSE_FORMAT else 0)
-            if context["tokens"] + len(prompt.encode("utf-8")) + format_bytes >= threshold:
+            if context["tokens"] + len(prompt.encode("utf-8")) >= threshold:
                 self.compact(thread, label)
         for attempt in range(2):
             try:
-                return self._turn_once(thread, prompt, label, interrupt, host_request, writable)
+                return self._turn_once(thread, prompt, label, writable)
             except RecoverableTurn as exc:
                 if attempt:
                     raise Fatal("context/output recovery exhausted after one retry: " + str(exc)) from exc
@@ -454,7 +470,7 @@ class Codex(ChildAccounting):
                 self.compact(thread, label)
                 prompt = RECOVERY_PROMPT
 
-    def _turn_once(self, thread, prompt, label, interrupt=False, host_request=False, writable=False,
+    def _turn_once(self, thread, prompt, label, writable=False,
                    *, compacting=False):
         self.settle_children()
         self.refresh_native_usage(force=True)
@@ -462,23 +478,15 @@ class Codex(ChildAccounting):
         transport_before = self.usage.transport_totals.get(thread, (0, 0, 0))
         folder = self.artifacts / f"turn-{len(self.turns)+1:04d}"
         folder.mkdir()
-        structured_host = (host_request and not compacting and
-                           getattr(self, "host_response_format", None) == HOST_RESPONSE_FORMAT)
-        if structured_host:
-            prompt += "\n\n" + HOST_RESPONSE_INSTRUCTIONS
-            save_json(folder / "output-schema.json", HOST_OUTPUT_SCHEMA)
+        actual_tools = thread in getattr(self, "host_tools", {})
         (folder / "prompt.txt").write_text(prompt)
         row = {"label": label, "thread_id": thread, "status": "started", "prompt_file": str(folder / "prompt.txt")}
-        if structured_host:
-            row["response_format"] = HOST_RESPONSE_FORMAT
-            row["output_schema_file"] = str(folder / "output-schema.json")
         if compacting:
             row["kind"] = "compaction"
         self.turns.append(row)
         turn_id = None
-        gate, guard = InterruptGate(interrupt), OutputGuard()
-        selected, replies, interrupted = None, [], None
-        selected_operation = None
+        guard = OutputGuard()
+        replies, interrupted = [], None
         priced, last_output, last_usage = False, 0.0, 0.0
         last_compaction = 0.0
         stop_reason, stop_at, failure = None, None, None
@@ -487,6 +495,7 @@ class Codex(ChildAccounting):
         output_rejected = False
         stream_log = None
         stop_budget = None
+        tool_stop = None
         settlement = ReviewSettlement()
         last_response_activity = 0.0
         recoverable, compacted = False, False
@@ -528,11 +537,9 @@ class Codex(ChildAccounting):
                                   0.0 if reader is not None else last_compaction)
             return priced and last_usage >= required_output and compaction_covered()
 
-        def record_output(method, params, now, select=False):
-            nonlocal last_output, selected, stop_reason, recoverable, output_guard_at, stream_log, output_rejected
-            nonlocal selected_operation
+        def record_output(method, params, now):
+            nonlocal last_output, stop_reason, recoverable, output_guard_at, stream_log, output_rejected
             last_output = now
-            gate.fresh_usage = False
             if method == "item/agentMessage/delta":
                 item_id = params.get("itemId", "agent-message")
                 if stream_log is None:
@@ -550,30 +557,6 @@ class Codex(ChildAccounting):
                 item_id = item.get("id", "agent-message")
                 streaming.pop(item_id, None)
                 violation = guard.finish(item_id, text)
-                if select and selected is None and host_request and not stop_reason and not violation:
-                    if structured_host:
-                        # outputSchema constrains final messages, not commentary.
-                        # Older providers omit phase; they still must supply one
-                        # complete, locally validated structured operation.
-                        if item.get("phase") in (None, "final_answer"):
-                            try:
-                                operation = decode_host_response(text)
-                            except HostResponseOutputError as exc:
-                                violation = exc.reason
-                            except ValueError as exc:
-                                row.setdefault("host_response_errors", []).append({
-                                    "item_id": item_id, "error": str(exc)})
-                            else:
-                                selected, selected_operation = text, operation
-                                row["host_message_id"] = item_id
-                                gate.directive(now)
-                    else:
-                        try:
-                            if len(parse_operations(text)) == 1:
-                                selected = text
-                                gate.directive(now)
-                        except Rejected:
-                            pass
             if violation:
                 output_rejected = True
             if violation and (stop_reason is None or (
@@ -606,8 +589,6 @@ class Codex(ChildAccounting):
                 params = {"threadId": thread, "input": [{"type": "text", "text": prompt}],
                     "model": self.model, "effort": self.effort, "approvalPolicy": "never",
                     "sandboxPolicy": self.sandbox.policy(writable)}
-                if structured_host:
-                    params["outputSchema"] = HOST_OUTPUT_SCHEMA
                 result = self.rpc("turn/start", params)
                 turn_id = result["turn"]["id"]
                 self.active = thread, turn_id
@@ -617,7 +598,7 @@ class Codex(ChildAccounting):
                 if stop_at is not None and now-stop_at > 15:
                     raise Fatal("interrupted turn did not close within 15 seconds; retained with unknown tail")
                 if interrupted is None:
-                    stop_budget = self.budget_error()
+                    stop_budget = self.budget_error() or tool_stop
                     if stop_budget:
                         stop_reason = str(stop_budget)
                         recoverable = False
@@ -660,7 +641,7 @@ class Codex(ChildAccounting):
                                 "hard_limit" if stop_reason == "agent_message_bytes" else
                                 "priced_boundary" if covered else "timeout")
                     else:
-                        reason = None if compaction_active else gate.reason(now)
+                        reason = None
                     if reason:
                         if turn_id is None:
                             raise Fatal(stop_reason or "cannot interrupt an unidentified turn")
@@ -671,6 +652,30 @@ class Codex(ChildAccounting):
                 if message is None:
                     continue
                 params = message.get("params", {})
+                if message.get("method") == "item/tool/call" and "id" in message:
+                    owned = (params.get("threadId") == thread and params.get("turnId") == turn_id
+                             and turn_id is not None and actual_tools and not compacting)
+                    if owned and interrupted is None and not stop_reason:
+                        if params.get("namespace") is not None:
+                            result = {"success": False, "text": "Unknown host tool namespace."}
+                        else:
+                            try:
+                                result = self.dispatch_host_tool(thread, turn_id, params.get("tool"),
+                                    params.get("arguments"), params.get("callId"))
+                            except WorkLimitReached as exc:
+                                tool_stop, stop_reason = exc, str(exc)
+                                result = getattr(exc, "completed_tool_result", {
+                                    "success": False, "text": "Host operation stopped."})
+                                self.counter += 1
+                                self.send({"id": self.counter, "method": "turn/interrupt",
+                                    "params": {"threadId": thread, "turnId": turn_id}})
+                                interrupted, stop_at = "budget", time.monotonic()
+                        row.setdefault("host_tool_calls", []).append(params.get("callId"))
+                    else:
+                        result = {"success": False, "text": "Host tool call is not owned by an active author turn."}
+                    self.send({"id": message["id"], "result": {"success": result["success"],
+                        "contentItems": [{"type": "inputText", "text": result["text"]}]}})
+                    continue
                 if params.get("threadId") != thread:
                     continue
                 method = message.get("method")
@@ -689,21 +694,17 @@ class Codex(ChildAccounting):
                     self.remember_context(params)
                     if message.get("_fresh_usage"):
                         priced, last_usage = True, now
-                        if gate.at is not None:
-                            gate.fresh_usage = True
                 elif method == "item/started" and item.get("type") in ("reasoning", "agentMessage"):
                     last_response_activity = now
-                    gate.fresh_usage = False
                 elif method == "item/agentMessage/delta":
                     record_output(method, params, now)
                 elif method == "item/completed" and item.get("type") == "agentMessage":
-                    record_output(method, params, now, select=True)
+                    record_output(method, params, now)
                 elif method == "item/completed" and item.get("type") == "contextCompaction":
                     compacted = True
                     compaction_items.add(item.get("id", "context-compaction"))
                     compaction_active = False
                     last_compaction = now
-                    gate.fresh_usage = False
                 elif method == "item/started" and item.get("type") == "contextCompaction":
                     compaction_active = True
                 elif method == "turn/completed":
@@ -738,7 +739,7 @@ class Codex(ChildAccounting):
                         last_response_activity = time.monotonic()
                     elif (owned and message.get("method") == "item/completed"
                           and p.get("item", {}).get("type") == "agentMessage"):
-                        record_output(message["method"], p, time.monotonic(), select=structured_host)
+                        record_output(message["method"], p, time.monotonic())
                     elif owned and message.get("method") == "error" and p.get("willRetry") is not True:
                         record_failure(p.get("error") or {}, "failed")
                     else:
@@ -764,10 +765,10 @@ class Codex(ChildAccounting):
                 # An unknown generation failure is not a certified response
                 # boundary, even if an earlier counter happened to arrive.
                 row["usage_observed_after_last_message"] = False
-            final = selected if selected is not None else next((text for text in reversed(replies) if text.strip()), "")
+            final = next((text for text in reversed(replies) if text.strip()), "")
             (folder / "reply.txt").write_text(final)
             save_json(folder / "messages.json", replies)
-            stop_budget = self.budget_error()
+            stop_budget = self.budget_error() or tool_stop
             if settlement.error is not None:
                 if failure:
                     settlement.outcome = "provider_error"
@@ -781,31 +782,19 @@ class Codex(ChildAccounting):
                 row["recovery_eligible"] = recoverable and not compacting
                 if isinstance(stop_budget, WorkLimitReached) and not failure:
                     row["work_limit"] = stop_budget.signal
-                    if (isinstance(stop_budget, ReviewConclusionRequested) and not compacting and not output_rejected
-                            and row["status"] == "completed" and row["usage_observed_after_last_message"]):
-                        stop_budget.completed_reply = final
                     raise stop_budget
                 error_class = RecoverableTurn if row["recovery_eligible"] else Fatal
                 raise error_class(failure or stop_reason)
             if compacting and not compacted:
                 raise Fatal("compaction completed without a contextCompaction item")
-            if not compacting and not final:
-                raise Fatal("turn supplied no executable request or final reply")
-            if structured_host and selected_operation is None:
-                raise Fatal("turn supplied no valid structured host operation; no host action executed")
             if not row["usage_observed_after_last_message"]:
                 self.missing_turns.append({"thread_id": thread, "turn_id": turn_id,
                     "reason": "no fresh usage covering the last delivered message"})
             if (compacting or compaction_items) and not self.report()["measurement_complete"]:
                 raise Fatal("incomplete token measurement after compaction; no further generation")
-            if (structured_host or thread in getattr(self, "native_usage", {})) and not row["usage_observed_after_last_message"]:
-                raise Fatal("incomplete native token measurement; no host directive or further generation")
+            if not row["usage_observed_after_last_message"]:
+                raise Fatal("incomplete native token measurement; no further generation")
             self.settle_children()
-            if structured_host:
-                path = folder / "host-operation.txt"
-                path.write_text(selected_operation)
-                row["host_operation_file"] = str(path)
-                return selected_operation
             return final
         except BaseException as exc:
             if settlement.error is not None and "work_limit_settlement" not in row:
@@ -878,11 +867,23 @@ class Codex(ChildAccounting):
 
 
 class PiThread:
-    def __init__(self, thread_id, argv, cwd, env, stderr, log_fn):
+    def __init__(self, thread_id, argv, cwd, env, stderr, log_fn, *, host_tools=None):
         self.thread_id = thread_id
         self.log_fn = log_fn
         self.events = queue.Queue()
-        self.process = subprocess.Popen(
+        self.host_requests = self.host_responses = None
+        inherited = ()
+        if host_tools:
+            request_read, request_write = os.pipe()
+            response_read, response_write = os.pipe()
+            self.host_requests = os.fdopen(request_read, "r")
+            self.host_responses = os.fdopen(response_write, "w", buffering=1)
+            inherited = (request_write, response_read)
+            env = {**env, "AGENT_LAB_PI_HOST_REQUEST_FD": str(request_write),
+                   "AGENT_LAB_PI_HOST_RESPONSE_FD": str(response_read),
+                   "AGENT_LAB_PI_HOST_THREAD_ID": thread_id}
+        try:
+            self.process = subprocess.Popen(
             argv,
             cwd=cwd,
             env=env,
@@ -891,10 +892,37 @@ class PiThread:
             stderr=stderr,
             text=True,
             bufsize=1,
-            start_new_session=True
-        )
+            start_new_session=True,
+            pass_fds=inherited,
+            )
+        except BaseException:
+            if self.host_requests:
+                self.host_requests.close()
+                self.host_responses.close()
+            raise
+        finally:
+            for fd in inherited:
+                os.close(fd)
         self.reader = threading.Thread(target=self._reader, daemon=True)
         self.reader.start()
+        if self.host_requests:
+            self.host_reader = threading.Thread(target=self._host_reader, daemon=True)
+            self.host_reader.start()
+
+    def _host_reader(self):
+        try:
+            for line in self.host_requests:
+                message = json.loads(line)
+                self.log_fn("host_receive", message)
+                self.events.put(message)
+        except (OSError, ValueError):
+            self.events.put({"_transport_error": "invalid Pi host tool bridge message"})
+
+    def host_result(self, call_id, result):
+        message = {"callId": call_id, **result}
+        self.log_fn("host_send", message)
+        self.host_responses.write(json.dumps(message) + "\n")
+        self.host_responses.flush()
 
     def _reader(self):
         try:
@@ -970,6 +998,10 @@ class PiThread:
                     self.process.stdout.close()
                 except Exception:
                     pass
+        if self.host_responses is not None:
+            self.host_responses.close()
+        if self.host_requests is not None:
+            self.host_requests.close()
 
 
 def pi_usage_tokens(value):
@@ -984,6 +1016,56 @@ def pi_usage_tokens(value):
             raise Fatal("Pi session/response usage has inconsistent totals")
     inputs, outputs, reads, writes = counts
     return inputs + reads + writes, outputs, reads
+
+
+class PiCancellationReceipts:
+    """Owned proof that an SDK error did not dispatch a model request."""
+    prefix = "Lab request not dispatched: "
+
+    def __init__(self, path, thread, turn):
+        self.path, self.thread, self.turn = path, thread, turn
+        self.accepted = {}
+
+    def covers(self, event, interrupted):
+        kind = event.get("type")
+        message = event.get("message", {})
+        if (kind not in ("message_start", "message_end", "turn_end")
+                or not isinstance(message, dict)
+                or not isinstance(message.get("errorMessage"), str)
+                or not message["errorMessage"].startswith(self.prefix)):
+            return False
+        receipt_id = message["errorMessage"][len(self.prefix):]
+        try:
+            uuid.UUID(receipt_id)
+            receipts = [json.loads(line) for line in self.path.read_text().splitlines()]
+            matching = [r for r in receipts if r.get("receipt_id") == receipt_id]
+        except (OSError, ValueError, TypeError, AttributeError) as exc:
+            raise Fatal("Pi cancellation receipt is unavailable or invalid") from exc
+        if len(matching) != 1:
+            raise Fatal("Pi cancellation receipt is missing or duplicated")
+        receipt = matching[0]
+        expected = {"type": "request_not_dispatched", "thread_id": self.thread,
+                    "turn_id": self.turn, "provider": message.get("provider"),
+                    "model": message.get("model"), "api": message.get("api"),
+                    "reason": "already_aborted_before_prepare"}
+        if (not interrupted or any(receipt.get(k) != v for k, v in expected.items())
+                or message.get("role") != "assistant" or message.get("content") != []
+                or message.get("stopReason") not in ("error", "aborted")
+                or message.get("responseId") or pi_usage_tokens(message.get("usage")) != (0, 0, 0)):
+            raise Fatal("Pi cancellation receipt does not match the stopped request")
+        fingerprint = hashlib.sha256(json.dumps(message, sort_keys=True).encode()).hexdigest()
+        accepted = self.accepted.setdefault(receipt_id, {"fingerprint": fingerprint, "events": [],
+                                                       "receipt": receipt})
+        sequence = ["message_start", "message_end", "turn_end"]
+        if (accepted["fingerprint"] != fingerprint or len(accepted["events"]) >= len(sequence)
+                or kind != sequence[len(accepted["events"])]):
+            raise Fatal("Pi cancellation receipt was reused or has an invalid lifecycle")
+        accepted["events"].append(kind)
+        return True
+
+    def complete(self):
+        return all(row["events"] == ["message_start", "message_end", "turn_end"]
+                   for row in self.accepted.values())
 
 
 class Pi(ChildAccounting):
@@ -1031,13 +1113,14 @@ class Pi(ChildAccounting):
             probe.close()
         controls = {"pi_version": version, "model": self.model, "effort": self.effort,
                     "auth": "openai-codex", "sandbox": "codex-native-tools-v1",
+                    "host_tool_transport": "native-tools-v1", "request_guard": "pre-dispatch-v1",
                     "execution_policy": EXECUTION_POLICY,
                     "nested_policy": "same-model-subscription-supervised-native-history-v2"}
         self.identity = {
             **controls,
             "harness": "pi",
             "codex_version": subprocess.check_output([self.commands.executable, "--version"], text=True, env=clean_env(), timeout=10).strip(),
-            "usage_accounting": "pi-session-totals-with-cache-v2",
+            "usage_accounting": "pi-session-totals-with-cache-and-cancellation-receipts-v3",
             "effective_config_sha256": hashlib.sha256(json.dumps(controls, sort_keys=True).encode()).hexdigest(),
         }
         save_json(self.artifacts / "provider.json", self.identity)
@@ -1063,10 +1146,13 @@ class Pi(ChildAccounting):
                 or model.get("id") != self.model or data.get("thinkingLevel") != self.effort):
             raise Fatal("Pi effective provider/model/effort differs from the benchmark; no generation")
 
-    def new_thread(self, thread_id, writable=False, no_session=False):
+    def new_thread(self, thread_id, writable=False, no_session=False, tools=None):
         policy = self.artifacts / (thread_id + "-sandbox.json")
         self.sandbox.configure(policy, writable, self.deadline)
         argv = self.launch_arguments()
+        if tools:
+            tool_index = argv.index("--tools") + 1
+            argv[tool_index] += "," + ",".join(tool["name"] for tool in tools)
         if no_session:
             argv += ["--no-session"]
         else:
@@ -1074,8 +1160,12 @@ class Pi(ChildAccounting):
             session_dir.mkdir()
             argv += ["--session-dir", str(session_dir)]
         env = {**self.command_env, "AGENT_LAB_PI_MODULE": self.sandbox.module,
-               "AGENT_LAB_PI_POLICY": str(policy)}
-        th = PiThread(thread_id, argv, self.repo, env, self.stderr, self.record)
+               "AGENT_LAB_PI_POLICY": str(policy), "AGENT_LAB_PI_THREAD_ID": thread_id,
+               "AGENT_LAB_PI_REQUEST_JOURNAL": str(self.artifacts / (thread_id + "-requests.jsonl"))}
+        if tools:
+            definitions = self.artifacts / (thread_id + "-host-tools.json")
+            env["AGENT_LAB_PI_HOST_TOOLS"] = str(definitions)
+        th = PiThread(thread_id, argv, self.repo, env, self.stderr, self.record, host_tools=tools)
         th.policy = policy
         return th
 
@@ -1083,7 +1173,8 @@ class Pi(ChildAccounting):
         state = thread.rpc({"type": "get_state"}, timeout=max(0.001, min(30, self.deadline-time.monotonic())))
         self.validate_state(state)
         ready = thread.policy.with_suffix(".json.ready")
-        if not ready.is_file() or json.loads(ready.read_text()).get("pid") != thread.process.pid:
+        receipt = json.loads(ready.read_text()) if ready.is_file() else {}
+        if receipt.get("pid") != thread.process.pid or receipt.get("request_guard") != "pre-dispatch-v1":
             raise Fatal("Pi sandbox extension did not load; refusing unsandboxed generation")
         self.sandbox.configure(thread.policy, writable, self.deadline)
 
@@ -1091,15 +1182,16 @@ class Pi(ChildAccounting):
         self.log.write(json.dumps({"time": time.time(), "direction": direction, "event": event}) + "\n")
         self.log.flush()
 
-    def start_thread(self, writable=False):
+    def start_thread(self, writable=False, tools=None, tool_handler=None):
         self.thread_counter += 1
         thread_id = f"pi-thread-{self.thread_counter}"
-        th = self.new_thread(thread_id, writable)
+        self.register_host_tools(thread_id, tools, tool_handler)
+        th = self.new_thread(thread_id, writable, tools=tools)
         self.threads[thread_id] = th
         self.prepare_turn(th, writable)
         return thread_id
 
-    def turn(self, thread, prompt, label, interrupt=False, host_request=False, writable=False):
+    def turn(self, thread, prompt, label, writable=False):
         self.settle_children()
         if len(self.turns) >= self.max_turns:
             raise Fatal("workflow turn limit reached")
@@ -1107,6 +1199,7 @@ class Pi(ChildAccounting):
         if error:
             raise error
         self.prepare_turn(self.threads[thread], writable)
+        actual_tools = thread in getattr(self, "host_tools", {})
         folder = self.artifacts / f"turn-{len(self.turns)+1:04d}"
         folder.mkdir()
         (folder / "prompt.txt").write_text(prompt)
@@ -1114,13 +1207,19 @@ class Pi(ChildAccounting):
         row = {"label": label, "thread_id": thread, "turn_id": turn_id, "status": "started", "prompt_file": str(folder / "prompt.txt")}
         self.turns.append(row)
         th = self.threads[thread]
+        policy = json.loads(th.policy.read_text())
+        policy["turn_id"] = turn_id
+        staged = th.policy.with_name(th.policy.name + ".next")
+        staged.write_text(json.dumps(policy))
+        staged.replace(th.policy)
+        cancellations = PiCancellationReceipts(self.artifacts / (thread + "-requests.jsonl"), thread, turn_id)
         before_raw = sum(self.usage.totals.get(thread, (0, 0, 0))[:2])
         counted_messages = set()
-        gate = InterruptGate(interrupt)
-        selected, replies, interrupted = None, [], None
+        replies, interrupted = [], None
         priced, last_output, last_usage = False, 0.0, 0.0
         stop_reason, stop_at = None, None
         stop_budget = None
+        tool_stop = None
         settlement = ReviewSettlement()
         last_response_activity = 0.0
         buffered = None
@@ -1131,8 +1230,8 @@ class Pi(ChildAccounting):
                 if stop_at is not None and now - stop_at > 15:
                     raise Fatal("interrupted turn did not close within 15 seconds; retained with unknown tail")
                 if interrupted is None:
-                    stop_budget = self.budget_error()
-                    reason = "budget" if stop_budget else gate.reason(now)
+                    stop_budget = self.budget_error() or tool_stop
+                    reason = "budget" if stop_budget else None
                     if stop_budget:
                         covered = priced and last_usage >= max(last_output, last_response_activity)
                         if settlement.eligible(stop_budget) and covered and buffered is None:
@@ -1150,32 +1249,46 @@ class Pi(ChildAccounting):
                     continue
                 if "_transport_error" in message:
                     raise Fatal(message["_transport_error"])
+                if message.get("type") == "lab_host_tool_call":
+                    owned = (actual_tools and message.get("threadId") == thread
+                             and message.get("turnId") == turn_id)
+                    if owned and interrupted is None and not stop_reason:
+                        try:
+                            result = self.dispatch_host_tool(thread, turn_id, message.get("tool"),
+                                message.get("arguments"), message.get("callId"))
+                        except WorkLimitReached as exc:
+                            tool_stop, stop_reason = exc, str(exc)
+                            result = getattr(exc, "completed_tool_result", {
+                                "success": False, "text": "Host operation stopped."})
+                            th.send({"type": "abort"})
+                            interrupted, stop_at = "budget", time.monotonic()
+                        row.setdefault("host_tool_calls", []).append(message.get("callId"))
+                    else:
+                        result = {"success": False, "text": "Host tool call is not owned by an active author turn."}
+                    th.host_result(message.get("callId"), result)
+                    continue
                 if message.get("type") == "extension_ui_request":
                     th.send({"type": "extension_ui_response", "id": message.get("id"), "cancelled": True})
                 if message.get("type") == "response" and message.get("command") == "prompt" and message.get("id") == turn_id:
                     if not message.get("success"):
                         raise Fatal(f"prompt failed: {message.get('error')}")
+                if cancellations.covers(message, interrupted is not None):
+                    row["cancelled_requests"] = list(cancellations.accepted.values())
+                    continue
                 if (message.get("type") in ("message_start", "message_update")
                         and message.get("message", {}).get("role", "assistant") == "assistant"):
                     last_response_activity = now
-                    gate.fresh_usage = False
                 # Streaming snapshots reset for every response; they are not
                 # cumulative conversation counters or completed usage records.
                 if message.get("type") in ("message_end", "turn_end"):
                     m = message.get("message", {})
                     if m.get("role") == "assistant":
+                        if m.get("stopReason") in ("error", "aborted") and interrupted is None:
+                            stop_reason = m.get("errorMessage") or "Pi model response " + m["stopReason"]
                         text = "".join(c.get("text", "") for c in m.get("content", []) if isinstance(c, dict) and c.get("type") == "text")
                         if text and (not replies or replies[-1] != text):
                             replies.append(text)
                             last_output = now
-                            gate.fresh_usage = False
-                            if selected is None and host_request:
-                                try:
-                                    if len(parse_operations(text)) == 1:
-                                        selected = text
-                                        gate.directive(now)
-                                except Rejected:
-                                    pass
                     if message.get("type") == "message_end" and m.get("usage"):
                         key = hashlib.sha256(json.dumps(m, sort_keys=True).encode()).digest()
                         if key not in counted_messages:
@@ -1185,10 +1298,8 @@ class Pi(ChildAccounting):
                             counted_messages.add(key)
                             if fresh:
                                 priced, last_usage = True, now
-                                if gate.at is not None:
-                                    gate.fresh_usage = True
                 if message.get("type") == "agent_settled":
-                    row.update(status="interrupted" if interrupted else "completed", interrupt_reason=interrupted)
+                    row.update(status="interrupted" if interrupted else "failed" if stop_reason else "completed", interrupt_reason=interrupted)
                     break
 
             before_stats = self.usage.totals.get(thread, (0, 0, 0))
@@ -1204,14 +1315,15 @@ class Pi(ChildAccounting):
                 raise Fatal("Pi session usage did not advance for this turn")
             if totals[:2] != before_stats[:2]:
                 priced, last_usage = True, time.monotonic()
-            covered = priced and last_usage >= max(last_output, last_response_activity)
+            covered = (priced and last_usage >= max(last_output, last_response_activity)
+                       and cancellations.complete())
             if not covered:
                 self.missing_turns.append({"thread_id": thread, "turn_id": turn_id, "reason": "no fresh usage covering the last delivered message"})
-            final = selected if selected is not None else next((text for text in reversed(replies) if text.strip()), "")
+            final = next((text for text in reversed(replies) if text.strip()), "")
             (folder / "reply.txt").write_text(final)
             save_json(folder / "messages.json", replies)
             row["usage_observed_after_last_message"] = covered
-            stop_budget = self.budget_error()
+            stop_budget = self.budget_error() or tool_stop
             if settlement.error is not None:
                 if stop_budget and not settlement.eligible(stop_budget):
                     settlement.outcome = "hard_limit"
@@ -1220,16 +1332,11 @@ class Pi(ChildAccounting):
             if stop_budget:
                 if isinstance(stop_budget, WorkLimitReached):
                     row["work_limit"] = stop_budget.signal
-                    if (isinstance(stop_budget, ReviewConclusionRequested)
-                            and row["status"] == "completed" and row["usage_observed_after_last_message"]):
-                        stop_budget.completed_reply = final
                 raise stop_budget
             if stop_reason:
                 raise Fatal(stop_reason)
             if not covered:
                 raise Fatal("incomplete Pi token measurement; no further generation")
-            if not final:
-                raise Fatal("turn supplied no executable request or final reply")
             self.settle_children()
             return final
         except BaseException as exc:
@@ -1244,6 +1351,8 @@ class Pi(ChildAccounting):
                         th.incoming(min(0.1, drain_end - time.monotonic()))
                 except (OSError, Fatal):
                     self.usage.uncertain.append("transport unavailable during cancellation drain")
+            if row["status"] == "started":
+                row["status"] = "failed"
             row.update(error=str(exc))
             if not row.get("usage_observed_after_last_message") and not any(
                 missing.get("turn_id") == turn_id and missing.get("thread_id") == thread

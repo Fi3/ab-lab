@@ -19,27 +19,32 @@ class FakeCodex:
         self.identity = {"codex_version": "test", "auth": "chatgpt", "model": "test", "effort": "test", "effective_config_sha256": "test"}
         self.calls, self.authors, self.fixes = [], {}, {}
         self.threads = 0
+        self.tool_handlers = {}
         self.instances.append(self)
 
-    def start_thread(self, writable=False):
+    def start_thread(self, writable=False, tools=None, tool_handler=None):
         self.threads += 1
-        return f"t{self.threads}"
+        thread = f"t{self.threads}"
+        if tools:
+            self.tool_handlers[thread] = tool_handler
+        return thread
+
+    def tool_call(self, thread, name, arguments, call_id):
+        return self.tool_handlers[thread](name, arguments, f"{thread}:{call_id}")
 
     def turn(self, thread, prompt, label, **kwargs):
         self.calls.append((label, thread, prompt, kwargs))
         if label.endswith("-implement"):
-            n = self.authors.get(label, 0)
-            self.authors[label] = n+1
-            if n == 0:
-                name = label.removesuffix("-implement")
-                return f"@standalone edit implement {name}\n*** Begin Patch\n*** Add File: {name}.py\n+value = 1\n*** End Patch\n@standalone end"
-            return "@standalone done"
+            name = label.removesuffix("-implement")
+            patch = f"*** Begin Patch\n*** Add File: {name}.py\n+value = 1\n*** End Patch\n"
+            self.tool_call(thread, "host_edit", {"patch": patch}, label)
+            return "Implemented."
         if "-review-" in label:
             return "FINDINGS\n- [P2] Change one.py value to 2" if label == "one-review-1" else "NO_FINDINGS"
         if "-fix-" in label:
-            n = self.fixes.get(label, 0)
-            self.fixes[label] = n+1
-            return ("@standalone edit resolve review\n*** Begin Patch\n*** Update File: one.py\n@@\n-value = 1\n+value = 2\n*** End Patch\n@standalone end" if n == 0 else "@standalone done")
+            patch = "*** Begin Patch\n*** Update File: one.py\n@@\n-value = 1\n+value = 2\n*** End Patch\n"
+            self.tool_call(thread, "host_edit", {"patch": patch}, label)
+            return "Repaired."
         if label == "integration-plan":
             return "One final commit for each feature, with its tests and repairs."
         if label == "integration-accept":
@@ -68,7 +73,7 @@ class WorkflowTests(unittest.TestCase):
             initial = subprocess.check_output(["git", "-C", str(repo), "rev-parse", "HEAD"])
             bench = {"name": "generic", "repo": str(repo), "revision": "HEAD", "features": [
                 {"id": "one", "request": "create one"}, {"id": "two", "request": "create two"}],
-                "checks": ["test -f one.py && test -f two.py"], "instructions": "", "defer_documentation": True}
+                "checks": ["test -f one.py && test -f two.py"]}
             result = run(bench, settings({}), root / "run", 30, 10000, 30, backend=FakeCodex)
             self.assertEqual(result["status"], "passed", result)
             calls = FakeCodex.instances[-1].calls
@@ -91,11 +96,25 @@ class WorkflowTests(unittest.TestCase):
         with tempfile.TemporaryDirectory() as directory:
             root = Path(directory)
             repo = repo_at(root / "input")
-            b = {"name": "b", "repo": str(repo), "revision": "HEAD", "features": [{"id": "f", "request": "x"}], "checks": ["true"], "instructions": "", "defer_documentation": True}
+            b = {"name": "b", "repo": str(repo), "revision": "HEAD", "features": [{"id": "f", "request": "x"}], "checks": ["true"]}
             result = run(b, settings({}), root / "failed", 20, 100, 5, backend=Broken)
             self.assertEqual(result["status"], "failed")
             self.assertTrue((root / "failed" / "result.json").is_file())
             self.assertIn("provider unavailable", result["error"])
+
+    def test_thread_start_failure_is_attributed_to_provider_and_retained(self):
+        class Disconnected(FakeCodex):
+            def start_thread(self, **options):
+                raise RuntimeError("thread/start disconnected")
+
+        with tempfile.TemporaryDirectory() as directory:
+            root = Path(directory)
+            bench = {"name": "b", "repo": str(repo_at(root / "input")), "revision": "HEAD",
+                     "features": [{"id": "one", "request": "Create one."}], "checks": ["true"]}
+            result = run(bench, settings({}), root / "run", 30, 10000, 10, backend=Disconnected)
+            self.assertEqual(result["failure"]["origin"], "provider")
+            self.assertEqual(result["failure"]["stage"], "one-implement")
+            self.assertEqual(json.loads((root / "run/result.json").read_text()), result)
 
     def test_declared_after_read_fixture_exercises_conflict_in_actual_loop(self):
         class ConflictCodex(FakeCodex):
@@ -104,16 +123,13 @@ class WorkflowTests(unittest.TestCase):
             def turn(self, thread, prompt, label, **kwargs):
                 if label == "one-implement":
                     self.calls.append((label, thread, prompt, kwargs))
-                    n = self.authors.get(label, 0)
-                    self.authors[label] = n+1
-                    if n == 0:
-                        return "@standalone read source.py"
-                    if n == 1:
-                        return "@standalone edit stale\n*** Begin Patch\n*** Update File: source.py\n@@\n-first\n+start\n*** End Patch\n@standalone end"
-                    if n == 2:
-                        self.feedback.append(prompt)
-                        return "@standalone edit corrected\n*** Begin Patch\n*** Update File: source.py\n@@\n-peer\n+start\n*** Add File: one.py\n+value = 1\n*** End Patch\n@standalone end"
-                    return "@standalone done"
+                    self.tool_call(thread, "host_read", {"path": "source.py"}, label+"-read")
+                    stale = "*** Begin Patch\n*** Update File: source.py\n@@\n-first\n+start\n*** End Patch\n"
+                    response = self.tool_call(thread, "host_edit", {"patch": stale}, label+"-stale")
+                    self.feedback.append(response["text"])
+                    corrected = "*** Begin Patch\n*** Update File: source.py\n@@\n-peer\n+start\n*** Add File: one.py\n+value = 1\n*** End Patch\n"
+                    self.tool_call(thread, "host_edit", {"patch": corrected}, label+"-corrected")
+                    return "Implemented."
                 if label == "one-review-1":
                     return "NO_FINDINGS"
                 if label == "integration-accept":
@@ -125,7 +141,7 @@ class WorkflowTests(unittest.TestCase):
             source = repo_at(root / "input")
             benchmark = {"name": "conflict", "repo": str(source), "revision": "HEAD",
                 "features": [{"id": "one", "request": "implement one"}, {"id": "two", "request": "implement two"}],
-                "checks": ["true"], "instructions": "", "defer_documentation": True,
+                "checks": ["true"],
                 "after_read": {"path": "source.py", "command": "printf 'peer\\nmiddle\\nlast\\n' > source.py"}}
             # Final integration intentionally fails its commit-count gate in this
             # fixture; the real author loop must still have exercised C08 first.
@@ -136,16 +152,7 @@ class WorkflowTests(unittest.TestCase):
             self.assertIn('"factor": "C08"', events)
             self.assertTrue((root / "run" / "fixture-after-read" / "result.json").exists())
 
-            class RejectedThenConflict(ConflictCodex):
-                invalid_sent = False
-
-                def turn(self, thread, prompt, label, **kwargs):
-                    if not self.invalid_sent:
-                        self.invalid_sent = True
-                        return "not an operative directive"
-                    return super().turn(thread, prompt, label, **kwargs)
-
-            other = run(benchmark, settings({"C08": False}), root / "full", 30, 10000, 30, backend=RejectedThenConflict)
+            other = run(benchmark, settings({"C08": False}), root / "full", 30, 10000, 30, backend=ConflictCodex)
             self.assertEqual(len(ConflictCodex.feedback), 2, other)
             self.assertIn("Current complete file:\npeer\nmiddle\nlast", ConflictCodex.feedback[1])
 
@@ -174,8 +181,8 @@ class ComparisonTests(unittest.TestCase):
             compare(self.sample(200), b)
 
     def test_joint_interaction_uses_four_matching_cells(self):
-        a = self.sample(200, {"C08": False, "C25": False})
-        b = self.sample(170, {"C25": False})
+        a = self.sample(200, {"C08": False, "C20": False})
+        b = self.sample(170, {"C20": False})
         c = self.sample(180, {"C08": False})
         d = self.sample(140)
         self.assertEqual(interaction(a, b, c, d)["extra_joint_saving_raw_tokens"], 10)

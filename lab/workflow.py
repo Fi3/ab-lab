@@ -6,11 +6,12 @@ from pathlib import Path
 import subprocess
 import time
 
-from .config import author_policy
-from .host import Fatal, Rejected, Host, execute_child, git, save_json, snapshot, parse_operations, relative_path
+from .config import WORKFLOW_VERSION, author_policy
+from .host import Fatal, Host, execute_child, git, save_json, snapshot, relative_path
+from .host_tools import HOST_TOOLS, HostTools
 from .provider import Codex, Pi, clean_env
-from .review import DEFAULT_PRIORITIES, conclusion_prompt, format_findings, normalize_priorities, parse_review, review_clean, review_instructions
-from .loops import FeatureProgress, NeedsAttention, POLICY_VERSION, ReviewConclusionRequested, WorkLimitReached, loop_policy, work_limit_error
+from .review import DEFAULT_PRIORITIES, format_findings, normalize_priorities, parse_review, review_clean, review_instructions
+from .loops import FeatureProgress, NeedsAttention, POLICY_VERSION, WorkLimitReached, loop_policy, work_limit_error
 from . import scb, slopcodebench
 
 
@@ -23,36 +24,23 @@ def source_hashes():
             for p in sorted(Path(__file__).parent.iterdir()) if p.suffix in (".py", ".mjs")}
 
 
-def native_done(reply):
-    """A unique final marker may follow a normal human-readable summary."""
-    lines = [line.strip() for line in reply.splitlines() if line.strip()]
-    if not lines or lines[-1] != "@standalone done" or lines.count("@standalone done") != 1:
-        return False
-    fence = None
-    for line in lines[:-1]:
-        if line.startswith(("```", "~~~")):
-            if fence == line[:3]:
-                fence = None
-            elif fence is None:
-                fence = line[:3]
-    return fence is None
-
-
 def author_prompt(benchmark, feature, factors, findings=None):
-    action = ("Implement this feature with focused tests." if findings is None else
-              "Fix only the reviewed feature and its tests to resolve these blocking findings. "
-              "Use a focused general fix and regression coverage; reuse existing test helpers instead of duplicating similar cases.\n" + findings)
-    docs = ("Documentation and prose updates are deferred to final integration. Do not modify docs/**, README*, CHANGELOG*, *.md or *.txt during feature implementation/repair."
-            if benchmark["defer_documentation"] else "Update documentation required by the assigned feature.")
-    return f"You are a direct coding agent in this repository.\n\nRequest {feature['id']}:\n{feature['request']}\n\n{action}\nFollow repository instructions except the explicit procedural overrides below. Do not use Work Leaf or extra worktrees. Avoid unrelated refactors.\n{docs}\n{benchmark['instructions']}\n\n{author_policy(factors)}"
+    parts = [feature["request"]]
+    if findings is not None:
+        parts.append("Resolve these review findings:\n" + findings)
+    policy = author_policy(factors)
+    if policy:
+        parts.append(policy)
+    return "\n\n".join(parts)
 
 
 def review_prompt(benchmark, feature, base, evidence, no_changes=False, *, review_priorities=DEFAULT_PRIORITIES):
-    docs = "Documentation is deferred to final integration; do not report deferred prose as missing." if benchmark["defer_documentation"] else "Check required documentation too."
     instructions = review_instructions(review_priorities)
     if no_changes:
-        return f"You are an independent review agent. Do not modify files.\nThe author reports this feature already exists, with no source changes since {base}. Independently verify the complete requested behavior and its tests; an empty diff alone is not approval. Report missing behavior or tests for this request, not unrelated pre-existing issues.\nRequest {feature['id']}:\n{feature['request']}\n{docs}\n{benchmark['instructions']}\n{evidence}\n{instructions}"
-    return f"You are an independent review agent. Do not modify files.\nReview only changes since {base} for request {feature['id']}:\n{feature['request']}\nInspect {base}..HEAD. Report only bugs, regressions, concrete maintainability problems or missing tests introduced by this feature. Do not report unrelated pre-existing issues.\n{docs}\n{benchmark['instructions']}\n{evidence}\n{instructions}"
+        scope = f"There are no changes since {base}. Verify whether the requested behavior is already satisfied; an empty diff is not approval."
+    else:
+        scope = f"Inspect {base}..HEAD for defects introduced by this feature. Exclude unrelated pre-existing issues."
+    return f"Independently review the following request. Do not modify submission files.\n{scope}\n\n{feature['request']}\n\n{evidence}\n{instructions}"
 
 
 def integration_prompts(benchmark, base, checkpoints, *, skip_linearization=False):
@@ -63,8 +51,8 @@ def integration_prompts(benchmark, base, checkpoints, *, skip_linearization=Fals
     elif any(item.get("already_satisfied") for item in checkpoints):
         contract += " A boundary marked already_satisfied was independently verified without source changes. Use an explicitly described verification-only empty commit for that feature; do not invent edits."
     detail = json.dumps(checkpoints, indent=2)
-    plan = f"You are the final integration agent for {count} sequentially reviewed features.\n{contract}\nReviewed feature boundaries:\n{detail}\nInspect history and source, identify required documentation, and propose a plan. Do not edit, commit, rewrite history or run the check suite yet. End with your plan and wait for acceptance.\n{benchmark['instructions']}"
-    accept = f"Accept the proposed plan and execute it.\n{contract}\nRun these final checks and all additional repository-required checks; repair genuine failures until they pass within the run budget:\n"+"\n".join(benchmark["checks"])+"\nLeave the checkout clean and summarize final commits and actual verification results."
+    plan = f"You are the final integration agent for {count} sequentially reviewed features.\n{contract}\nReviewed feature boundaries:\n{detail}\nInspect history and source, identify required documentation, and propose a plan. Do not edit, commit, rewrite history or run the check suite yet. End with your plan and wait for acceptance."
+    accept = f"Accept the proposed plan and execute it.\n{contract}\nRun these final checks and all additional repository-required checks; repair genuine failures:\n"+"\n".join(benchmark["checks"])+"\nLeave the checkout clean and summarize final commits and actual verification results."
     if any(item.get("status") == "needs_attention" for item in checkpoints):
         # Integration still runs, but must not manufacture review approval or
         # reopen the stopped checkpoint's repair loop under a different label.
@@ -89,7 +77,6 @@ def prior_attention_note(checkpoints):
         return ""
     return ("\n\nEarlier checkpoint attempts stopped with unresolved findings. "
             "The current source contains those attempts; they were not approved. "
-            "Implement the current cumulative requirements within this checkpoint's budget. "
             "Earlier snapshot grades and review outcomes remain separate.\n" + json.dumps(unresolved))
 
 
@@ -125,24 +112,30 @@ def after_read_fixture(host, fixture, output, deadline):
     host.event("declared_fixture_applied", path=name, commit=host.expected["head"])
 
 
+def capture_native_work(checkout, stage, output):
+    """Record the native agent's actual files without requiring it to commit."""
+    if git(checkout, "ls-files", "--unmerged"):
+        raise Fatal("native author left unresolved merge entries; source retained")
+    previous = git(checkout, "rev-parse", "HEAD").decode().strip()
+    dirty = git(checkout, "status", "--porcelain").decode()
+    if dirty:
+        git(checkout, "add", "--all")
+        if git(checkout, "diff", "--cached", "--name-only"):
+            git(checkout, "commit", "-qm", "Record native work: " + stage)
+    save_json(output / (stage + "-source.json"), {"stage": stage, "previous_head": previous,
+        "head": git(checkout, "rev-parse", "HEAD").decode().strip(), "status_before_capture": dirty})
+
+
 def run(benchmark, factors, output, seconds, max_raw, max_turns,
         model="gpt-5.5", effort="xhigh", executable="codex", backend=Codex, *,
         harness=None, scb_check=None, scb_seconds=300, child_codex="codex", skip_linearization=False,
-        review_priorities=DEFAULT_PRIORITIES, loop_options=None, _prepared=None, _base_commit=None):
+        review_priorities=DEFAULT_PRIORITIES, loop_options=None, _base_commit=None):
     if seconds <= 0 or max_raw <= 0 or max_turns <= 0:
         raise ValueError("positive wall-time, observed-token and turn limits are required")
     if not math.isfinite(scb_seconds) or scb_seconds <= 0:
         raise ValueError("scb-check needs a positive finite time limit")
     review_priorities = normalize_priorities(review_priorities)
-    if _prepared and review_priorities != normalize_priorities(_prepared["manifest"].get("review_priorities", DEFAULT_PRIORITIES)):
-        raise ValueError("continuation must preserve the original review priorities")
-    if _prepared and skip_linearization != _prepared["manifest"].get("skip_linearization", False):
-        raise ValueError("continuation must preserve the original linearization setting")
     progress_policy = loop_policy(loop_options)
-    if _prepared and progress_policy != loop_policy(_prepared["manifest"].get("loop_policy", {"enabled": False})):
-        raise ValueError("continuation must preserve the original loop policy")
-    if _prepared and _prepared["manifest"].get("loop_policy_version", POLICY_VERSION) != POLICY_VERSION:
-        raise ValueError("continuation must preserve the original loop policy version")
     if harness == "pi":
         if backend is Codex:
             backend = Pi
@@ -162,7 +155,7 @@ def run(benchmark, factors, output, seconds, max_raw, max_turns,
               "output": str(output), "benchmark": benchmark["name"],
               "skip_linearization": skip_linearization,
               "review_priorities": list(review_priorities), "reviews": [],
-              "loop_policy": progress_policy, "loop_policy_version": POLICY_VERSION, "loop_flags": [], "review_wrapups": [],
+              "loop_policy": progress_policy, "loop_policy_version": POLICY_VERSION, "loop_flags": [], "workflow_version": WORKFLOW_VERSION,
               "feature_count": len(benchmark["features"]), "check_count": len(benchmark["checks"]),
               "stages": [], "checkpoints": [], "checks": [], "factor_activations": {}}
     if scb_check is not None:
@@ -172,6 +165,8 @@ def run(benchmark, factors, output, seconds, max_raw, max_turns,
         result["execution_status"] = "incomplete"
         result["checkpoint_stop_policy"] = slopcodebench.CHECKPOINT_STOP_POLICY
     start = time.monotonic()
+    failure_origin = "runner"
+    active_stage = "setup"
     code = source_hashes()
     try:
         base = git(benchmark["repo"], "rev-parse", "--verify", (_base_commit or benchmark["revision"])+"^{commit}").decode().strip()
@@ -182,8 +177,8 @@ def run(benchmark, factors, output, seconds, max_raw, max_turns,
                     "model": model, "effort": effort, "source_sha256": code,
                     "workflow": "sequential-implement-review-repair-then-plan-accept-and-one-commit-per-feature",
                     "transport": transport, "created_at_unix": time.time()}
-        manifest["checkout_policy"] = (_prepared["manifest"].get("checkout_policy", "legacy-full-clone")
-                                       if _prepared else "pinned-history-no-remotes-v1")
+        manifest["checkout_policy"] = "pinned-history-no-remotes-v1"
+        manifest["workflow_version"] = WORKFLOW_VERSION
         manifest["skip_linearization"] = skip_linearization
         manifest["review_priorities"] = list(review_priorities)
         manifest["loop_policy"] = progress_policy
@@ -199,38 +194,20 @@ def run(benchmark, factors, output, seconds, max_raw, max_turns,
                 raise Fatal("SlopCodeBench must start from an empty project (only .gitignore is allowed)")
             manifest["slopcodebench_runtime"] = slopcodebench.preflight(benchmark, output, deadline)
             result["slopcodebench"]["runtime"] = manifest["slopcodebench_runtime"]
-        if _prepared:
-            if factors["C17"] or base != _prepared['manifest']['base_commit']:
-                raise Fatal('continuation must preserve native custody and the original base')
-            from .continuation import archive_boundary
-            archive_boundary(_prepared, output)
-            manifest['continuation'] = {'previous': str(_prepared['previous']),
-                'original_created_at': _prepared['manifest']['created_at_unix'],
-                'prior_result_sha256': _prepared['prior_result_sha256'],
-                'source_head': _prepared['source_head'],
-                'original_limits': _prepared['manifest']['limits']}
-            result['continuation'] = manifest['continuation']
-            result['stages'] = list(_prepared['result']['stages'])
         save_json(output / "manifest.json", manifest)
         checkout = output / "checkout"
-        if _prepared:
-            checkout.symlink_to(_prepared['checkout'], target_is_directory=True)
-            checkout = _prepared['checkout']
-            if git(checkout, 'rev-parse', 'HEAD').decode().strip() != _prepared['source_head'] or git(checkout, 'status', '--porcelain'):
-                raise Fatal('continuation source changed after qualification')
-        else:
-            # Fetch only the pinned commit's reachable history into an empty
-            # object database. A full clone also exposes later solutions, even
-            # after removing their refs. Do not retain an origin to fetch them.
-            checkout.mkdir()
-            object_format = git(benchmark["repo"], "rev-parse", "--show-object-format").decode().strip()
-            git(checkout, "init", "--quiet", "--object-format="+object_format)
-            fetched = subprocess.run(["git", "-C", str(checkout), "fetch", "--quiet", "--no-tags",
-                "--no-write-fetch-head", "--no-recurse-submodules", "--", benchmark["repo"], base],
-                capture_output=True, env=clean_env(), timeout=max(1, deadline-time.monotonic()))
-            if fetched.returncode:
-                raise Fatal("pinned checkout fetch failed: "+fetched.stderr.decode(errors="replace"))
-            git(checkout, "checkout", "--quiet", "--detach", base)
+        # Fetch only the pinned commit's reachable history into an empty
+        # object database. A full clone also exposes later solutions, even
+        # after removing their refs. Do not retain an origin to fetch them.
+        checkout.mkdir()
+        object_format = git(benchmark["repo"], "rev-parse", "--show-object-format").decode().strip()
+        git(checkout, "init", "--quiet", "--object-format="+object_format)
+        fetched = subprocess.run(["git", "-C", str(checkout), "fetch", "--quiet", "--no-tags",
+            "--no-write-fetch-head", "--no-recurse-submodules", "--", benchmark["repo"], base],
+            capture_output=True, env=clean_env(), timeout=max(1, deadline-time.monotonic()))
+        if fetched.returncode:
+            raise Fatal("pinned checkout fetch failed: "+fetched.stderr.decode(errors="replace"))
+        git(checkout, "checkout", "--quiet", "--detach", base)
         # Only the owned clone's identity is configured; no global changes.
         git(checkout, "config", "user.name", "Agent Behavior Lab")
         git(checkout, "config", "user.email", "agent-behavior-lab@example.invalid")
@@ -255,31 +232,16 @@ def run(benchmark, factors, output, seconds, max_raw, max_turns,
             if all(m["status"] in ("completed", "not_applicable") for m in quality["measurements"].values()):
                 quality["status"] = "completed"
 
-        if quality is not None and _prepared:
-            prior = _prepared["result"].get("scb_check", {})
-            initial = prior.get("measurements", {}).get("before_changes", {})
-            initial_statuses = ("completed", "not_applicable") if "slopcodebench" in benchmark else ("completed",)
-            if (prior.get("tool") != quality["tool"] or initial.get("status") not in initial_statuses
-                    or initial.get("commit") != base):
-                raise Fatal("continuation needs the same scb-check tool and original before-changes result")
-            quality["measurements"]["before_changes"] = initial
-        else:
-            score("before_changes")
+        score("before_changes")
+        failure_origin = "provider"
         provider = backend(checkout, output / "provider", model, effort, deadline, max_raw, max_turns, executable,
                            require_git_write=True, **({"codex_executable": child_codex} if backend is Pi else {}))
+        failure_origin = "runner"
         if manifest["model"] is None and provider.identity.get("model"):
             manifest["model"] = provider.identity["model"]
             with (output / "manifest.json").open("w", encoding="utf-8") as out:
                 json.dump(manifest, out, ensure_ascii=False, indent=2)
                 out.write("\n")
-        if _prepared:
-            from .continuation import configuration_matches, restore_provider
-            if not configuration_matches(provider, _prepared['identity'], _prepared.get('redundant_trust', ())):
-                raise Fatal('continuation provider identity differs from the original')
-            restore_provider(provider, _prepared['manifest'], _prepared['result']['usage'], _prepared['author'])
-            prior_usage = provider.report()
-            if not prior_usage['measurement_complete'] or prior_usage['observed_raw_tokens'] != _prepared['result']['usage']['observed_raw_tokens']:
-                raise Fatal('continuation did not recover exact prior complete costs')
         invariant = {k: v for k, v in manifest.items() if k not in ("factors", "created_at_unix")}
         invariant["provider"] = provider.identity
         if quality is not None:
@@ -290,7 +252,16 @@ def run(benchmark, factors, output, seconds, max_raw, max_turns,
         def observed_raw():
             return provider.observed_raw() if hasattr(provider, "observed_raw") else provider.report()["observed_raw_tokens"]
 
+        def start_agent(stage, **options):
+            nonlocal failure_origin, active_stage
+            failure_origin, active_stage = "provider", stage
+            thread = provider.start_thread(**options)
+            failure_origin = "runner"
+            return thread
+
         def turn(thread, prompt, label, **options):
+            nonlocal failure_origin, active_stage
+            active_stage = label
             # Providers also enforce these limits inside long native turns.
             error = work_limit_error(getattr(provider, "work_limits", ()), observed_raw())
             if error:
@@ -298,29 +269,51 @@ def run(benchmark, factors, output, seconds, max_raw, max_turns,
             result["stages"].append({"stage": label, "thread_id": thread, "started_at_unix": time.time()})
             with (output / "progress.jsonl").open("a") as out:
                 out.write(json.dumps(result["stages"][-1])+"\n")
+            failure_origin = "provider"
             reply = provider.turn(thread, prompt, label, **options)
+            failure_origin = "measurement"
             if not provider.report().get("measurement_complete"):
                 raise Fatal("incomplete token measurement; stop before further host work or agent generation")
             error = work_limit_error(getattr(provider, "work_limits", ()), observed_raw())
             if error:
-                if isinstance(error, ReviewConclusionRequested):
-                    error.completed_reply = reply
                 raise error
+            failure_origin = "runner"
             return reply
 
         for feature_index, feature in enumerate(benchmark["features"]):
             name = feature["id"]
-            reuse_author = _prepared is not None and feature_index == 0
-            feature_base = base if reuse_author else git(checkout, "rev-parse", "HEAD").decode().strip()
-            progress = FeatureProgress(feature, progress_policy, 0 if reuse_author else observed_raw())
-            author = _prepared['author'] if reuse_author else provider.start_thread(writable=not factors["C17"])
+            feature_base = git(checkout, "rev-parse", "HEAD").decode().strip()
+            progress = FeatureProgress(feature, progress_policy, observed_raw())
             host = Host(checkout, output / (name+"-host"), name, "author", deadline, factors,
                         command_env=getattr(provider, "command_env", None),
                         command_argv=getattr(provider, "command_argv", None)) if factors["C17"] else None
+            host_tools = HostTools(host) if host else None
+
+            def host_call(tool, arguments, call_id):
+                nonlocal fixture_fired, failure_origin
+                failure_origin = "runner"
+                error = work_limit_error(getattr(provider, "work_limits", ()), observed_raw())
+                if error:
+                    raise error
+                response = host_tools.execute(tool, arguments, call_id)
+                signal = progress.observe_operation({"name": tool, "arguments": arguments}, response, checkout)
+                if signal:
+                    stopped = WorkLimitReached(signal)
+                    stopped.completed_tool_result = response
+                    raise stopped
+                if (fixture and not fixture_fired and tool == "host_read" and response["success"]
+                        and relative_path(checkout, arguments["path"]) == fixture["path"]):
+                    after_read_fixture(host, fixture, output, deadline)
+                    fixture_fired = True
+                failure_origin = "provider"
+                return response
+
+            author = start_agent(name + "-implement", writable=not factors["C17"],
+                **({"tools": HOST_TOOLS, "tool_handler": host_call} if host else {}))
 
             def record_stop(signal, label):
                 flag = progress.record_flag(signal, output, checkout, feature_base, label, observed_raw(),
-                                            progress.reviews, pending_changes={key: value["artifact"] for key, value in host.pending.items()} if host else None)
+                                            progress.reviews, pending_changes=host_tools.unfinished_calls() if host_tools else None)
                 result["loop_flags"].append(flag)
                 if host:
                     host.event("work_stopped", reason=signal["reason"], artifact=flag["artifact"])
@@ -334,93 +327,29 @@ def run(benchmark, factors, output, seconds, max_raw, max_turns,
                 raise NeedsAttention(flag)
 
             def implement(prompt, label):
-                nonlocal fixture_fired
                 provider.work_limits = progress.limits(observed_raw())
-                progress.operations.clear()
                 try:
+                    reply = turn(author, prompt, label, writable=not factors["C17"])
                     if host:
-                        while not host.completed:
-                            reply = turn(author, prompt + progress.budget_note(observed_raw()), label,
-                                         interrupt=factors["C25"], host_request=True)
-                            host.unchanged()
-                            host.evidence("AUTHOR REPLY", reply)
-                            prompt = host.consume(reply)
-                            if hasattr(provider, "settle_children"):
-                                provider.settle_children()
-                            if fixture and not fixture_fired:
-                                try:
-                                    operations = parse_operations(reply)
-                                except Rejected:
-                                    operations = []
-                                if len(operations) == 1 and operations[0][0] == "read" and relative_path(checkout, operations[0][1]) == fixture["path"] and fixture["path"] in host.seen:
-                                    after_read_fixture(host, fixture, output, deadline)
-                                    fixture_fired = True
-                            if not host.completed:
-                                signal = progress.observe_operation(reply, prompt, checkout)
-                                if signal:
-                                    return record_stop(signal, label)
+                        host.unchanged()
+                        host.evidence("AUTHOR REPLY", reply)
+                        if host_tools.unfinished_calls():
+                            raise Fatal("author completed with an unfinished host call; inspect retained receipts")
                     else:
-                        reply = turn(author, prompt + progress.budget_note(observed_raw()), label, writable=True)
-                        if not native_done(reply):
-                            raise Fatal("native author did not supply the stage-completion marker")
+                        capture_native_work(checkout, label, output)
                 except WorkLimitReached as exc:
                     return record_stop(exc.signal, label)
-                if git(checkout, "status", "--porcelain"):
-                    raise Fatal("author left uncommitted source changes")
                 return None
 
             stopped_flag = None
             round_number = 0
             try:
-                author_stop = None
-                if not reuse_author:
-                    author_stop = implement(author_prompt(benchmark, feature, factors)
-                                            + prior_attention_note(result["checkpoints"]), name+"-implement")
+                author_stop = implement(author_prompt(benchmark, feature, factors)
+                                        + prior_attention_note(result["checkpoints"]), name+"-implement")
                 # Checks need build-output writes just as author/integration checks
                 # do. The snapshot guard below still rejects reviewer source edits.
                 reviewer = None
                 round_number, evidence = 1, ""
-
-                def review_turn(prompt, label):
-                    try:
-                        return turn(reviewer, prompt, label, writable=True)
-                    except ReviewConclusionRequested as exc:
-                        if snapshot(checkout) != before:
-                            raise Fatal("reviewer changed source, index or history")
-                        if not provider.report().get("measurement_complete"):
-                            raise Fatal("incomplete token measurement; cannot request review conclusion")
-                        event = {"feature": name, "round": round_number, "stage": label,
-                                 "trigger": exc.signal, "status": "started", "used_completed_verdict": False,
-                                 "raw_tokens_at_threshold": observed_raw()}
-                        result["review_wrapups"].append(event)
-                        path = output / (label + "-wrapup.json")
-                        save_json(path, event)
-                        try:
-                            if exc.completed_reply:
-                                try:
-                                    parse_review(exc.completed_reply, review_priorities)
-                                except ValueError:
-                                    pass
-                                else:
-                                    event.update(status="completed", used_completed_verdict=True)
-                                    return exc.completed_reply
-                            # One continuation of the same review, never a fresh
-                            # review round or another exploration allowance.
-                            provider.work_limits = progress.limits(observed_raw(), reviewing=True, concluding=True)
-                            reply = turn(reviewer, conclusion_prompt(review_priorities), label + "-conclude", writable=True)
-                            event["status"] = "completed"
-                            return reply
-                        except WorkLimitReached as stopped:
-                            event.update(status="stopped", stop=stopped.signal)
-                            raise
-                        except (Exception, KeyboardInterrupt) as error:
-                            event.update(status="failed", error=str(error) or "operator interruption")
-                            raise
-                        finally:
-                            event["raw_tokens_after_conclusion"] = observed_raw()
-                            temporary = path.with_suffix(".tmp")
-                            save_json(temporary, event)
-                            temporary.replace(path)
 
                 while True:
                     if author_stop:
@@ -443,21 +372,26 @@ def run(benchmark, factors, output, seconds, max_raw, max_turns,
                                      "This is the single final review of the current code. Apply the unchanged "
                                      "requirements and priorities; stopping is not evidence of correctness. "
                                      "No further automatic repairs will follow a rejection.")
-                    provider.work_limits = progress.limits(observed_raw(), reviewing=True, final=bool(author_stop))
+                    provider.work_limits = progress.limits(observed_raw(), reviewing=True)
                     if reviewer is None:
-                        reviewer = provider.start_thread(writable=True)
+                        reviewer = start_agent(f"{name}-review-{round_number}", writable=True)
                     before = snapshot(checkout)
                     no_changes = git(checkout, "rev-parse", "HEAD").decode().strip() == feature_base
                     review_label = f"{name}-review-{round_number}"
                     try:
-                        reply = review_turn(review_prompt(benchmark, feature, feature_base, evidence, no_changes,
-                                     review_priorities=review_priorities) + progress.budget_note(observed_raw()),
-                                     review_label)
+                        reply = turn(reviewer, review_prompt(benchmark, feature, feature_base, evidence, no_changes,
+                                     review_priorities=review_priorities), review_label, writable=True)
                         if snapshot(checkout) != before:
+                            failure_origin = "agent"
                             raise Fatal("reviewer changed source, index or history")
-                        decision = parse_review(reply, review_priorities)
+                        try:
+                            decision = parse_review(reply, review_priorities)
+                        except ValueError as exc:
+                            decision = {"approved": None, "blocking_findings": [], "advisory_findings": [],
+                                        "incomplete_reason": "Invalid reviewer verdict: " + str(exc)}
                     except WorkLimitReached as exc:
                         if snapshot(checkout) != before:
+                            failure_origin = "agent"
                             raise Fatal("reviewer changed source, index or history")
                         flag = author_stop or record_stop(exc.signal, review_label)
                         flag["final_review" if author_stop else "review"] = {"status": "stopped", "label": review_label, **exc.signal}
@@ -498,7 +432,6 @@ def run(benchmark, factors, output, seconds, max_raw, max_turns,
                         flag["final_review"] = {"status": "already_reviewed", "label": review_label, **decision}
                         escalate(flag)
                     if host:
-                        host.completed = False
                         evidence_start = host.evidence_path.stat().st_size
                     progress.repairs += 1
                     author_stop = implement(author_prompt(benchmark, feature, factors, format_findings(decision["blocking_findings"])),
@@ -561,10 +494,11 @@ def run(benchmark, factors, output, seconds, max_raw, max_turns,
         git(checkout, "update-ref", "refs/agent-lab/reviewed", reviewed)
         plan, accept = integration_prompts(benchmark, base, result["checkpoints"],
                                            skip_linearization=skip_linearization)
-        integrator = provider.start_thread()
+        integrator = start_agent("integration-plan")
         before = snapshot(checkout)
         turn(integrator, plan, "integration-plan")
         if snapshot(checkout) != before:
+            failure_origin = "agent"
             raise Fatal("integration planning modified source/index/history")
         turn(integrator, accept, "integration-accept", writable=True)
         git(checkout, "merge-base", "--is-ancestor", base, "HEAD")
@@ -589,6 +523,7 @@ def run(benchmark, factors, output, seconds, max_raw, max_turns,
             if hasattr(provider, "settle_children"):
                 provider.settle_children()
             if receipt["exit_code"] or receipt["timed_out"] or receipt["cancelled_signal"]:
+                failure_origin = "validation"
                 raise Fatal(f"final check {index} failed; no automatic replacement")
         if git(checkout, "status", "--porcelain"):
             raise Fatal("final checkout is not clean")
@@ -609,23 +544,36 @@ def run(benchmark, factors, output, seconds, max_raw, max_turns,
                       blocked_features=[f["id"] for f in benchmark["features"][feature_index+1:]])
     except (Exception, KeyboardInterrupt) as exc:
         result["error"] = str(exc) or "operator interruption"
+        result["failure"] = {"origin": "operator" if isinstance(exc, KeyboardInterrupt) else failure_origin,
+                             "stage": active_stage, "type": type(exc).__name__, "message": result["error"]}
     finally:
         if provider:
-            provider.close()
-            result["usage"] = provider.report()
+            try:
+                provider.close()
+                result["usage"] = provider.report()
+            except (Exception, KeyboardInterrupt) as exc:
+                result["status"] = "failed"
+                result["shutdown_error"] = str(exc) or "operator interruption"
+                result["usage"] = {"measurement_complete": False, "observed_raw_tokens": None,
+                                   "reason": "provider shutdown/accounting failed"}
+                result.setdefault("failure", {"origin": "provider", "stage": "shutdown",
+                                               "type": type(exc).__name__, "message": result["shutdown_error"]})
         else:
             result["usage"] = {"observed_raw_tokens": None, "measurement_complete": False,
                                "reason": "provider did not initialize; inspect retained stderr"}
-        if ("slopcodebench" in result and result.get("error") != "operator interruption"
+        if ("slopcodebench" in result and "shutdown_error" not in result
+                and result.get("error") != "operator interruption"
                 and any("snapshot" in item for item in result["slopcodebench"]["checkpoints"])):
             # All model sessions, including nested verification, are closed.
             # Hidden tests never enter the review/repair/integration loop.
             save_json(output / "slopcodebench" / "before-evaluation.json", result)
-            slopcodebench.evaluate(benchmark, result, output)
+            try:
+                slopcodebench.evaluate(benchmark, result, output)
+            except (Exception, KeyboardInterrupt) as exc:
+                result.update(status="failed", error=str(exc) or "evaluation interrupted")
+                result["failure"] = {"origin": "evaluator", "stage": "evaluation",
+                                     "type": type(exc).__name__, "message": result["error"]}
         result["duration_seconds"] = time.monotonic()-start
-        if _prepared:
-            result['continuation_duration_seconds'] = result['duration_seconds']
-            result['duration_seconds'] += _prepared['result']['duration_seconds']
         result["fixture_executed"] = fixture_fired
         save_json(output / "result.json", result)
     return result

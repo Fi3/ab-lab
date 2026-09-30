@@ -39,7 +39,7 @@ class ReviewPriorityTests(unittest.TestCase):
         self.benchmark = {
             "name": "priorities", "repo": str(repo_at(self.root / "input")), "revision": "HEAD",
             "features": [{"id": "one", "request": "Create one.py with the requested value."}],
-            "checks": ["test -f one.py"], "instructions": "", "defer_documentation": True,
+            "checks": ["test -f one.py"],
         }
 
     def execute(self, reply, name="run", **options):
@@ -120,7 +120,7 @@ class ReviewPriorityTests(unittest.TestCase):
         for index, reply in enumerate(malformed):
             with self.subTest(reply=reply):
                 result, backend = self.execute(reply, name=f"malformed-{index}")
-                self.assertEqual(result["status"], "failed", result)
+                self.assertEqual(result["status"], "needs_attention", result)
                 self.assertEqual(result["checkpoints"], [])
                 self.assertFalse(any("-fix-" in label for label, *_ in backend.calls))
                 self.assertFalse(any(label.startswith("integration-") for label, *_ in backend.calls))
@@ -165,7 +165,7 @@ class ReviewPriorityConfigurationTests(unittest.TestCase):
         self.benchmark = {
             "name": "priorities", "repo": str(repo_at(self.root / "input")), "revision": "HEAD",
             "features": [{"id": "one", "request": "create one"}],
-            "checks": ["true"], "instructions": "", "defer_documentation": True,
+            "checks": ["true"],
         }
         self.path = self.root / "benchmark.json"
         self.path.write_text(json.dumps(self.benchmark))
@@ -177,7 +177,7 @@ class ReviewPriorityConfigurationTests(unittest.TestCase):
             with self.subTest(supplied=supplied), self.assertRaises(ValueError):
                 normalize_priorities(supplied)
 
-    def test_plain_legacy_no_findings_still_approves(self):
+    def test_no_findings_with_explanation_approves(self):
         decision = parse_review("NO_FINDINGS\nLooks good.")
         self.assertEqual(decision, {"approved": True, "blocking_findings": [], "advisory_findings": []})
 
@@ -234,23 +234,6 @@ class ReviewPriorityConfigurationTests(unittest.TestCase):
                 self.assertEqual(worker(config_path, self.root / "worker"), 0)
         self.assertEqual(launch.call_args.kwargs["review_priorities"], ["P0", "P1"])
 
-    def test_continuation_inherits_saved_priorities_and_legacy_default(self):
-        from lab.continuation import continue_native
-        manifest = {"benchmark": self.benchmark, "factors": settings({}),
-                    "limits": {"observed_raw_tokens": 10000, "turns": 30},
-                    "model": "test", "effort": "xhigh"}
-        record = {"manifest": manifest, "remaining_seconds": 20}
-        for saved, expected in ((None, DEFAULT_PRIORITIES), (["P0", "P1"], ("P0", "P1"))):
-            if saved is not None:
-                manifest["review_priorities"] = saved
-            with patch("lab.continuation.inspect_boundary", return_value=record):
-                with patch("lab.workflow.run") as launch:
-                    continue_native(self.root / "old", self.root / "new", "head")
-            self.assertEqual(tuple(launch.call_args.kwargs["review_priorities"]), expected)
-        with self.assertRaisesRegex(ValueError, "original review priorities"):
-            run(self.benchmark, settings({}), self.root / "changed-priorities", 30, 10000, 30,
-                review_priorities=DEFAULT_PRIORITIES, _prepared=record)
-        self.assertFalse((self.root / "changed-priorities").exists())
 
     def test_invalid_batch_priority_fails_before_creating_output(self):
         with self.assertRaises(ValueError):

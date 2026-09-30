@@ -4,7 +4,7 @@ The model receives an ordinary fixture request. This script injects one soft
 ``trailing_whitespace`` result into OutputGuard.observe for the first nonempty
 real message delta. It does not forge transport events, usage, or model text.
 Actual Codex response receipts must cover the quarantined attempt, compaction,
-and continuation before the accepted host command executes exactly once.
+and continuation before the fixture driver executes its pending host check once.
 """
 import argparse
 import hashlib
@@ -21,6 +21,7 @@ sys.path.insert(0, str(ROOT))
 from lab.config import settings
 from lab.context import OutputGuard
 from lab.host import Host, git, save_json, snapshot
+from lab.host_tools import HostTools
 from lab.provider import Codex
 from lab.workflow import source_hashes
 from real_compaction import events, native_receipts, save_native_receipts
@@ -143,17 +144,12 @@ def main():
                          started + SECONDS, MAX_RAW, MAX_TURNS)
         thread = provider.start_thread()
         command = f"CONTINUITY_MARKER={marker} REVIEW_REQUIRED=1 python3 -B verify.py"
-        expected = "@standalone run -- " + command
+        expected = f"READY {marker} REVIEW_REQUIRED=1"
         prompt = (
-            "This is a bounded runner recovery verification using an isolated fixture. "
-            "Do not use native tools, edit files, or execute commands yourself. A pending "
-            "task is for the framework to run verify.py exactly once with the marker and "
-            "review requirement below. Review remains required; this command is not an "
-            "approval. If the runner later asks you to continue after a stopped output, "
-            "this host command is still pending unless a successful host receipt was "
-            "delivered. Keep its exact marker and REVIEW_REQUIRED=1 across compaction. "
-            "Respond with exactly the following one-line host request and nothing else, "
-            "without Markdown or explanatory prose:\n" + expected)
+            "This is a bounded conversation-continuity test. Do not use tools or edit files. "
+            "Retain the exact marker and review requirement below across compaction. "
+            "The fixture driver will execute its check after your response is fully accounted. "
+            "Acknowledge with this exact line:\n" + expected)
         original_observe = OutputGuard.observe
 
         def inject_once(guard, item_id, delta):
@@ -170,22 +166,23 @@ def main():
             return reason
 
         with patch.object(OutputGuard, "observe", inject_once):
-            reply = provider.turn(thread, prompt, "output-recovery", host_request=True)
-        assert reply.strip() == expected, "retry did not preserve the pending host request"
+            reply = provider.turn(thread, prompt, "output-recovery")
+        assert reply.strip() == expected, "retry did not preserve the fixture state"
         assert snapshot(repo) == before, "model changed fixture source or Git state"
         assert not (repo / "build").exists(), "quarantined command executed before recovery"
         result["recovery"] = verify_recovery(provider, repo, thread, out, expected, injection)
 
         host = Host(repo, out / "host", "output-recovery", "verification", provider.deadline,
                     settings({}), command_env=provider.command_env, command_argv=provider.command_argv)
-        feedback = host.consume(reply)
-        assert "status: 0\n" in feedback and "OUTPUT_RECOVERY_OK" in feedback, feedback
+        host_tools = HostTools(host)
+        feedback = host_tools.execute("host_run", {"command": command}, "output-recovery-check")
+        assert feedback["success"] and "OUTPUT_RECOVERY_OK" in feedback["text"], feedback
         host.unchanged()
-        receipts = list(host.artifacts.glob("*/receipt.json"))
+        receipts = list(host.artifacts.glob("tools/call-*/receipt.json"))
         assert len(receipts) == 1, "host command was not executed exactly once"
         receipt = json.loads(receipts[0].read_text())
         assert receipt["exit_code"] == 0 and not receipt["timed_out"]
-        assert not receipt["custody_errors"] and not host.pending_changes
+        assert not host_tools.unfinished_calls()
         assert (repo / "build/invocations.txt").read_text() == marker + "\n"
         assert snapshot(repo) == before, "host command changed fixture source or Git state"
         assert source_hashes() == source, "runner changed during verification"

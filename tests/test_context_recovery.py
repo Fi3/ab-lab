@@ -11,7 +11,7 @@ from lab.provider import Codex, RECOVERY_PROMPT, Usage
 from lab.sandbox import CommandSandbox
 
 
-def item(turn, text="@standalone done", kind="agentMessage"):
+def item(turn, text="Finished", kind="agentMessage"):
     return {"method": "item/completed", "params": {
         "threadId": "thread", "turnId": turn,
         "item": {"id": turn + "-item", "type": kind, "text": text}}}
@@ -35,7 +35,7 @@ def price(turn, input_tokens, context=20, window=258400):
 
 
 def failure(turn="failed", tokens=100, error="contextWindowExceeded"):
-    return ("turn/start", turn, [item(turn, "@standalone run -- failed-proposal"),
+    return ("turn/start", turn, [item(turn, "Partial answer before failure"),
                                  completed(turn, error), price(turn, tokens)])
 
 
@@ -46,7 +46,7 @@ def compaction(tokens=200):
 
 
 def success(turn="retry", tokens=300):
-    return ("turn/start", turn, [item(turn, "@standalone run -- fresh-proposal"),
+    return ("turn/start", turn, [item(turn, "Recovered final answer"),
                                  price(turn, tokens), completed(turn)])
 
 
@@ -109,9 +109,9 @@ class ContextRecoveryTests(unittest.TestCase):
     def test_priced_failure_drains_compacts_and_continues_same_thread_once(self):
         provider = self.provider([failure(), compaction(), success()])
         original = "Implement the requested feature without replaying side effects."
-        reply = provider.turn("thread", original, "author", host_request=True, writable=True)
+        reply = provider.turn("thread", original, "author", writable=True)
 
-        self.assertEqual(reply, "@standalone run -- fresh-proposal")
+        self.assertEqual(reply, "Recovered final answer")
         self.assertEqual(self.methods(provider), ["turn/start", "thread/compact/start", "turn/start"])
         self.assertEqual([params["threadId"] for _, params in provider.requests], ["thread"] * 3)
         starts = [params for method, params in provider.requests if method == "turn/start"]
@@ -123,7 +123,7 @@ class ContextRecoveryTests(unittest.TestCase):
         self.assertEqual([row["status"] for row in provider.turns], ["failed", "completed", "completed"])
         self.assertEqual(provider.turns[1]["kind"], "compaction")
         self.assertEqual((provider.artifacts / "turn-0001/reply.txt").read_text(),
-                         "@standalone run -- failed-proposal")
+                         "Partial answer before failure")
         coverage = [json.loads(line) for line in
                     (provider.artifacts / "coverage.jsonl").read_text().splitlines()]
         self.assertEqual(len(coverage), 3)
@@ -133,16 +133,16 @@ class ContextRecoveryTests(unittest.TestCase):
     def test_message_text_alone_does_not_make_unrelated_failure_recoverable(self):
         provider = self.provider([failure(error="other")])
         with self.assertRaisesRegex(Fatal, "agent turn ended unexpectedly"):
-            provider.turn("thread", "original", "author", host_request=True)
+            provider.turn("thread", "original", "author")
         self.assertEqual(self.methods(provider), ["turn/start"])
         self.assertFalse(provider.report()["measurement_complete"])
 
-    def test_unpriced_failed_proposal_blocks_compaction_and_retry(self):
+    def test_unpriced_failed_response_blocks_compaction_and_retry(self):
         provider = self.provider([("turn/start", "failed", [
-            price("failed", 100), item("failed", "@standalone run -- failed-proposal"),
+            price("failed", 100), item("failed", "Partial answer before failure"),
             completed("failed", "contextWindowExceeded")])])
         with self.assertRaisesRegex(Fatal, "incomplete token measurement"):
-            provider.turn("thread", "original", "author", host_request=True)
+            provider.turn("thread", "original", "author")
         self.assertEqual(self.methods(provider), ["turn/start"])
         self.assertEqual(provider.usage.raw, 110)
         self.assertFalse(provider.report()["measurement_complete"])
@@ -151,7 +151,7 @@ class ContextRecoveryTests(unittest.TestCase):
     def test_second_context_failure_exhausts_recovery_without_third_attempt(self):
         provider = self.provider([failure(), compaction(), failure("retry", 300)])
         with self.assertRaisesRegex(Fatal, "recovery exhausted after one retry"):
-            provider.turn("thread", "original", "author", host_request=True)
+            provider.turn("thread", "original", "author")
         self.assertEqual(self.methods(provider), ["turn/start", "thread/compact/start", "turn/start"])
         self.assertTrue(provider.report()["measurement_complete"])
         self.assertEqual(provider.usage.raw, 310)
@@ -223,7 +223,7 @@ class ContextRecoveryTests(unittest.TestCase):
         foreign["params"]["threadId"] = "foreign-thread"
         provider = self.provider([("turn/start", "initial", [
             item("initial"), completed("initial"), foreign, price("initial", 100)], True)])
-        self.assertEqual(provider.turn("thread", "original", "author"), "@standalone done")
+        self.assertEqual(provider.turn("thread", "original", "author"), "Finished")
         self.assertTrue(provider.report()["measurement_complete"])
         self.assertEqual(provider.usage.raw, 110)
         self.assertEqual(list(provider.pending), [foreign])
@@ -231,14 +231,14 @@ class ContextRecoveryTests(unittest.TestCase):
 
     def test_compaction_can_finish_before_its_rpc_response(self):
         provider = self.provider([failure(), (*compaction(), True), success()])
-        reply = provider.turn("thread", "original", "author", host_request=True)
-        self.assertEqual(reply, "@standalone run -- fresh-proposal")
+        reply = provider.turn("thread", "original", "author")
+        self.assertEqual(reply, "Recovered final answer")
         self.assertTrue(provider.report()["measurement_complete"])
         self.assertEqual(provider.usage.raw, 310)
         self.assertEqual(provider.turns[1]["turn_id"], "compact")
         self.assertFalse(provider.pending)
 
-    def test_late_runaway_output_after_terminal_discards_selected_host_proposal(self):
+    def test_late_runaway_output_after_terminal_rejects_unreliable_response(self):
         for form in ("completed", "delta"):
             with self.subTest(form=form):
                 garbage = (item("initial", " " * 9000) if form == "completed" else
@@ -246,11 +246,11 @@ class ContextRecoveryTests(unittest.TestCase):
                                "threadId": "thread", "turnId": "initial",
                                "itemId": "late", "delta": " " * 9000}})
                 provider = self.provider([("turn/start", "initial", [
-                    item("initial", "@standalone run -- failed-proposal"),
+                    item("initial", "Partial answer before failure"),
                     price("initial", 100), completed("initial"), garbage,
                     price("initial", 150)]), compaction(), success()])
-                reply = provider.turn("thread", "original", "author", host_request=True)
-                self.assertEqual(reply, "@standalone run -- fresh-proposal")
+                reply = provider.turn("thread", "original", "author")
+                self.assertEqual(reply, "Recovered final answer")
                 self.assertEqual(self.methods(provider), ["turn/start", "thread/compact/start", "turn/start"])
                 self.assertEqual(provider.turns[0]["error"], "trailing_whitespace")
                 self.assertTrue(provider.report()["measurement_complete"])
@@ -258,10 +258,10 @@ class ContextRecoveryTests(unittest.TestCase):
 
     def test_unpriced_late_runaway_output_stops_without_generation(self):
         provider = self.provider([("turn/start", "initial", [
-            item("initial", "@standalone run -- failed-proposal"), price("initial", 100),
+            item("initial", "Partial answer before failure"), price("initial", 100),
             completed("initial"), item("initial", " " * 9000)])])
         with self.assertRaisesRegex(Fatal, "incomplete token measurement"):
-            provider.turn("thread", "original", "author", host_request=True)
+            provider.turn("thread", "original", "author")
         self.assertEqual(self.methods(provider), ["turn/start"])
         self.assertFalse(provider.report()["measurement_complete"])
         self.assertEqual(provider.usage.raw, 110)
@@ -274,8 +274,8 @@ class ContextRecoveryTests(unittest.TestCase):
             "delta": "\ufffd\n" * 128}}
         provider = self.provider([("turn/start", "initial", [delta, price("initial", 100), stopped]),
                                   compaction(), success()])
-        reply = provider.turn("thread", "original", "author", interrupt=False, host_request=True)
-        self.assertEqual(reply, "@standalone run -- fresh-proposal")
+        reply = provider.turn("thread", "original", "author")
+        self.assertEqual(reply, "Recovered final answer")
         self.assertEqual(provider.sent, [{"id": 1, "method": "turn/interrupt",
             "params": {"threadId": "thread", "turnId": "initial"}}])
         self.assertEqual(provider.turns[0]["interrupt_reason"], "runaway_output")
@@ -295,36 +295,16 @@ class ContextRecoveryTests(unittest.TestCase):
         self.assertEqual(provider.sent[0]["method"], "turn/interrupt")
         self.assertTrue(provider.report()["measurement_complete"])
 
-    def test_late_usage_over_budget_prevents_host_directive_delivery(self):
+    def test_late_usage_over_budget_prevents_successful_response_return(self):
         provider = self.provider([("turn/start", "initial", [item("initial"),
                                   price("initial", 20), completed("initial"), price("initial", 100)])])
         provider.max_raw = 100
         with self.assertRaisesRegex(Fatal, "workflow wall-time/observed-token limit"):
-            provider.turn("thread", "original", "author", host_request=True)
+            provider.turn("thread", "original", "author")
         self.assertEqual(self.methods(provider), ["turn/start"])
         self.assertEqual(provider.usage.raw, 110)
         self.assertTrue(provider.report()["measurement_complete"])
 
-    def test_discretionary_interrupt_does_not_cancel_active_native_compaction(self):
-        start = {"method": "item/started", "params": {"threadId": "thread", "turnId": "initial",
-                  "item": {"id": "compact-item", "type": "contextCompaction"}}}
-        provider = self.provider([("turn/start", "initial", [item("initial"), start,
-            price("initial", 100), item("initial", kind="contextCompaction"),
-            price("initial", 150), completed("initial")])])
-        interrupt_usage = []
-        send = provider.send
-        def observed_send(event):
-            interrupt_usage.append(provider.usage.raw)
-            send(event)
-        provider.send = observed_send
-        provider.turn("thread", "original", "author", interrupt=True, host_request=True)
-        self.assertEqual(len(provider.sent), 1)
-        self.assertEqual(interrupt_usage, [160])
-        self.assertEqual(provider.usage.raw, 160)
-        # Price 100 arrived while compaction was active. The sole interruption
-        # must wait for its completed item and the subsequent price 150.
-        row = provider.turns[0]
-        self.assertTrue(row["usage_observed_after_last_message"])
 
 
 if __name__ == "__main__":

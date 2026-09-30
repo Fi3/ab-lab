@@ -5,7 +5,7 @@ from pathlib import Path
 import sys
 import time
 
-from .config import FACTORS, author_policy, load_benchmark, settings
+from .config import FACTORS, WORKFLOW_VERSION, author_policy, load_benchmark, settings
 from .provider import Codex, Pi
 from .host import Fatal
 from .review import DEFAULT_PRIORITIES, normalize_priorities
@@ -30,7 +30,7 @@ def review_priorities(value):
 
 
 def factors_from(args):
-    result = {} if args.preset == "all" else {"C08": False, "C25": False}
+    result = {} if args.preset == "all" else {"C08": False}
     if args.preset == "native":
         result["C17"] = False
     on, off = set(filter(None, args.on.split(","))), set(filter(None, args.off.split(",")))
@@ -48,7 +48,7 @@ def main():
     for name in ("plan", "run"):
         p = commands.add_parser(name)
         p.add_argument("benchmark", type=Path)
-        p.add_argument("--preset", choices=("all", "j04", "native"), default="all")
+        p.add_argument("--preset", choices=("all", "native"), default="all")
         p.add_argument("--on", default="", help="comma-separated C identifiers")
         p.add_argument("--off", default="", help="comma-separated C identifiers")
         p.add_argument("--model", default=None)
@@ -59,7 +59,7 @@ def main():
                        metavar="P0,P1,P2",
                        help="comma-separated review priorities that require repairs (P0 through P3; default: P0,P1,P2)")
         progress = p.add_mutually_exclusive_group()
-        progress.add_argument("--loop-policy", type=Path, help="JSON overrides for feature budgets, review conclusion thresholds and loop detection")
+        progress.add_argument("--loop-policy", type=Path, help="JSON overrides for external feature/review limits and loop detection")
         progress.add_argument("--no-loop-detection", action="store_true", help="disable feature stopping rules; retain global run limits")
         p.add_argument("--scb-check", default="scb-check", help="scb-check executable; required for the three quality measurements")
         p.add_argument("--scb-seconds", type=float, default=300, help="maximum seconds per quality measurement, within the workflow deadline")
@@ -106,7 +106,7 @@ def main():
                          "skip_linearization": args.skip_linearization,
                          "review_priorities": list(args.review_priorities),
                          "loop_policy": progress_policy,
-                         "loop_policy_version": POLICY_VERSION,
+                         "loop_policy_version": POLICY_VERSION, "workflow_version": WORKFLOW_VERSION,
                          "author_policy": author_policy(factors), "generation": "none",
                          "scb_check": {"executable": args.scb_check, "seconds_per_check": args.scb_seconds,
                                        "phases": ["before_changes", "after_implementation", "after_assembly"]}}

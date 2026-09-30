@@ -1,4 +1,4 @@
-"""Opt-in real-provider check: finish docs without rewriting reviewed commits."""
+"""Opt-in real-provider check: complete integration without rewriting reviewed commits."""
 import argparse
 import json
 from pathlib import Path
@@ -38,9 +38,7 @@ def main():
     reviewed = git(repo, 'rev-parse', 'HEAD').decode().strip()
     commits = git(repo, 'rev-list', '--reverse', base+'..HEAD').decode().splitlines()
     bench = {'features': [{'id': 'answer', 'request': 'Expose answer() returning 42.'}],
-        'checks': ['python3 -m unittest -v test_answer'],
-        'instructions': 'Use only the standard library. Document answer() in README.md. '
-                        'The implementation and tests are complete; no other edits are needed.'}
+        'checks': ['python3 -m unittest -v test_answer']}
     checkpoints = [{'feature': 'answer', 'request': bench['features'][0]['request'],
                     'base': base, 'reviewed_head': reviewed}]
     save_json(out / 'admission.json', {'harness': args.harness, 'model': 'gpt-5.5',
@@ -60,8 +58,6 @@ def main():
         provider.turn(thread, accept, 'integration-accept', writable=True)
         assert not git(repo, 'rev-list', reviewed, '--not', 'HEAD'), 'reviewed commits lost'
         assert not git(repo, 'status', '--porcelain'), 'unclean checkout'
-        assert git(repo, 'diff', '--name-only', reviewed, 'HEAD').decode().splitlines() == ['README.md']
-        assert 'answer' in (repo / 'README.md').read_text()
         import subprocess
         subprocess.run([sys.executable, '-m', 'unittest', '-v', 'test_answer'],
                        cwd=repo, check=True, capture_output=True, timeout=10)

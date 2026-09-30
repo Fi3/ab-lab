@@ -18,6 +18,7 @@ ROOT = Path(__file__).resolve().parents[1]
 sys.path.insert(0, str(ROOT))
 from lab.config import settings
 from lab.host import Host, git, save_json, snapshot
+from lab.host_tools import HOST_TOOLS, HostTools
 from lab.provider import Codex
 from lab.workflow import source_hashes
 
@@ -117,28 +118,29 @@ def verify_accounting(provider, repo, threads, out):
 
 
 def run_scenario(provider, repo, threads, out, scenario):
+    host = Host(repo, out / (scenario + "-host"), "compaction", "verification", provider.deadline,
+                settings({}), command_env=provider.command_env, command_argv=provider.command_argv)
+    host_tools = HostTools(host)
     native_limit = provider.auto_compact_limit
     if scenario == "automatic":
         # Configure only the newly created native thread. Restore the host
         # threshold so its preflight cannot substitute manual compaction.
         provider.auto_compact_limit = AUTOMATIC_THRESHOLD
     try:
-        thread = provider.start_thread()
+        thread = provider.start_thread(tools=HOST_TOOLS, tool_handler=host_tools.execute)
     finally:
         provider.auto_compact_limit = native_limit
     threads.append(thread)
     marker = "retain-" + uuid.uuid4().hex
     command = (f"CONTINUITY_MARKER={marker} REVIEW_REQUIRED=1 "
                "python3 -B -m unittest discover -s tests -v")
-    expected = "@standalone run -- " + command
     prompt = (
-        "This is a bounded conversation-continuity test. Do not use tools or edit files. "
-        f"Remember this exact marker: {marker}. A pending requirement is to preserve review: "
-        "when I later say RESUME, ask the framework to execute the fixture test suite by "
-        "responding with this exact one-line host directive, without Markdown or prose:\n"
-        + expected + "\nThis test command and its exact marker/review variables remain pending "
-        "until RESUME, including across compaction. Do not run the command yourself. "
-        "For now reply exactly READY."
+        "This is a bounded conversation-continuity test. Do not use tools or edit files yet. "
+        f"Remember this exact marker: {marker}. A pending requirement is to preserve review. "
+        "When I later say RESUME, execute the fixture test suite using host_run with this "
+        "exact command, then summarize its result:\n" + command +
+        "\nThis command and its exact marker/review variables remain pending until RESUME, "
+        "including across compaction. For now reply exactly READY."
     )
     if scenario == "automatic":
         padding = "".join(
@@ -154,9 +156,8 @@ def run_scenario(provider, repo, threads, out, scenario):
         assert provider.turns[-1]["kind"] == "compaction"
         assert provider.turns[-1]["status"] == "completed"
         verify_accounting(provider, repo, threads, out)
-    reply = provider.turn(thread, "RESUME. Do not use native tools.", scenario + "-continue",
-                          host_request=True, interrupt=True)
-    assert reply.strip() == expected, "pending requirement was not retained: " + repr(reply)
+    reply = provider.turn(thread, "RESUME.", scenario + "-continue")
+    assert reply.strip(), "missing final response after compaction"
     observed = events(provider)
     completed = [e["params"] for e in observed if e.get("method") == "item/completed"
                  and e["params"].get("threadId") == thread
@@ -171,16 +172,16 @@ def run_scenario(provider, repo, threads, out, scenario):
               if r["thread_id"] == thread and r["turn_id"] in compaction_turns]
     assert prices, "completed compaction lacks positive owned native usage"
     assert {r["turn_id"] for r in prices} == compaction_turns
-    host = Host(repo, out / (scenario + "-host"), "compaction", "verification", provider.deadline,
-                settings({}), command_env=provider.command_env, command_argv=provider.command_argv)
-    feedback = host.consume(reply)
-    assert "status: 0\n" in feedback and "Ran 2 tests" in feedback and "\nOK\n" in feedback, feedback
     host.unchanged()
-    command_receipts = list(host.artifacts.glob("*/receipt.json"))
+    assert not host_tools.unfinished_calls()
+    command_receipts = list(host.artifacts.glob("tools/call-*/receipt.json"))
     assert len(command_receipts) == 1, "test suite was not executed exactly once"
     receipt = json.loads(command_receipts[0].read_text())
+    assert receipt["command"] == command, "pending requirement changed across compaction"
     assert receipt["exit_code"] == 0 and not receipt["timed_out"]
-    assert not receipt["custody_errors"] and not host.pending_changes
+    output = (command_receipts[0].parent / "stdout.txt").read_text() + (
+        command_receipts[0].parent / "stderr.txt").read_text()
+    assert "Ran 2 tests" in output and "\nOK\n" in output, output
     return {"scenario": scenario, "thread_id": thread, "marker_retained": True,
             "review_requirement_retained": True, "completed_compactions": len(completed),
             "compaction_raw_tokens": sum(r["usage"]["total_tokens"] for r in prices),

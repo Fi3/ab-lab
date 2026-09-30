@@ -28,7 +28,10 @@ action, config = sys.argv[3], json.loads(sys.argv[4])
 problem = config['problem']
 if action == 'describe':
     print(json.dumps({'features': [{'id': 'one', 'request': 'FIRST_SPEC create one'},
-        {'id': 'two', 'request': 'SECOND_SPEC create two'}], 'instructions': 'Public execution contract.'}))
+        {'id': 'two', 'request': 'SECOND_SPEC create two'}],
+        'prompt_provenance': {'format': 'upstream-scb-prompts-v1',
+        'template': 'configs/prompts/just-solve.jinja', 'template_sha256': 'template-hash',
+        'checkpoints': [{'feature': 'one'}, {'feature': 'two'}]}}))
 elif action == 'check':
     if problem == 'unavailable':
         print('Docker unavailable', file=sys.stderr); sys.exit(2)
@@ -92,7 +95,7 @@ class NativeCodex(ClosingCodex):
             (self.repo / (name + '.py')).write_text('value = 2\n' if '-fix-' in label else 'value = 1\n')
             git(self.repo, 'add', name + '.py')
             git(self.repo, 'commit', '-qm', 'Implement ' + name)
-            return '@standalone done'
+            return 'Implemented.'
         return super().turn(thread, prompt, label, **kwargs)
 
 
@@ -131,22 +134,43 @@ class SlopCodeBenchTests(unittest.TestCase):
         path = self.runner / '.venv/evaluated.jsonl'
         return [json.loads(line) for line in path.read_text().splitlines()] if path.exists() else []
 
-    def test_load_reveals_cumulative_specs_and_preserves_legacy_definition(self):
+    def test_shutdown_failure_retains_result_and_does_not_expose_evaluation(self):
+        class BadShutdown(ClosingCodex):
+            def close(self):
+                raise RuntimeError("provider failed to shut down")
+        result = self.workflow(backend=BadShutdown)
+        self.assertEqual(result["status"], "failed")
+        self.assertEqual(result["failure"]["origin"], "provider")
+        self.assertFalse(result["usage"]["measurement_complete"])
+        self.assertEqual(self.evaluated(), [])
+        self.assertTrue((self.root / "run/result.json").exists())
+
+    def test_load_reveals_cumulative_specs_and_preserves_generic_definition(self):
         benchmark = self.benchmark()
-        self.assertIn('FIRST_SPEC', benchmark['features'][0]['request'])
-        self.assertNotIn('SECOND_SPEC', benchmark['features'][0]['request'])
-        self.assertIn('FIRST_SPEC', benchmark['features'][1]['request'])
-        self.assertIn('SECOND_SPEC', benchmark['features'][1]['request'])
-        self.assertFalse(benchmark['defer_documentation'])
+        self.assertEqual(benchmark['features'][0]['request'], 'FIRST_SPEC create one')
+        self.assertEqual(benchmark['features'][1]['request'],
+                         'FIRST_SPEC create one\n\nSECOND_SPEC create two')
+        self.assertNotIn('instructions', benchmark)
+        provenance = pending(benchmark)['prompt_provenance']
+        self.assertEqual(provenance, benchmark['prompt_provenance'])
+        self.assertEqual(provenance['template_sha256'], 'template-hash')
+        self.assertEqual(provenance['runner_revision'], self.raw['slopcodebench']['runner_revision'])
+        self.assertEqual(len(provenance['cumulative_requests']), 2)
+        self.assertNotIn('defer_documentation', benchmark)
         self.assertEqual(benchmark['slopcodebench']['dataset'], str(self.dataset))
         self.assertEqual(benchmark['slopcodebench']['runner'], str(self.runner))
-        legacy = {key: value for key, value in self.raw.items() if key != 'slopcodebench'}
-        legacy['features'] = [{'id': 'one', 'request': 'Legacy request'}]
-        self.path.write_text(json.dumps(legacy))
+        generic = {key: value for key, value in self.raw.items() if key != 'slopcodebench'}
+        generic['features'] = [{'id': 'one', 'request': 'Generic request'}]
+        self.path.write_text(json.dumps(generic))
         loaded = load_benchmark(self.path)
-        self.assertEqual(loaded['features'], legacy['features'])
-        self.assertTrue(loaded['defer_documentation'])
+        self.assertEqual(loaded['features'], generic['features'])
+        self.assertNotIn('defer_documentation', loaded)
         self.assertNotIn('slopcodebench', loaded)
+
+    def test_local_instructions_cannot_override_the_upstream_prompt(self):
+        self.raw['instructions'] = 'Write our preferred kind of tests.'
+        with self.assertRaisesRegex(ValueError, 'unknown benchmark fields'):
+            self.benchmark()
 
     def test_load_rejects_unpinned_dirty_and_conflicting_configuration(self):
         cases = [({'revision': 'HEAD'}, 'full Git'), ({'problem': '../private'}, 'directory name'),
@@ -181,6 +205,8 @@ class SlopCodeBenchTests(unittest.TestCase):
                 self.assertEqual(benchmark['slopcodebench']['checkpoint_limit'], limit)
                 report = pending(benchmark)
                 self.assertEqual(report['checkpoint_limit'], limit)
+                self.assertEqual(len(report['prompt_provenance']['checkpoints']), limit)
+                self.assertEqual(len(report['prompt_provenance']['cumulative_requests']), limit)
                 self.assertEqual(report['checkpoints'], [
                     {'feature': feature['id'], 'status': 'not_run'}
                     for feature in full['features'][:limit]])
@@ -315,9 +341,10 @@ class SlopCodeBenchTests(unittest.TestCase):
             with self.subTest(stopped_feature=stopped_feature):
                 class BudgetStop(ClosingCodex):
                     def turn(self, thread, prompt, label, **kwargs):
-                        if label == stopped_feature + '-implement' and self.authors.get(label):
+                        reply = super().turn(thread, prompt, label, **kwargs)
+                        if label == stopped_feature + '-implement':
                             raise Fatal('workflow wall-time/observed-token limit reached')
-                        return super().turn(thread, prompt, label, **kwargs)
+                        return reply
 
                 before = len(self.evaluated())
                 output = self.root / ('budget-' + stopped_feature)

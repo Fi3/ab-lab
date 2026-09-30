@@ -1,8 +1,7 @@
-"""Opt-in installed-provider check of interrupted review -> accounted conclusion.
+"""Opt-in installed-provider check of an accounted hard review stop.
 
-Uses a new, isolated verification repository, never a benchmark solution.
-The deliberately tiny exploration threshold exercises the native interruption;
-feature/global limits and the conclusion allowance remain enforced.
+Uses an isolated repository. A tiny token cap stops the review without a
+conclusion prompt or another model response.
 """
 import argparse
 import json
@@ -15,9 +14,9 @@ ROOT = Path(__file__).resolve().parents[1]
 sys.path.insert(0, str(ROOT))
 
 from lab.host import git, save_json, snapshot
-from lab.loops import FeatureProgress, ReviewConclusionRequested, loop_policy
+from lab.loops import FeatureProgress, WorkLimitReached, loop_policy
 from lab.provider import Codex, clean_env
-from lab.review import conclusion_prompt, parse_review, review_instructions
+from lab.review import review_instructions
 from lab.workflow import source_hashes
 from real_compaction import native_receipts
 
@@ -54,8 +53,7 @@ def main():
     (output / "tests.stderr.txt").write_text(tests.stderr)
     assert tests.returncode == 0, tests.stderr
     initial, code = snapshot(repo), source_hashes()
-    policy = loop_policy({"max_review_raw": 1, "max_feature_raw": 200000,
-                          "max_review_wrapup_raw": 100000, "max_review_wrapup_seconds": 90})
+    policy = loop_policy({"max_review_raw": 1, "max_feature_raw": 200000})
     progress = FeatureProgress({"id": "review-verification"}, policy, 0)
     provider = Codex(repo, output / "provider", "gpt-5.5", "xhigh", time.monotonic() + 180,
                      200000, 4, "codex")
@@ -73,22 +71,15 @@ def main():
                   "\n" + review_instructions())
         try:
             provider.turn(thread, prompt, "review-verification-review-1", writable=True)
-            raise AssertionError("tiny threshold did not request a conclusion")
-        except ReviewConclusionRequested as stopped:
+            raise AssertionError("tiny review cap did not stop the turn")
+        except WorkLimitReached as stopped:
             result["trigger"] = stopped.signal
             assert provider.report()["measurement_complete"], "interruption usage incomplete"
             assert snapshot(repo) == initial, "review changed fixture state"
-            interrupted_reply = (output / "provider/turn-0001/reply.txt").read_text()
-            try:
-                parse_review(interrupted_reply)
-            except ValueError:
-                result["interrupted_before_verdict"] = True
-            else:
-                raise AssertionError("review finished before interruption; this case must exercise unfinished exploration")
-            provider.work_limits = progress.limits(provider.observed_raw(), reviewing=True, concluding=True)
-            reply = provider.turn(thread, conclusion_prompt(), "review-verification-review-1-conclude", writable=True)
-            result["decision"] = parse_review(reply)
-        assert snapshot(repo) == initial, "conclusion changed fixture state"
+            result["review_status"] = "incomplete"
+            result["generation_count"] = len(provider.turns)
+            assert result["generation_count"] == 1, "review stop started another response"
+        assert snapshot(repo) == initial, "review stop changed fixture state"
         assert source_hashes() == code, "runner changed during verification"
     except BaseException as error:
         result["error"] = str(error)
@@ -108,7 +99,7 @@ def main():
             raise
         finally:
             save_json(output / "result.json", result)
-    print(json.dumps({"status": result["status"], "decision": result["decision"],
+    print(json.dumps({"status": result["status"], "review_status": result["review_status"],
                       "raw_tokens": result["usage"]["observed_raw_tokens"]}))
 
 

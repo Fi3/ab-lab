@@ -11,8 +11,9 @@ ROOT = Path(__file__).resolve().parents[1]
 sys.path.insert(0, str(ROOT))
 from lab.config import policy_blocks, settings
 from lab.host import Host, git, save_json
+from lab.host_tools import HOST_TOOLS, HostTools
 from lab.provider import Codex
-from lab.workflow import author_prompt, native_done, source_hashes
+from lab.workflow import author_prompt, source_hashes
 
 
 def main():
@@ -24,7 +25,7 @@ def main():
     out.mkdir(parents=True, exist_ok=False)
     overrides = dict.fromkeys(("C13", "C14", "C15", "C16"), False)
     if args.mode == "native":
-        overrides.update(C08=False, C17=False, C25=False)
+        overrides.update(C08=False, C17=False)
     factors = settings(overrides)
     assert all(not policy_blocks(factors)[key] for key in ("C13", "C14", "C15", "C16"))
     code = source_hashes()
@@ -32,7 +33,7 @@ def main():
         "purpose": "neutral-OFF implementation verification, not a token comparison",
         "mode": args.mode, "factors": factors, "source_sha256": code,
         "seconds": 180, "observed_raw_tokens": 150000,
-        "turns": 1 if args.mode == "native" else 8,
+        "turns": 1,
         "model": "gpt-5.5", "effort": "xhigh", "auth": "existing ChatGPT subscription",
         "scope": "one tiny author task; no review, integration or full benchmark rerun",
     })
@@ -49,28 +50,29 @@ def main():
     git(repo, "commit", "-qm", "ADD neutral-policy verification fixture")
     initial = git(repo, "rev-parse", "HEAD").decode().strip()
     feature = {"id": "negate", "request": "Add negate(value) to numbers_demo.py, returning the arithmetic negation. Cover positive, negative and zero values with tests. Preserve identity's existing behavior."}
-    prompt = author_prompt({"instructions": "", "defer_documentation": True}, feature, factors)
+    prompt = author_prompt({}, feature, factors)
     save_json(out / "request.json", {"prompt": prompt, "feature": feature, "initial_head": initial})
     provider, result = None, {"status": "failed", "mode": args.mode, "factors": factors}
     try:
         provider = Codex(repo, out / "provider", "gpt-5.5", "xhigh", deadline, 150000,
-                         1 if args.mode == "native" else 8, require_git_write=True)
-        thread = provider.start_thread(writable=args.mode == "native")
+                         1, require_git_write=True)
         if args.mode == "native":
+            thread = provider.start_thread(writable=True)
             reply = provider.turn(thread, prompt, "neutral-native-author", writable=True)
-            if not native_done(reply):
-                raise AssertionError("native author did not complete")
+            if not reply.strip():
+                raise AssertionError("native author returned no completion response")
+            if git(repo, "status", "--porcelain"):
+                git(repo, "add", "--all")
+                git(repo, "commit", "-qm", "Record native fixture implementation")
         else:
             host = Host(repo, out / "host", "negate", "author", deadline, factors,
-                        command_env=provider.command_env)
-            while not host.completed:
-                reply = provider.turn(thread, prompt, "neutral-host-author",
-                                      interrupt=factors["C25"], host_request=True)
-                if not provider.report()["measurement_complete"]:
-                    raise AssertionError("incomplete usage before host operation")
-                host.unchanged()
-                host.evidence("AUTHOR REPLY", reply)
-                prompt = host.consume(reply)
+                        command_env=provider.command_env, command_argv=provider.command_argv)
+            host_tools = HostTools(host)
+            thread = provider.start_thread(tools=HOST_TOOLS, tool_handler=host_tools.execute)
+            reply = provider.turn(thread, prompt, "neutral-host-author")
+            host.unchanged()
+            if host_tools.unfinished_calls():
+                raise AssertionError("author left an unfinished host tool call")
             result["accepted_commits"] = host.accepted_commits
         if not provider.report()["measurement_complete"]:
             raise AssertionError("incomplete author usage")

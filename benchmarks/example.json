@@ -3,10 +3,16 @@
   "repo": "../examples/tiny-project",
   "revision": "HEAD",
   "features": [
-    {"id": "clamp", "request": "Implement clamp(value, low, high) in numbers_demo.py. Return low when value < low, high when value > high, otherwise value. Raise ValueError when low > high. Add unittest coverage for below, within, above, and invalid bounds."},
-    {"id": "parity", "request": "Implement is_even(value) in numbers_demo.py for integers, including zero and negative integers. Return a bool. Add unittest coverage for zero, positive and negative odd/even values."}
+    {
+      "id": "clamp",
+      "request": "Implement clamp(value, low, high) in numbers_demo.py. Return low when value < low, high when value > high, otherwise value. Raise ValueError when low > high. Add unittest coverage for below, within, above, and invalid bounds."
+    },
+    {
+      "id": "parity",
+      "request": "Implement is_even(value) in numbers_demo.py for integers, including zero and negative integers. Return a bool. Add unittest coverage for zero, positive and negative odd/even values."
+    }
   ],
-  "checks": ["python3 -m unittest discover -s tests -v"],
-  "instructions": "Use only the Python standard library. Keep the implementation small. Do not add dependencies or change the existing function's behavior.",
-  "defer_documentation": true
+  "checks": [
+    "python3 -m unittest discover -s tests -v"
+  ]
 }

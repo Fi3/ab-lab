@@ -57,7 +57,7 @@ class GitPermissionTests(unittest.TestCase):
             repo = repo_at(root / "input")
             bench = {"name": "b", "repo": str(repo), "revision": "HEAD",
                 "features": [{"id": "one", "request": "create one"}, {"id": "two", "request": "create two"}],
-                "checks": ["true"], "instructions": "", "defer_documentation": True}
+                "checks": ["true"]}
             result = run(bench, settings({}), root / "run", 30, 10000, 30, backend=Denied)
             self.assertEqual(result["status"], "failed")
             self.assertEqual(result["error"], "Git-write preflight failed")

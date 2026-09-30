@@ -34,7 +34,7 @@ class CheckoutIsolationTests(unittest.TestCase):
             original_refs = git(source, "show-ref")
             benchmark = {"name": "isolated", "repo": str(source), "revision": base,
                 "features": [{"id": "feature", "request": "implement a feature"}],
-                "checks": ["true"], "instructions": "", "defer_documentation": True}
+                "checks": ["true"]}
 
             result = run(benchmark, settings({}), root / "run", 30, 100, 1, backend=NoGeneration)
             self.assertEqual(result["error"], "stop before generation")

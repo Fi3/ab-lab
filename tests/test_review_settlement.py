@@ -14,14 +14,14 @@ import unittest
 from unittest.mock import patch
 
 from lab.host import Fatal
-from lab.loops import FeatureProgress, POLICY_VERSION, ReviewConclusionRequested, WorkLimitReached, loop_policy
+from lab.loops import FeatureProgress, POLICY_VERSION, WorkLimitReached, loop_policy
 from lab.native_usage import NativeUsage
 from lab.provider import Codex, Usage
 from lab.sandbox import CommandSandbox
 
 
 THREAD = "review-thread"
-TURN = "review-conclude"
+TURN = "review"
 # Exact prior cumulative counters replayed when real turn 0137 was cancelled.
 BEFORE = (529817, 4429, 465408)
 AFTER = (603817, 8429, 525408)
@@ -50,7 +50,7 @@ def message(text="NO_FINDINGS"):
 
 
 class ReviewSettlementTests(unittest.TestCase):
-    def provider(self, scheduled, *, concluding=True):
+    def provider(self, scheduled, *, review_seconds=90):
         directory = tempfile.TemporaryDirectory()
         self.addCleanup(directory.cleanup)
         self.now = 1000.0
@@ -91,8 +91,8 @@ class ReviewSettlementTests(unittest.TestCase):
         provider.refresh_native_usage(force=True)
         self.events = deque((1000.0+at, copy.deepcopy(event), native)
                             for at,event,native in scheduled)
-        progress = FeatureProgress({"id": "checkpoint_5"}, loop_policy(), 0)
-        provider.work_limits = progress.limits(sum(BEFORE[:2]), reviewing=True, concluding=concluding)
+        progress = FeatureProgress({"id": "checkpoint_5"}, loop_policy({"max_review_seconds": review_seconds}), 0)
+        provider.work_limits = progress.limits(sum(BEFORE[:2]), reviewing=True)
         self.start = self.now
 
         def rpc(method, params):
@@ -134,8 +134,8 @@ class ReviewSettlementTests(unittest.TestCase):
 
     def stop(self, provider, expected=WorkLimitReached):
         with self.assertRaises(expected) as stopped:
-            provider.turn(THREAD, "Conclude this review using only existing evidence.",
-                          "checkpoint_5-review-1-conclude", writable=True)
+            provider.turn(THREAD, "Review the assigned requirements.",
+                          "checkpoint_5-review-1", writable=True)
         self.assertEqual(len(provider.requests), 1)
         self.assertFalse(provider.turns[0].get("recovery_eligible", False))
         self.assertFalse((provider.artifacts/"turn-0001/host-operation.txt").exists())
@@ -152,19 +152,19 @@ class ReviewSettlementTests(unittest.TestCase):
 
     def test_policy_versions_elapsed_review_settlement_explicitly(self):
         policy = loop_policy()
-        self.assertEqual(POLICY_VERSION, "bounded-feature-review-v3")
+        self.assertEqual(POLICY_VERSION, "external-limits-no-coaching-v4")
         self.assertEqual(policy["max_review_settle_seconds"], 600)
         progress = FeatureProgress({"id": "checkpoint_5"}, policy, 0)
-        for concluding in (False, True):
-            limits = progress.limits(0, reviewing=True, concluding=concluding)
-            self.assertEqual(limits[-1]["settle_seconds"], 600)
-            self.assertNotIn("settle_seconds", limits[0])
-            self.assertNotIn("settle_seconds", limits[-2])
+        limits = progress.limits(0, reviewing=True)
+        self.assertEqual(limits[-1]["settle_seconds"], 600)
+        self.assertNotIn("settle_seconds", limits[0])
+        self.assertNotIn("settle_seconds", limits[-2])
+        self.assertFalse(any("action" in item for item in limits))
 
     def test_silent_first_response_waits_for_owned_receipt_after_ninety_seconds(self):
         provider = self.provider([(1, started(), None), (130, price(), AFTER)])
         error = self.stop(provider)
-        self.assertEqual(error.signal["reason"], "review_wrapup_time_limit")
+        self.assertEqual(error.signal["reason"], "review_time_limit")
         self.assertEqual(len(provider.sent), 1)
         self.assertGreaterEqual(provider.sent[0][0], 130)
         self.assertLess(provider.sent[0][0], 131)
@@ -174,11 +174,11 @@ class ReviewSettlementTests(unittest.TestCase):
         self.assertEqual(json.loads((provider.artifacts/"turn-0001/messages.json").read_text()), [])
         self.assert_first_expiry(provider)
 
-    def test_natural_priced_conclusion_is_retained_but_not_delivered_or_approved(self):
+    def test_natural_priced_verdict_is_retained_but_not_delivered_or_approved(self):
         provider = self.provider([(1, started(), None), (129.9, message(), None),
                                   (130, completed(), None), (130.01, price(), AFTER)])
         error = self.stop(provider)
-        self.assertNotIsInstance(error, ReviewConclusionRequested)
+        self.assertFalse(hasattr(error, "completed_reply"))
         self.assertFalse(provider.sent)
         self.assertEqual(provider.turns[0]["status"], "completed")
         self.assertTrue(provider.report()["measurement_complete"])
@@ -258,7 +258,7 @@ class ReviewSettlementTests(unittest.TestCase):
                     self.assertNotIsInstance(error, WorkLimitReached)
                 else:
                     self.assertEqual(error.signal["reason"],
-                                     "feature_token_limit" if kind=="feature" else "review_wrapup_token_limit")
+                                     "feature_token_limit" if kind=="feature" else "review_token_limit")
                 self.assertGreaterEqual(provider.sent[0][0], 100)
                 self.assertLess(provider.sent[0][0], 100.2)
                 self.assertTrue(provider.report()["measurement_complete"])
@@ -325,7 +325,7 @@ class ReviewSettlementTests(unittest.TestCase):
     def test_hard_streaming_ceiling_during_review_settlement_quarantines_late_verdict(self):
         delta = {"method":"item/agentMessage/delta", "params": {"threadId":THREAD,
                  "turnId":TURN,"itemId":"verdict","delta":"NO_FINDINGS"}}
-        provider = self.provider([(1,delta,None)],concluding=False)
+        provider = self.provider([(1,delta,None)],review_seconds=300)
         send = provider.send
         def natural_race(event):
             send(event)
@@ -333,20 +333,20 @@ class ReviewSettlementTests(unittest.TestCase):
                                  (self.now+0.002,completed(),None),
                                  (self.now+0.003,price(),AFTER)])
         provider.send = natural_race
-        error = self.stop(provider,ReviewConclusionRequested)
+        error = self.stop(provider,WorkLimitReached)
         self.assertGreaterEqual(provider.sent[0][0],601)
         self.assertLess(provider.sent[0][0],602)
         self.assertEqual(provider.turns[0]["status"],"completed")
         self.assertTrue(provider.report()["measurement_complete"])
-        self.assertIsNone(error.completed_reply,
-                          "a hard streaming rejection cannot become an approved review verdict")
+        self.assertFalse(hasattr(error, "completed_reply"),
+                         "a hard stop cannot become an approved review verdict")
         self.assert_first_expiry(provider,limit=300,outcome="hard_limit")
 
     def test_exploration_time_threshold_uses_same_bounded_receipt_boundary(self):
-        provider = self.provider([(1, started(), None), (330, price(), AFTER)], concluding=False)
-        error = self.stop(provider, ReviewConclusionRequested)
-        self.assertEqual(error.signal["reason"], "review_time_threshold")
-        self.assertIsNone(error.completed_reply)
+        provider = self.provider([(1, started(), None), (330, price(), AFTER)], review_seconds=300)
+        error = self.stop(provider, WorkLimitReached)
+        self.assertEqual(error.signal["reason"], "review_time_limit")
+        self.assertFalse(hasattr(error, "completed_reply"))
         self.assertGreaterEqual(provider.sent[0][0], 330)
         self.assertTrue(provider.report()["measurement_complete"])
         self.assert_first_expiry(provider, limit=300)

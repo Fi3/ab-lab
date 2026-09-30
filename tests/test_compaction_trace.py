@@ -60,7 +60,7 @@ class CompactionTraceTests(unittest.TestCase):
                 "totalTokens": 38, "inputTokens": 31, "outputTokens": 7}
             if automatic:
                 terminal = events.pop()
-                events.append(recovery.item("compact", "@standalone done"))
+                events.append(recovery.item("compact", "Finished"))
                 if price_output and not late_price:
                     events.append(price)
                 events.append(terminal)
@@ -68,7 +68,7 @@ class CompactionTraceTests(unittest.TestCase):
                     events.append(price)
             else:
                 stages.append(("turn/start", "continuation", [
-                    recovery.item("continuation", "@standalone done"),
+                    recovery.item("continuation", "Finished"),
                     price, recovery.completed("continuation")]))
 
         provider = recovery.ContextRecoveryTests.provider(self, stages)
@@ -147,7 +147,7 @@ class CompactionTraceTests(unittest.TestCase):
             self.assertEqual(provider.usage.raw, fixture["expected"]["native_raw_after"])
 
         self.assertEqual(provider.turn("thread", "Continue the pending task.", "trace"),
-                         "@standalone done")
+                         "Finished")
         self.assertEqual([method for method, _ in provider.requests],
                          ["thread/compact/start", "turn/start"])
         self.assertEqual(provider.usage.raw, fixture["expected"]["native_raw_after"] + 38)
@@ -201,7 +201,7 @@ class CompactionTraceTests(unittest.TestCase):
         provider, fixture = self.replay_provider(automatic=True, late_price=True)
 
         self.assertEqual(provider.turn("thread", "Continue.", "automatic"),
-                         "@standalone done")
+                         "Finished")
 
         self.assertEqual(provider.usage.raw, fixture["expected"]["native_raw_after"] + 38)
         self.assertEqual(provider.turns[0]["compaction_usage"]["response_ids"],
@@ -226,7 +226,7 @@ class CompactionTraceTests(unittest.TestCase):
         provider.compact("thread", "trace")
 
         self.assertEqual(provider.turn("thread", "Continue.", "trace"),
-                         "@standalone done")
+                         "Finished")
 
         self.assertEqual(provider.native_delay_polls, 25)
         self.assertEqual(provider.usage.raw, fixture["expected"]["native_raw_after"] + 38)
@@ -323,7 +323,7 @@ class InlineReviewCompactionTests(unittest.TestCase):
         provider.native_usage = {"thread": NativeUsage(path, "thread", provider.repo)}
         provider.usage.observe(transport_before["params"])
         provider.refresh_native_usage(force=True)
-        provider.work_limits = [{"reason": "review_token_threshold", "action": "conclude_review",
+        provider.work_limits = [{"reason": "review_token_limit",
                                  "metric": "observed_raw_tokens", "start": provider.usage.raw,
                                  "limit": 100_000 if receipt_only else 500_000}]
         original_incoming = provider.incoming
@@ -345,10 +345,10 @@ class InlineReviewCompactionTests(unittest.TestCase):
         return provider, fixture
 
     def test_live_review_cap_after_inline_compaction_keeps_complete_accounting(self):
-        from lab.loops import ReviewConclusionRequested
+        from lab.loops import WorkLimitReached
         provider, fixture = self.replay()
 
-        with self.assertRaises(ReviewConclusionRequested) as stopped:
+        with self.assertRaises(WorkLimitReached) as stopped:
             provider.turn("thread", "Review the current checkpoint.", "review")
 
         self.assertEqual(stopped.exception.signal["observed"], fixture["expected"]["review_raw_tokens"])
@@ -365,20 +365,20 @@ class InlineReviewCompactionTests(unittest.TestCase):
         self.assertEqual([event["method"] for event in provider.sent], ["turn/interrupt"])
 
     def test_receipt_only_inline_compaction_is_priced_before_review_cap(self):
-        from lab.loops import ReviewConclusionRequested
+        from lab.loops import WorkLimitReached
         provider, fixture = self.replay(receipt_only=True)
-        with self.assertRaises(ReviewConclusionRequested) as stopped:
+        with self.assertRaises(WorkLimitReached) as stopped:
             provider.turn("thread", "Review.", "review")
         self.assertEqual(stopped.exception.signal["observed"], fixture["expected"]["compaction_raw_tokens"])
         self.assertTrue(provider.turns[0]["usage_observed_after_last_message"])
         self.assertTrue(provider.report()["measurement_complete"])
 
     def test_review_cap_compaction_does_not_price_ordinary_tail(self):
-        from lab.loops import ReviewConclusionRequested
+        from lab.loops import WorkLimitReached
         for form in ("completed", "delta"):
             with self.subTest(form=form):
                 provider, _ = self.replay(unpriced_tail=form)
-                with self.assertRaises(ReviewConclusionRequested):
+                with self.assertRaises(WorkLimitReached):
                     provider.turn("thread", "Review.", "review")
                 self.assertTrue(provider.turns[0]["compaction_usage"]["covered"])
                 self.assertFalse(provider.turns[0]["usage_observed_after_last_message"])
@@ -394,9 +394,9 @@ class InlineReviewCompactionTests(unittest.TestCase):
                 self.assertFalse(provider.report()["measurement_complete"])
 
     def test_interrupted_inflight_compaction_is_incomplete(self):
-        from lab.loops import ReviewConclusionRequested
+        from lab.loops import WorkLimitReached
         provider, _ = self.replay(omit_completion=True)
-        with self.assertRaises(ReviewConclusionRequested):
+        with self.assertRaises(WorkLimitReached):
             provider.turn("thread", "Review.", "review")
         self.assertFalse(provider.turns[0]["usage_observed_after_last_message"])
         self.assertFalse(provider.report()["measurement_complete"])

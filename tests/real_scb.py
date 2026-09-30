@@ -31,10 +31,8 @@ def main():
     benchmark = {"name": "three-quality-checkpoints", "repo": str(repo), "revision": "HEAD",
         "features": [{"id": "negate", "request": "Add negate(value) to numbers_demo.py, returning arithmetic negation. Test positive, negative and zero inputs. Preserve identity's behavior."}],
         "checks": ["python3 -m unittest discover -s tests -v",
-                   "python3 -c 'from numbers_demo import identity, negate; assert identity(3) == 3; assert [negate(x) for x in (3, -4, 0)] == [-3, 4, 0]'"],
-        "instructions": "Use only the Python standard library; keep the implementation small.",
-        "defer_documentation": True}
-    factors = settings({"C08": False, "C16": False, "C17": False, "C25": False})
+                   "python3 -c 'from numbers_demo import identity, negate; assert identity(3) == 3; assert [negate(x) for x in (3, -4, 0)] == [-3, 4, 0]'"]}
+    factors = settings({"C08": False, "C16": False, "C17": False})
     save_json(output / "admission.json", {"purpose": "implementation verification, not a savings experiment",
         "observations": 1, "benchmark": benchmark, "factors": factors,
         "source_sha256": source_hashes(), "seconds": 600, "observed_raw_tokens": 600000,

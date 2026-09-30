@@ -39,8 +39,7 @@ def benchmark_at(root):
     return {"name": "quality", "repo": str(repo_at(root / "input")), "revision": "HEAD",
             "features": [{"id": "one", "request": "create one"},
                          {"id": "two", "request": "create two"}],
-            "checks": ["test -f one.py && test -f two.py"], "instructions": "",
-            "defer_documentation": True}
+            "checks": ["test -f one.py && test -f two.py"],}
 
 
 class ScbWorkflowTests(unittest.TestCase):
@@ -192,48 +191,6 @@ class ScbWorkflowTests(unittest.TestCase):
                         self.assertEqual(main(), 0)
                     self.assertEqual(runner.call_args.kwargs["scb_check"], executable)
 
-    def test_resume_keeps_original_initial_score_instead_of_rescoring_modified_source(self):
-        from lab import scb
-        from lab.continuation import continue_native
-        from test_native_resume import NativeResumeTests
-
-        class Continued(FakeCodex):
-            def __init__(self, *args, **kwargs):
-                super().__init__(*args, **kwargs)
-                self.identity = {"auth": "chatgpt"}
-
-            def report(self):
-                return {"measurement_complete": True, "observed_raw_tokens": 110}
-
-            def turn(self, thread, prompt, label, **kwargs):
-                self.calls.append((label, thread, prompt, kwargs))
-                if label == "one-review-1":
-                    return "NO_FINDINGS"
-                if label == "integration-accept":
-                    git(self.repo, "commit", "--allow-empty", "-qm", "UPDATE verify existing feature")
-                if label.endswith("-implement"):
-                    raise AssertionError("author must not repeat")
-                return "Finished"
-
-        with tempfile.TemporaryDirectory() as d:
-            root = Path(d)
-            previous, head, manifest, result = NativeResumeTests().fixture(root)
-            tool = checker_at(root)
-            identity = scb.prepare(tool, previous, time.monotonic()+30, 300)
-            first = scb.measure(previous / "checkout", previous, PHASES[0], identity, time.monotonic()+30)
-            manifest["scb_check"] = {"executable": tool, "seconds_per_check": 300}
-            result["scb_check"] = scb.pending()
-            result["scb_check"]["tool"] = identity
-            result["scb_check"]["measurements"][PHASES[0]] = first
-            (previous / "manifest.json").write_text(json.dumps(manifest))
-            (previous / "result.json").write_text(json.dumps(result))
-            retained = (previous / "result.json").read_bytes()
-            with patch("lab.continuation.archive_boundary"), patch("lab.continuation.restore_provider"), patch("lab.scb.measure", wraps=scb.measure) as measure:
-                resumed = continue_native(previous, root / "continued", head, backend=Continued)
-            self.assertEqual(resumed["status"], "passed", resumed)
-            self.assertEqual([c.args[2] for c in measure.call_args_list], list(PHASES[1:]))
-            self.assertEqual(resumed["scb_check"]["measurements"][PHASES[0]], first)
-            self.assertEqual(retained, (previous / "result.json").read_bytes())
 
     def test_real_checker_matches_saved_json_without_affecting_the_workflow(self):
         import shutil

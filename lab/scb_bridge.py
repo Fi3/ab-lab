@@ -39,37 +39,49 @@ def load(config):
     return problem, environment
 
 
-def describe(problem, environment):
-    from slop_code.common.render import replace_spec_placeholders
+def describe(problem, environment, runner):
+    from slop_code.common import render
 
     entry_file = environment.format_entry_file(problem.entry_file)
     entry_command = environment.get_command(problem.entry_file, is_agent_run=True)
+    template_path = Path(runner) / "configs/prompts/just-solve.jinja"
+    template_bytes = template_path.read_bytes()
+    template = template_bytes.decode("utf-8")
     features = []
+    checkpoints = []
     for checkpoint in problem.iterate_checkpoints():
         if not (problem.path / "tests" / f"test_{checkpoint.name}.py").is_file():
             raise ValueError(f"SCBench tests missing for {checkpoint.name}")
-        features.append({
-            "id": checkpoint.name,
-            "request": replace_spec_placeholders(
-                problem.get_checkpoint_spec(checkpoint.name),
-                entry_file, entry_command),
-        })
+        spec = problem.get_checkpoint_spec(checkpoint.name)
+        # Use the same renderer and context as the pinned upstream runner. This
+        # includes its canary removal and entrypoint substitution, not a local
+        # paraphrase of the benchmark's execution requirements.
+        context = {"is_continuation": bool(features), "agent_type": None,
+                   "agent_version": "", "model_name": None}
+        request = render.render_prompt(
+            spec_text=spec, context=context, prompt_template=template,
+            entry_file=entry_file, entry_command=entry_command)
+        features.append({"id": checkpoint.name, "request": request})
+        checkpoints.append({"feature": checkpoint.name, "context": context,
+            "spec_sha256": hashlib.sha256(spec.encode("utf-8")).hexdigest(),
+            "prompt_sha256": hashlib.sha256(request.encode("utf-8")).hexdigest()})
     if not features:
         raise ValueError("SCBench problem has no checkpoints")
     return {
         "problem": problem.name,
         "problem_version": problem.version,
         "features": features,
-        "instructions": (
-            f"Build the program incrementally in this repository. "
-            f"The entry file is {entry_file}; run it using {entry_command}. "
-            "Use a virtual environment and maintain requirements.txt with all "
-            "runtime dependencies, even if the file is empty. "
-            "Keep the implementation compatible with all requirements revealed "
-            "so far. Write and run your own tests for each checkpoint. "
-            "The directories .evaluation_tests and .scbench are reserved for "
-            "independent evaluation; do not create them."
-        ),
+        "prompt_provenance": {
+            "format": "upstream-scb-prompts-v1",
+            "template": "configs/prompts/just-solve.jinja",
+            "template_sha256": hashlib.sha256(template_bytes).hexdigest(),
+            "renderer": "slop_code.common.render.render_prompt",
+            "renderer_sha256": hashlib.sha256(Path(render.__file__).read_bytes()).hexdigest(),
+            "spec_transforms": "upstream renderer: leading canary removal and entrypoint substitution",
+            "entry_file": entry_file,
+            "entry_command": entry_command,
+            "checkpoints": checkpoints,
+        },
         "entry_file": entry_file,
         "entry_command": entry_command,
         "environment_type": environment.type,
@@ -223,7 +235,7 @@ def main(argv=None):
             config = json.loads(args.config)
             problem, environment = load(config)
             if args.action == "describe":
-                result = describe(problem, environment)
+                result = describe(problem, environment, config["runner"])
             elif args.action == "prepare":
                 result = prepare(environment)
             elif args.action == "check":

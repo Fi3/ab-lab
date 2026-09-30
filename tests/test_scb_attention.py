@@ -11,7 +11,7 @@ import test_slopcodebench as fixtures
 def edit(name, value, previous=None):
     body = (f"*** Add File: {name}.py\n+value = {value}\n" if previous is None else
             f"*** Update File: {name}.py\n@@\n-value = {previous}\n+value = {value}\n")
-    return "@standalone edit implement\n*** Begin Patch\n" + body + "*** End Patch\n@standalone end"
+    return {"name": "host_edit", "arguments": {"patch": "*** Begin Patch\n" + body + "*** End Patch\n"}}
 
 
 def native_edit(name, value, *, commit=True):
@@ -20,7 +20,7 @@ def native_edit(name, value, *, commit=True):
         if commit:
             git(backend.repo, "add", name + ".py")
             git(backend.repo, "commit", "-qm", "Implement " + name)
-        return "@standalone done"
+        return "Finished."
     return apply
 
 
@@ -42,10 +42,23 @@ class ScenarioBackend(fixtures.ClosingCodex):
         self.limits_by_call.append((label, [dict(limit) for limit in self.work_limits]))
         if label.startswith("integration-"):
             return "Keep the checkpoint commits and retained findings."
-        action = self.script[label].pop(0)
-        reply, cost = action if isinstance(action, tuple) else (action, 10)
-        self.raw += cost
-        return reply(self) if callable(reply) else reply
+        while self.script[label]:
+            action = self.script[label].pop(0)
+            reply, cost = action if isinstance(action, tuple) else (action, 10)
+            self.raw += cost
+            reply = reply(self) if callable(reply) else reply
+            if isinstance(reply, dict):
+                from lab.loops import work_limit_error
+                from lab.host import Fatal
+                if not self.complete:
+                    raise Fatal("incomplete token measurement")
+                error = work_limit_error(self.work_limits, self.raw)
+                if error:
+                    raise error
+                self.tool_call(thread, reply["name"], reply["arguments"], f"{label}-{len(self.script[label])}")
+            else:
+                return reply
+        return "Finished."
 
     def report(self):
         return {"observed_raw_tokens": self.raw, "measurement_complete": self.complete,
@@ -66,7 +79,7 @@ class SlopAttentionTests(unittest.TestCase):
         Backend.script = script
         Backend.preserve_history = preserve
         Backend.transport = "pi-rpc-stdio" if harness == "pi" else "codex-app-server-stdio"
-        factors = settings({"C17": False, "C08": False, "C25": False}) if native else settings({})
+        factors = settings({"C17": False, "C08": False}) if native else settings({})
         result = self.workflow(benchmark=benchmark, name=name, backend=Backend, factors=factors,
                                harness=harness, skip_linearization=preserve, loop_options=policy)
         return result, Backend.instances[-1]
@@ -98,7 +111,7 @@ class SlopAttentionTests(unittest.TestCase):
                 for preserve in (False, True):
                     with self.subTest(harness=harness, native=native, preserve=preserve):
                         actions = lambda name, value, previous=None: ([native_edit(name, value)] if native
-                            else [edit(name, value, previous), "@standalone done"])
+                            else [edit(name, value, previous), "Finished."])
                         script = {
                             "one-implement": actions("one", 1),
                             "one-review-1": ["FINDINGS\n- [P2] First unresolved behavior."],
@@ -131,9 +144,9 @@ class SlopAttentionTests(unittest.TestCase):
 
     def test_feature_budget_resets_for_the_next_checkpoint_and_integration(self):
         result, backend = self.execute({
-            "one-implement": [edit("one", 1), ("@standalone read one.py", 900)],
+            "one-implement": [edit("one", 1), ({"name": "host_read", "arguments": {"path": "one.py"}}, 900)],
             "one-review-1": ["FINDINGS\n- [P2] First attempt remains incorrect."],
-            "two-implement": [edit("two", 1), "@standalone done"],
+            "two-implement": [edit("two", 1), "Finished."],
             "two-review-1": ["NO_FINDINGS"],
         }, policy={"max_feature_raw": 1000, "max_review_raw": 200})
         self.assert_completed_attention(result)
@@ -147,9 +160,9 @@ class SlopAttentionTests(unittest.TestCase):
 
     def test_multiple_incomplete_reviews_preserve_unknown_approval_and_grade_every_attempt(self):
         result, backend = self.execute({
-            "one-implement": [edit("one", 2), "@standalone done"],
+            "one-implement": [edit("one", 2), "Finished."],
             "one-review-1": ["INCOMPLETE_REVIEW\nMISSING_ONE_EVIDENCE"],
-            "two-implement": [edit("two", 1), "@standalone done"],
+            "two-implement": [edit("two", 1), "Finished."],
             "two-review-1": ["INCOMPLETE_REVIEW\nMISSING_TWO_EVIDENCE"],
         })
         self.assert_completed_attention(result)
@@ -182,21 +195,6 @@ class SlopAttentionTests(unittest.TestCase):
         self.assertEqual((Path(result["slopcodebench"]["checkpoints"][0]["snapshot"]) / "one.py").read_text(), "value = 1\n")
         self.assertEqual(git(backend.repo, "status", "--porcelain"), b"")
 
-    def test_pending_mediated_changes_are_retained_without_silently_applying_them(self):
-        result, backend = self.execute({
-            "one-implement": [edit("one", 1),
-                "@standalone run one.py -- printf 'value = 2\\n' > one.py"] + ["@standalone read one.py"] * 3,
-            "two-implement": [edit("two", 1), "@standalone done"],
-            "two-review-1": ["NO_FINDINGS"],
-        })
-        self.assert_completed_attention(result)
-        flag = result["loop_flags"][0]
-        self.assertTrue(flag["pending_host_changes"])
-        self.assertTrue(flag["pending_host_artifacts"])
-        self.assertTrue(all(Path(path).exists() for path in flag["pending_host_artifacts"].values()))
-        self.assertEqual((backend.repo / "one.py").read_text(), "value = 1\n")
-        self.assertFalse(any(label.startswith("one-review-") for label, *_ in backend.calls))
-        self.assertTrue(any((self.root / "run/one-host").rglob("receipt.json")))
 
     def test_staged_edit_reverted_in_worktree_does_not_create_empty_retention_commit(self):
         def staged_then_restored(backend):
@@ -205,7 +203,7 @@ class SlopAttentionTests(unittest.TestCase):
             path.write_text("value = 2\n")
             git(backend.repo, "add", "one.py")
             path.write_text("value = 1\n")
-            return "@standalone done"
+            return "Finished."
 
         result, backend = self.execute({
             "one-implement": [(staged_then_restored, 900)],
@@ -240,7 +238,7 @@ class SlopAttentionTests(unittest.TestCase):
             backend.complete = False
             return edit("two", 1)
         result, backend = self.execute({
-            "one-implement": [edit("one", 1), "@standalone done"],
+            "one-implement": [edit("one", 1), "Finished."],
             "one-review-1": ["INCOMPLETE_REVIEW\nNeed evidence."],
             "two-implement": [unpriced],
         })
@@ -254,9 +252,9 @@ class SlopAttentionTests(unittest.TestCase):
 
     def test_evaluator_infrastructure_failure_is_not_hidden_by_attention(self):
         result, backend = self.execute({
-            "one-implement": [edit("one", 2), "@standalone done"],
+            "one-implement": [edit("one", 2), "Finished."],
             "one-review-1": ["INCOMPLETE_REVIEW\nNeed evidence."],
-            "two-implement": [edit("two", 1), "@standalone done"],
+            "two-implement": [edit("two", 1), "Finished."],
             "two-review-1": ["NO_FINDINGS"],
         }, benchmark=self.benchmark("infrastructure"))
         self.assertEqual(result["status"], "failed", result)
@@ -272,7 +270,7 @@ class SlopAttentionTests(unittest.TestCase):
         benchmark = self.benchmark()
         del benchmark["slopcodebench"]
         result, backend = self.execute({
-            "one-implement": [edit("one", 1), "@standalone done"],
+            "one-implement": [edit("one", 1), "Finished."],
             "one-review-1": ["INCOMPLETE_REVIEW\nNeed evidence."],
         }, benchmark=benchmark)
         self.assertEqual(result["status"], "needs_attention", result)

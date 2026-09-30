@@ -1,6 +1,6 @@
 """Opt-in real Codex check of priced settlement after an expired review deadline.
 
-One fresh, benign, tool-free review gets a one-second conclusion allowance.
+One fresh, benign, tool-free review gets a one-second exploration allowance.
 The expired review must remain stopped while its in-flight response settles.
 This verifies cancellation/accounting, not benchmark completion or solution grade.
 No prior conversation, failed request, benchmark source, or benchmark prompt is used.
@@ -183,11 +183,10 @@ def main():
     if args.expected_source:
         expected = json.loads(args.expected_source.read_text())
         assert source == expected["source_sha256"], "runner differs from supplied frozen source manifest"
-    policy = loop_policy({"max_feature_raw": MAX_RAW, "max_review_raw": 100000,
-                          "max_review_wrapup_raw": 150000,
-                          "max_review_wrapup_seconds": REVIEW_SECONDS,
+    policy = loop_policy({"max_feature_raw": MAX_RAW, "max_review_raw": 150000,
+                          "max_review_seconds": REVIEW_SECONDS,
                           "max_review_settle_seconds": SETTLE_SECONDS})
-    assert POLICY_VERSION == "bounded-feature-review-v3", "fixture requires the versioned settlement policy"
+    assert POLICY_VERSION == "external-limits-no-coaching-v4", "fixture requires the versioned settlement policy"
     admission = {"purpose": "one expired review settles its first in-flight response with exact usage",
                  "model": MODEL, "effort": EFFORT, "seconds": SECONDS,
                  "max_raw": MAX_RAW, "max_turns": MAX_TURNS,
@@ -218,13 +217,13 @@ def main():
                          started + SECONDS, MAX_RAW, MAX_TURNS)
         thread = provider.start_thread()
         progress = FeatureProgress({"id": "review-settlement-verification"}, policy, 0)
-        provider.work_limits = progress.limits(0, reviewing=True, concluding=True)
+        provider.work_limits = progress.limits(0, reviewing=True)
         save_json(output / "work-limits.json", provider.work_limits)
         try:
-            provider.turn(thread, PROMPT, "review-settlement-verification-conclude")
+            provider.turn(thread, PROMPT, "review-settlement-verification")
         except WorkLimitReached as stopped:
-            assert type(stopped) is WorkLimitReached, "hard conclusion expiry became a soft review threshold"
-            assert stopped.signal["reason"] == "review_wrapup_time_limit"
+            assert type(stopped) is WorkLimitReached, "review cap must remain a hard stop"
+            assert stopped.signal["reason"] == "review_time_limit"
             assert getattr(stopped, "completed_reply", None) is None, "expired hard review returned an eligible verdict"
             result["trigger"] = stopped.signal
         else:
