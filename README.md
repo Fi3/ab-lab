@@ -153,6 +153,13 @@ python3 -m lab factors
 python3 -m lab doctor --out runs/login-check
 ```
 
+Codex native subagents are tracked from their spawn events. They can continue
+working during a parent host command; before the parent stage is accepted, the
+adapter waits for their completion and validates their own usage receipts.
+Inherited parent history is excluded from child accounting. The adapter records
+`codex-owned-native-children-v3` in provider metadata. Existing run artifacts and
+comparison keys remain unchanged; new runs retain their new source provenance.
+
 `doctor` checks configuration and authentication without model generation.
 Every output directory shown here must be new.
 

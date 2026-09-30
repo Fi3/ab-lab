@@ -121,6 +121,7 @@ class NestedUsage:
         self.sessions = Path(sessions) if sessions else Path(os.environ.get('CODEX_HOME', Path.home()/'.codex'))/'sessions'
         self.started = time.time()
         self.files, self.threads, self.last_scan = {}, {}, 0.0
+        self._scan_pending = False
 
     def observe(self, thread, row):
         state = self.threads.setdefault(thread, {'total': [0, 0, 0], 'errors': [], 'turns': {},
@@ -167,9 +168,10 @@ class NestedUsage:
             elif kind == 'turn_aborted':
                 state['errors'].append('child turn aborted; tail not certified')
 
-    def refresh(self, parents=(), force=False):
+    def scan(self, force=False):
+        """Discover owned session headers before any history is interpreted."""
         if not force and time.monotonic()-self.last_scan < 2:
-            return
+            return False
         self.last_scan = time.monotonic()
         today = datetime.now(timezone.utc).date()
         dates = {today+timedelta(days=n) for n in (-1, 0, 1)}
@@ -191,19 +193,33 @@ class NestedUsage:
                             owned = row.get('type') == 'session_meta' and Path(meta.get('cwd', '/')).resolve().is_relative_to(self.repo)
                         except (ValueError, TypeError):
                             owned = False
-                        self.files[path] = {'thread': meta['id'], 'offset': stream.tell()} if owned else None
-                entry = self.files[path]
-                if not entry or entry['thread'] in parents:
-                    continue
-                with path.open() as stream:
-                    stream.seek(entry['offset'])
-                    while line := stream.readline():
-                        if not line.endswith('\n'):
-                            break
-                        self.observe(entry['thread'], json.loads(line))
-                        entry['offset'] = stream.tell()
-                if entry['thread'] in self.threads:
-                    self.threads[entry['thread']]['path'] = str(path)
+                        self.files[path] = {'thread': meta['id'], 'offset': stream.tell(),
+                            'parent_thread_id': meta.get('parent_thread_id'),
+                            'session_meta': meta} if owned else None
+        self._scan_pending = True
+        return True
+
+    def refresh(self, parents=(), force=False):
+        self.scan(force=force)
+        self.consume(parents)
+
+    def consume(self, parents=()):
+        """Interpret only files admitted by the most recent header scan."""
+        if not self._scan_pending:
+            return
+        self._scan_pending = False
+        for path, entry in self.files.items():
+            if not entry or entry['thread'] in parents:
+                continue
+            with path.open() as stream:
+                stream.seek(entry['offset'])
+                while line := stream.readline():
+                    if not line.endswith('\n'):
+                        break
+                    self.observe(entry['thread'], json.loads(line))
+                    entry['offset'] = stream.tell()
+            if entry['thread'] in self.threads:
+                self.threads[entry['thread']]['path'] = str(path)
 
     def report(self, parents=()):
         children = {k: v for k, v in self.threads.items() if k not in parents}

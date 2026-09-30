@@ -184,5 +184,210 @@ class NativeUsageTests(unittest.TestCase):
                 self.assertIsNone(reader.totals)
 
 
+class NativeChildUsageTests(unittest.TestCase):
+    def setUp(self):
+        self.temp = tempfile.TemporaryDirectory()
+        self.addCleanup(self.temp.cleanup)
+        self.cwd = Path(self.temp.name)
+        self.path = self.cwd / "child.jsonl"
+        self.reader = NativeUsage(self.path, "owned", self.cwd, parent_thread_id="parent")
+
+    def append(self, kind, payload):
+        with self.path.open("ab") as f:
+            f.write((json.dumps({"type": kind, "payload": payload}) + "\n").encode())
+
+    def metadata(self, inherited=1, **changes):
+        return {"id": "owned", "session_id": "parent", "cwd": str(self.cwd),
+                "parent_thread_id": "parent", "forked_from_id": "parent",
+                "subagent_history_start_ordinal": inherited, **changes}
+
+    def prefix(self, records=()):
+        self.append("session_meta", self.metadata(1 + len(records)))
+        self.append("session_meta", {"id": "parent", "cwd": str(self.cwd)})
+        for kind, payload in records:
+            self.append(kind, payload)
+
+    def own_receipt(self, **changes):
+        return {**receipt(**changes), "session_id": "parent"}
+
+    def context(self, turn="turn-1", **changes):
+        return {"turn_id": turn, "cwd": str(self.cwd), "model": "admitted-model",
+                "effort": "xhigh", **changes}
+
+    def test_inherited_parent_receipts_contexts_plans_and_compactions_are_ignored(self):
+        inherited = {**receipt(turn="parent-turn", total=tokens(9999, 999, 9000)),
+                     "thread_id": "parent", "session_id": "parent"}
+        self.prefix([
+            ("turn_context", self.context("parent-turn", model="parent-model")),
+            ("token_usage_record", inherited),
+            ("compacted", {"compaction_response_id": "response-1", "latest_token_usage_record": inherited}),
+            ("compacted", {"compaction_response_id": "missing-parent-receipt"}),
+            ("event_msg", {"type": "token_count", "info": None, "rate_limits": {"plan_type": "api"}}),
+        ])
+        self.append("turn_context", self.context())
+        own = self.own_receipt()
+        self.append("token_usage_record", own)
+        self.append("token_usage_record", own)
+        self.append("compacted", {"compaction_response_id": "response-1", "latest_token_usage_record": own})
+        self.append("event_msg", {"type": "token_count", "info": None, "rate_limits": {"plan_type": "pro"}})
+        self.assertEqual(len(self.reader.refresh()), 1)
+        self.assertTrue(self.reader.validated)
+        self.assertEqual(self.reader.totals, (100, 10, 50))
+        self.assertEqual(self.reader.turn_contexts, {"turn-1": {"model": "admitted-model", "effort": "xhigh"}})
+        self.assertEqual(self.reader.plans, {"pro"})
+        self.assertEqual(len(self.reader.completed_compactions("turn-1")), 1)
+        self.assertFalse(self.reader.missing_compactions)
+        self.assertFalse(self.reader.errors)
+        report = self.reader.report()
+        self.assertEqual(report["parent_thread_id"], "parent")
+        self.assertEqual(report["session_id"], "parent")
+        self.assertEqual(report["own_start_line"], 8)
+        self.assertEqual(report["complete_prefix_sha256"], hashlib.sha256(self.path.read_bytes()).hexdigest())
+        self.assertEqual([s["line"] for s in report["responses"][0]["sources"]], [9, 10, 11])
+
+    def test_incomplete_inherited_prefix_waits_and_resume_counts_only_new_receipts(self):
+        self.append("session_meta", self.metadata(2))
+        self.append("session_meta", {"id": "parent", "cwd": str(self.cwd)})
+        self.assertEqual(self.reader.refresh(), [])
+        self.assertFalse(self.reader.validated)
+        self.append("turn_context", self.context("parent-turn"))
+        self.append("turn_context", self.context())
+        self.append("token_usage_record", self.own_receipt())
+        self.assertEqual(len(self.reader.refresh()), 1)
+        self.append("event_msg", {"type": "task_complete", "turn_id": "turn-1"})
+        self.append("turn_context", self.context("turn-2"))
+        self.append("token_usage_record", self.own_receipt(
+            response="response-2", turn="turn-2", usage=tokens(50, 5), total=tokens(150, 15, 50)))
+        self.assertEqual(len(self.reader.refresh()), 1)
+        self.assertEqual(self.reader.refresh(), [])
+        self.assertEqual(self.reader.totals, (150, 15, 50))
+        self.assertEqual(set(self.reader.turn_contexts), {"turn-1", "turn-2"})
+        self.assertFalse(self.reader.errors)
+
+    def test_nested_ancestry_keeps_root_session_identity_without_charging_ancestors(self):
+        self.append("session_meta", self.metadata(4, session_id="root"))
+        self.append("session_meta", self.metadata(2, id="parent", session_id="root",
+                                                  parent_thread_id="root", forked_from_id="root"))
+        self.append("session_meta", {"id": "root", "session_id": "root", "cwd": str(self.cwd)})
+        for ancestor in ("root", "parent"):
+            self.append("token_usage_record", {**receipt(turn=ancestor + "-turn"),
+                                                "thread_id": ancestor, "session_id": "root"})
+        self.append("token_usage_record", {**receipt(), "session_id": "root"})
+        self.assertEqual(len(self.reader.refresh()), 1)
+        self.assertEqual(self.reader.totals, (100, 10, 50))
+        self.assertEqual(self.reader.session_id, "root")
+        self.assertFalse(self.reader.errors)
+
+    def test_missing_invalid_or_inconsistent_fork_identity_fails_closed(self):
+        cases = [
+            {"subagent_history_start_ordinal": value} for value in (None, True, -1, 0, 1.5, "1")
+        ] + [
+            {"id": "foreign"}, {"parent_thread_id": "foreign"},
+            {"forked_from_id": "foreign"}, {"session_id": "foreign"},
+            {"cwd": str(self.cwd / "other")},
+            {"source": {"subagent": {"thread_spawn": {"parent_thread_id": "foreign"}}}},
+            {"source": {"subagent": []}},
+            {"source": "vscode"},
+        ]
+        for changes in cases:
+            with self.subTest(changes=changes):
+                self.path.write_text("")
+                self.append("session_meta", self.metadata(**changes))
+                self.append("session_meta", {"id": "parent", "cwd": str(self.cwd)})
+                self.append("token_usage_record", self.own_receipt())
+                reader = NativeUsage(self.path, "owned", self.cwd, parent_thread_id="parent")
+                self.assertEqual(reader.refresh(), [])
+                self.assertTrue(reader.errors)
+                self.assertIsNone(reader.totals)
+
+    def test_foreign_or_owned_receipts_cannot_hide_in_inherited_prefix(self):
+        for thread, session in (("foreign", "parent"), ("owned", "parent"),
+                                ("parent", "foreign"), ([], "parent")):
+            for kind in ("token_usage_record", "compacted"):
+                with self.subTest(thread=thread, session=session, kind=kind):
+                    self.path.write_text("")
+                    r = {**receipt(), "thread_id": thread, "session_id": session}
+                    payload = r if kind == "token_usage_record" else {
+                        "compaction_response_id": r["response_id"], "latest_token_usage_record": r}
+                    self.prefix([(kind, payload)])
+                    reader = NativeUsage(self.path, "owned", self.cwd, parent_thread_id="parent")
+                    self.assertEqual(reader.refresh(), [])
+                    self.assertTrue(reader.errors)
+                    self.assertIsNone(reader.totals)
+
+    def test_ancestor_evidence_after_boundary_is_rejected(self):
+        cases = [
+            ("session_meta", {"id": "parent", "cwd": str(self.cwd)}),
+            ("token_usage_record", {**receipt(), "thread_id": "parent", "session_id": "parent"}),
+            ("token_usage_record", {**receipt(), "session_id": "foreign"}),
+            ("token_usage_record", self.own_receipt(turn="parent-turn")),
+            ("turn_context", self.context("parent-turn")),
+            ("turn_context", self.context(thread_id="parent")),
+            ("session_meta", self.metadata(50)),
+        ]
+        for kind, payload in cases:
+            with self.subTest(kind=kind, payload=payload):
+                self.path.write_text("")
+                self.prefix([("turn_context", self.context("parent-turn"))])
+                self.append(kind, payload)
+                reader = NativeUsage(self.path, "owned", self.cwd, parent_thread_id="parent")
+                self.assertEqual(reader.refresh(), [])
+                self.assertTrue(reader.errors)
+                self.assertIsNone(reader.totals)
+
+    def test_prefix_must_begin_with_exact_parent_and_finish_its_ancestry(self):
+        for payload in ({"id": "foreign", "cwd": str(self.cwd)},
+                        self.metadata(1, id="parent", session_id="root", parent_thread_id="root", forked_from_id="root")):
+            with self.subTest(payload=payload):
+                self.path.write_text("")
+                self.append("session_meta", self.metadata(session_id=payload.get("session_id", "parent")))
+                self.append("session_meta", payload)
+                reader = NativeUsage(self.path, "owned", self.cwd, parent_thread_id="parent")
+                self.assertEqual(reader.refresh(), [])
+                self.assertTrue(reader.errors)
+                self.assertFalse(reader.validated)
+
+    def test_missing_boundary_or_metadata_cannot_be_inferred_from_usage(self):
+        for metadata in (None, {key: value for key, value in self.metadata().items()
+                                if key != "subagent_history_start_ordinal"}):
+            with self.subTest(metadata=metadata):
+                self.path.write_text("")
+                if metadata:
+                    self.append("session_meta", metadata)
+                self.append("token_usage_record", self.own_receipt())
+                reader = NativeUsage(self.path, "owned", self.cwd, parent_thread_id="parent")
+                self.assertEqual(reader.refresh(), [])
+                self.assertTrue(reader.errors)
+                self.assertIsNone(reader.totals)
+
+    def test_own_turn_context_requires_stable_model_effort_and_workspace(self):
+        for context in (self.context(model=None), self.context(effort="other"),
+                        self.context(cwd=str(self.cwd / "foreign")),
+                        self.context(session_id="foreign")):
+            with self.subTest(context=context):
+                self.path.write_text("")
+                self.prefix()
+                self.append("turn_context", self.context())
+                self.append("turn_context", context)
+                reader = NativeUsage(self.path, "owned", self.cwd, parent_thread_id="parent")
+                self.assertEqual(reader.refresh(), [])
+                self.assertTrue(reader.errors)
+
+    def test_own_receipts_retain_numeric_and_duplicate_validation(self):
+        cases = [self.own_receipt(usage=tokens(101, 10, 50)),
+                 self.own_receipt(response="response-2", total=tokens(100, 10, 50)),
+                 self.own_receipt(response="response-2", usage=tokens(-1, 10))]
+        for r in cases:
+            with self.subTest(receipt=r):
+                self.path.write_text("")
+                self.prefix()
+                self.append("token_usage_record", self.own_receipt())
+                self.append("token_usage_record", r)
+                reader = NativeUsage(self.path, "owned", self.cwd, parent_thread_id="parent")
+                self.assertEqual(len(reader.refresh()), 1)
+                self.assertTrue(reader.errors)
+                self.assertEqual(reader.totals, (100, 10, 50))
+
+
 if __name__ == "__main__":
     unittest.main()

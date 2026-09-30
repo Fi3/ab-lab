@@ -67,6 +67,111 @@ class NoChangeTests(unittest.TestCase):
 
 
 class NestedTests(unittest.TestCase):
+    def test_header_scan_allows_excluding_forks_before_any_history_is_parsed(self):
+        from datetime import datetime, timezone
+        from lab.nested import NestedUsage
+        with tempfile.TemporaryDirectory() as directory:
+            root = Path(directory)
+            observer = NestedUsage(root / 'repo', 'gpt-5.5', 'xhigh', root / 'sessions')
+            folder = observer.sessions / datetime.now(timezone.utc).strftime('%Y/%m/%d')
+            folder.mkdir(parents=True)
+            paths = {}
+            for thread, parent in (('cli', None), ('native-child', 'owned-parent')):
+                path = folder / (thread + '.jsonl')
+                paths[thread] = path
+                meta = {'id': thread, 'cwd': str(observer.repo), 'parent_thread_id': parent}
+                rows = [{'type': 'session_meta', 'payload': meta},
+                        {'type': 'event_msg', 'payload': {'type': 'task_started', 'turn_id': thread + '-turn'}}]
+                path.write_text(''.join(json.dumps(row) + '\n' for row in rows))
+            with patch.object(observer, 'observe', wraps=observer.observe) as observe:
+                self.assertTrue(observer.scan(force=True))
+                self.assertEqual(set(observer.files), set(paths.values()))
+                observe.assert_not_called()
+                child = observer.files[paths['native-child']]
+                self.assertEqual(child['parent_thread_id'], 'owned-parent')
+                self.assertEqual(child['session_meta']['id'], 'native-child')
+                inherited_offset = child['offset']
+                observer.refresh(parents={'native-child'})
+                self.assertEqual(observe.call_count, 1)
+                self.assertEqual(observe.call_args.args[0], 'cli')
+                self.assertEqual(child['offset'], inherited_offset)
+                self.assertEqual(set(observer.threads), {'cli'})
+                self.assertFalse(observer.scan())
+                observer.refresh(parents={'native-child'})
+                self.assertEqual(observe.call_count, 1)
+
+    def test_refresh_discovers_every_header_before_observing_and_preserves_resume(self):
+        from datetime import datetime, timezone
+        from lab.nested import NestedUsage
+        with tempfile.TemporaryDirectory() as directory:
+            root = Path(directory)
+            observer = NestedUsage(root, 'gpt-5.5', 'xhigh', root / 'sessions')
+            folder = observer.sessions / datetime.now(timezone.utc).strftime('%Y/%m/%d')
+            folder.mkdir(parents=True)
+            paths = [folder / (thread + '.jsonl') for thread in ('one', 'two')]
+            for path in paths:
+                rows = [{'type': 'session_meta', 'payload': {'id': path.stem, 'cwd': str(root)}},
+                        {'type': 'event_msg', 'payload': {'type': 'task_started', 'turn_id': 'first'}}]
+                path.write_text(''.join(json.dumps(row) + '\n' for row in rows))
+            original_observe = observer.observe
+            def observe(thread, row):
+                self.assertEqual(set(observer.files), set(paths))
+                original_observe(thread, row)
+            with patch.object(observer, 'observe', side_effect=observe) as seen:
+                observer.refresh(force=True)
+                self.assertEqual(seen.call_count, 2)
+                with paths[0].open('a') as stream:
+                    stream.write(json.dumps({'type': 'event_msg', 'payload': {
+                        'type': 'task_started', 'turn_id': 'resumed'}}) + '\n')
+                observer.refresh(force=True)
+                self.assertEqual(seen.call_count, 3)
+                self.assertEqual(set(observer.threads['one']['turns']), {'first', 'resumed'})
+
+    def test_consume_uses_scanned_files_without_discovering_a_new_child(self):
+        from datetime import datetime, timezone
+        from lab.nested import NestedUsage
+        with tempfile.TemporaryDirectory() as directory:
+            root = Path(directory)
+            observer = NestedUsage(root, 'gpt-5.5', 'xhigh', root / 'sessions')
+            folder = observer.sessions / datetime.now(timezone.utc).strftime('%Y/%m/%d')
+            folder.mkdir(parents=True)
+            self.assertTrue(observer.scan(force=True))
+            path = folder / 'new-child.jsonl'
+            rows = [{'type': 'session_meta', 'payload': {
+                        'id': 'new-child', 'cwd': str(root), 'parent_thread_id': 'parent'}},
+                    {'type': 'event_msg', 'payload': {'type': 'task_started', 'turn_id': 'turn'}}]
+            path.write_text(''.join(json.dumps(row) + '\n' for row in rows))
+            observer.consume()
+            self.assertNotIn(path, observer.files)
+            self.assertNotIn('new-child', observer.threads)
+            observer.refresh(force=True)
+            self.assertEqual(observer.files[path]['parent_thread_id'], 'parent')
+            self.assertIn('new-child', observer.threads)
+
+    def test_header_scan_keeps_mtime_workspace_and_partial_header_admission(self):
+        from datetime import datetime, timezone
+        from lab.nested import NestedUsage
+        with tempfile.TemporaryDirectory() as directory:
+            root = Path(directory)
+            observer = NestedUsage(root / 'repo', 'gpt-5.5', 'xhigh', root / 'sessions')
+            folder = observer.sessions / datetime.now(timezone.utc).strftime('%Y/%m/%d')
+            folder.mkdir(parents=True)
+            for thread, cwd in (('old', observer.repo), ('foreign', root / 'elsewhere'), ('partial', observer.repo)):
+                path = folder / (thread + '.jsonl')
+                row = {'type': 'session_meta', 'payload': {'id': thread, 'cwd': str(cwd)}}
+                path.write_text(json.dumps(row) + ('' if thread == 'partial' else '\n'))
+                if thread == 'old':
+                    os.utime(path, (observer.started - 10, observer.started - 10))
+            self.assertTrue(observer.scan(force=True))
+            self.assertIsNone(observer.files[folder / 'old.jsonl'])
+            self.assertIsNone(observer.files[folder / 'foreign.jsonl'])
+            self.assertNotIn(folder / 'partial.jsonl', observer.files)
+            with (folder / 'partial.jsonl').open('a') as stream:
+                stream.write('\n')
+            self.assertTrue(observer.scan(force=True))
+            self.assertEqual(observer.files[folder / 'partial.jsonl']['thread'], 'partial')
+            self.assertFalse(observer.threads)
+
     def test_native_assistant_item_after_price_is_an_unpriced_tail(self):
         from lab.nested import NestedUsage
         with tempfile.TemporaryDirectory() as directory:

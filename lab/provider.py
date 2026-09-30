@@ -16,6 +16,7 @@ from .host import Fatal, save_json
 from .environment import clean_env
 from .nested import CommandEnvironment, NestedUsage
 from .native_usage import NativeUsage
+from .codex_children import NativeChildren
 from .pi_sandbox import PiSandbox
 from .sandbox import EXECUTION_POLICY
 from .context import AUTO_COMPACT_TOKENS, CONTEXT_POLICY, OUTPUT_SETTLE_SECONDS, OutputGuard, compaction_threshold
@@ -177,7 +178,7 @@ class ChildAccounting:
             if previous["request"] != request or "result" not in previous:
                 raise Fatal("conflicting or unfinished host tool call; refusing replay")
             return previous["result"]
-        self.settle_children()
+        self.settle_host_children()
         error = self.budget_error()
         if error:
             raise error
@@ -203,8 +204,8 @@ class ChildAccounting:
         if not hasattr(self, "nested"):
             return {"observed_raw_tokens": 0, "cached_input_tokens": 0,
                     "measurement_complete": True, "errors": [], "incomplete": []}
-        parents = self.parent_threads | set(self.usage.totals)
-        self.nested.refresh(parents, force=force)
+        self.refresh_children(force=force)
+        parents = self.accounted_threads()
         report = self.nested.report(parents)
         if hasattr(self, "commands"):
             processes = self.commands.children.report()
@@ -212,6 +213,15 @@ class ChildAccounting:
             report["measurement_complete"] &= processes["measurement_complete"]
             report["errors"].extend(processes["errors"])
         return report
+
+    def refresh_children(self, force=False):
+        self.nested.refresh(self.accounted_threads(), force=force)
+
+    def accounted_threads(self):
+        return self.parent_threads | set(self.usage.totals)
+
+    def settle_host_children(self):
+        self.settle_children()
 
     def settle_children(self):
         if not hasattr(self, "commands"):
@@ -245,6 +255,7 @@ class Codex(ChildAccounting):
         self.model, self.effort = model, effort
         self.usage, self.turns, self.missing_turns = Usage(), [], []
         self.native_usage = {}
+        self.native_children = NativeChildren()
         self.context_usage = {}
         self.auto_compact_limit = AUTO_COMPACT_TOKENS
         self.counter, self.events, self.pending = 0, queue.Queue(), deque()
@@ -294,7 +305,7 @@ class Codex(ChildAccounting):
                 "host_tool_transport": "native-tools-v1",
                 "context_policy": {**CONTEXT_POLICY, "auto_compact_tokens": self.auto_compact_limit,
                                    "message_seconds": MESSAGE_SECONDS, "recovery_attempts": 1},
-                "nested_policy": "same-model-subscription-supervised-native-history-v2"}
+                "nested_policy": "codex-owned-native-children-v3"}
             save_json(self.artifacts / "provider.json", self.identity)
             if require_git_write:
                 self.verify_git_write()
@@ -335,12 +346,81 @@ class Codex(ChildAccounting):
         if "id" in message and "method" in message and message["method"] != "item/tool/call":
             # Never approve extra permissions, external auth or interactive work.
             self.send({"id": message["id"], "error": {"code": -32601, "message": "interactive server requests are unsupported; approval policy is never"}})
+        self.observe_notification(message)
+        return message
+
+    def observe_notification(self, message):
+        self.native_children.observe(message, self.parent_threads)
         if message.get("method") == "thread/tokenUsage/updated":
             params = message.get("params", {})
             fresh = self.usage.observe(params)
             message["_fresh_usage"] = fresh
             self.remember_context(params)
-        return message
+
+    def accounted_threads(self):
+        children = getattr(self, "native_children", None)
+        return super().accounted_threads() | (set(children.threads) if children else set())
+
+    def discover_native_children(self):
+        children = getattr(self, "native_children", None)
+        if children is None or not hasattr(self, "nested"):
+            return
+        # A fork's file can precede its transport notification. Admit its
+        # ancestry as pending before the generic scanner sees inherited rows.
+        # Iterate so discovery order cannot hide a grandchild's owned parent.
+        remaining = [entry for entry in self.nested.files.values() if entry]
+        while remaining:
+            owned = self.parent_threads | set(children.threads)
+            discovered = [entry for entry in remaining
+                if entry.get("parent_thread_id") in owned and entry["thread"] not in owned]
+            if not discovered:
+                break
+            for entry in discovered:
+                children.discover(entry["thread"], entry["parent_thread_id"])
+            remaining = [entry for entry in remaining if entry not in discovered]
+
+    def refresh_children(self, force=False):
+        self.nested.scan(force=force)
+        self.discover_native_children()
+        self.nested.consume(self.accounted_threads())
+
+    def settle_host_children(self):
+        # A native child can run concurrently with its parent's host command.
+        # CLI-launched processes retain their existing settlement contract.
+        super().settle_children()
+
+    def native_child_report(self):
+        children = getattr(self, "native_children", None)
+        return (children.report(getattr(self, "native_usage", {}), self.model, self.effort)
+                if children else {"threads": {}, "errors": [], "pending": [],
+                                  "active": False, "measurement_complete": True})
+
+    def settle_children(self):
+        super().settle_children()
+        if not getattr(self, "native_children", None) or not self.native_children.threads:
+            return
+        missing_since = None
+        while True:
+            self.refresh_native_usage(force=True)
+            report = self.native_child_report()
+            if report["errors"]:
+                raise Fatal("native child accounting failure: " + "; ".join(report["errors"]))
+            error = self.budget_error()
+            if error:
+                raise error
+            if report["measurement_complete"]:
+                return
+            if report["active"]:
+                missing_since = None
+            elif missing_since is None:
+                missing_since = time.monotonic()
+            elif time.monotonic() - missing_since >= 5:
+                raise Fatal("incomplete native child token measurement: " + "; ".join(report["pending"]))
+            message = self.pending.popleft() if self.pending else self.incoming(0.1)
+            if message and message.get("method") == "item/tool/call" and "id" in message:
+                self.send({"id": message["id"], "result": {"success": False,
+                    "contentItems": [{"type": "inputText", "text":
+                        "Host tool call is not owned by an active author turn."}]}})
 
     def remember_context(self, params):
         value = params.get("tokenUsage", {})
@@ -410,7 +490,17 @@ class Codex(ChildAccounting):
         self.native_usage[thread["id"]] = NativeUsage(path, thread["id"], cwd or self.repo)
 
     def refresh_native_usage(self, force=False):
+        if hasattr(self, "nested"):
+            self.nested.scan(force=force)
+            self.discover_native_children()
         readers = getattr(self, "native_usage", {})
+        children = getattr(self, "native_children", None)
+        if children and children.threads and hasattr(self, "nested"):
+            for path, entry in self.nested.files.items():
+                if entry and entry["thread"] in children.threads and entry["thread"] not in readers:
+                    child = entry["thread"]
+                    readers[child] = NativeUsage(path, child, self.repo,
+                        parent_thread_id=children.threads[child]["parent_thread_id"])
         now = time.monotonic()
         if not readers or (not force and now - getattr(self, "_native_refresh_at", -1) < 0.25):
             return
@@ -433,6 +523,9 @@ class Codex(ChildAccounting):
         errors = [error for reader in getattr(self, "native_usage", {}).values() for error in reader.errors]
         if errors:
             raise Fatal("native token accounting failure: " + "; ".join(errors))
+        child_errors = self.native_child_report()["errors"]
+        if child_errors:
+            raise Fatal("native child accounting failure: " + "; ".join(child_errors))
         return super().observed_raw()
 
     def check_limits(self):
@@ -790,11 +883,12 @@ class Codex(ChildAccounting):
             if not row["usage_observed_after_last_message"]:
                 self.missing_turns.append({"thread_id": thread, "turn_id": turn_id,
                     "reason": "no fresh usage covering the last delivered message"})
+            if row["usage_observed_after_last_message"]:
+                self.settle_children()
             if (compacting or compaction_items) and not self.report()["measurement_complete"]:
                 raise Fatal("incomplete token measurement after compaction; no further generation")
             if not row["usage_observed_after_last_message"]:
                 raise Fatal("incomplete native token measurement; no further generation")
-            self.settle_children()
             return final
         except BaseException as exc:
             if settlement.error is not None and "work_limit_settlement" not in row:
@@ -834,13 +928,16 @@ class Codex(ChildAccounting):
         native = {thread: reader.report() for thread, reader in getattr(self, "native_usage", {}).items()}
         native_complete = all(not value["errors"] and not value["missing_compactions"] for value in native.values())
         child = self.child_report(force=True)
+        native_children = self.native_child_report()
         return {**self.usage.report(), "turns": self.turns, "unpriced_or_incomplete_turns": self.missing_turns,
                 "native_usage": native,
+                "native_children": native_children,
                 "parent_observed_raw_tokens": self.usage.raw, "nested": child,
                 "observed_raw_tokens": self.usage.raw+child["observed_raw_tokens"],
                 "cached_input_tokens": self.usage.cached+child["cached_input_tokens"],
                 "measurement_complete": (not self.missing_turns and not self.usage.uncertain and bool(self.turns)
-                                         and native_complete and child["measurement_complete"]),
+                                         and native_complete and child["measurement_complete"]
+                                         and native_children["measurement_complete"]),
                 "qualification": "parent response coverage with owned native compaction receipts, plus owned native child lifecycle/model/counters; not a proof that every internal response was priced"}
 
     def close(self):

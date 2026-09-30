@@ -44,6 +44,7 @@ final result aggregation.
 | Missing, late, malformed, or duplicated usage | Reconcile request identities and authoritative receipts; retain unmatched records and raw provider events. | Accept late receipts for their original request; deduplicate by identity. Do not infer usage from a token estimate or count a duplicate twice. | Accounting incomplete until reconciled; never a fully measured run while coverage is missing. |
 | Agent turn ends with no source changes | Observe normal harness completion and capture the actual workspace state. | Send the assigned requirements and existing result to independent review if review is enabled. No synthetic completion marker or empty commit is required to establish that the turn ended. | Completed author attempt; review/evaluation establish whether the task was already satisfied. |
 | Review returns malformed or incomplete verdict | Preserve reviewer response and source identity. Validate verdict separately from review transport completion. | Incomplete evidence is not approval. Format correction, if configured, must not start a new code-changing repair loop or invent findings. | Review incomplete; any continuation must retain that fact. |
+| Codex spawns a native subagent before its first usage receipt | Track the child through its owned parent spawn, turn events, and validated fork history. Preserve pending lifecycle and receipt state separately from token totals. | Allow parent host commands while the child runs. Wait for child completion before accepting the parent stage, within the existing budgets. Exclude inherited parent history and merge duplicate transport/native counters once. | Pending usage during execution is normal; an aborted child or missing terminal usage cannot certify a completed stage. |
 | Reviewer finds a real issue | Preserve the exact finding, affected requirement, reviewed tree, and priority. | Supply findings for an explicitly configured repair round. Do not add unrelated coding advice or unspecified requirements. | Review findings; subsequent repaired trees require their own review result. |
 | Reviewer or evaluator unexpectedly writes source | Compare the protected submission snapshot or workspace before and after. Save the mutation as evidence rather than silently accepting it. | Grade a disposable copy. Do not treat an altered submission as the author's original solution. | Runner/evaluator custody failure if protected source changed. |
 | Explicit feature/review cap, repair limit, or whole-run limit | Enforce against recorded counters and elapsed time outside the prompt; record threshold, observed value, and stop scope. By default only whole-run time/token/turn limits apply; stage time/token and repair-count caps are opt-in. | Retain actual source and stop the workflow. Local review/loop stops capture the stopped checkpoint for grading; whole-run stops grade already captured snapshots and leave the active uncaptured checkpoint ungraded. Do not start later checkpoints or integration, prompt the agent to hurry, or ask the reviewer for an unsupported conclusion. | Execution incomplete; unresolved checkpoint is not approved. |
@@ -104,6 +105,13 @@ incomplete; no token count is inferred from missing output.
 - Identical polling with changing output and checks repeated after source edits
   do not trigger a loop solely because command text repeats.
 - A hard reviewer limit produces an incomplete review without another
+- Native child startup before the first token receipt does not block a parent
+  host command. Child usage remains subject to the global budget; parent
+  completion waits for successful child completion and its own receipts. Forked
+  parent history and repeated counters do not add charges. Saved traces can be
+  replayed without generation using `tests/replay_native_children.py`; output
+  must be outside the original run directories. Runs without native children
+  retain their previous totals and completion decisions.
   conclusion/coaching prompt.
 - Evaluator assertion failures, infrastructure failures, timeout, and empty
   collection retain distinct outcomes and do not mutate the graded snapshot.
