@@ -1,0 +1,30 @@
+{
+  "ripgrep": {
+    "workspace": "BurntSushi_ripgrep_14.1.1_15.0.0",
+    "checks": ["cargo build --workspace --features pcre2 --locked"]
+  },
+  "dubbo": {
+    "workspace": "apache_dubbo_dubbo-3.3.3_dubbo-3.3.6",
+    "checks": ["./mvnw -B -ntp -DskipTests package"]
+  },
+  "element-web": {
+    "workspace": "element-hq_element-web_v1.11.95_v1.11.97",
+    "checks": ["yarn build"]
+  },
+  "navidrome": {
+    "workspace": "navidrome_navidrome_v0.57.0_v0.58.0",
+    "checks": ["(cd ui && npm ci && npm run build) && go build -tags=netgo ."]
+  },
+  "nushell": {
+    "workspace": "nushell_nushell_0.106.0_0.108.0",
+    "checks": ["cargo build --profile ci --workspace --exclude 'nu_plugin_*'"]
+  },
+  "scikit-learn": {
+    "workspace": "scikit-learn_scikit-learn_1.5.2_1.6.0",
+    "checks": ["python -m pip install --no-build-isolation -e ."]
+  },
+  "go-zero": {
+    "workspace": "zeromicro_go-zero_v1.6.0_v1.9.3",
+    "checks": ["go build -v ./..."]
+  }
+}

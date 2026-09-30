@@ -5,6 +5,10 @@ benchmark. The runner records implementation, independent review, repairs,
 integration, benchmark grades, and token accounting. It does not assume that
 an enabled condition improves quality or reduces work.
 
+[SWE-Milestone projects](docs/SWE_MILESTONE.md) can be imported and run separately
+with the existing runner. The adapter adds independent grading and per-milestone
+code-quality measurements after a run.
+
 The current workflow is `host-tools-review-approval-v2`. There are **eight
 active factors**. C25 and the old printed-command protocol have been removed;
 there is no legacy execution mode. Historical run artifacts remain historical
