@@ -30,7 +30,9 @@ class PiCancellationTests(unittest.TestCase):
             (295, message_start()), (313, message_end((37265, 944, 36352)))],
             review_seconds=300)
         provider.usage = Usage()
-        progress = FeatureProgress({"id": "generic-fixture"}, loop_policy(), 0)
+        progress = FeatureProgress({"id": "generic-fixture"}, loop_policy({
+            "max_feature_raw": 3_000_000, "max_review_raw": 500_000,
+            "max_review_seconds": 300}), 0)
         provider.work_limits = progress.limits(0, reviewing=True)
         journal = provider.artifacts / "pi-review-requests.jsonl"
         proof = {"type": "request_not_dispatched", "receipt_id": str(uuid.uuid4()),

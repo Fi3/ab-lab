@@ -47,7 +47,9 @@ class PiReviewSettlementTests(unittest.TestCase):
         provider.sent, provider.requests = [], []
         self.events = deque((1000+at, copy.deepcopy(event)) for at,event in scheduled)
         self.start = self.now
-        progress = FeatureProgress({"id": "checkpoint_5"}, loop_policy({"max_review_seconds": review_seconds}), 0)
+        progress = FeatureProgress({"id": "checkpoint_5"}, loop_policy({
+            "max_feature_raw": 3_000_000, "max_review_raw": 500_000,
+            "max_review_seconds": review_seconds}), 0)
         provider.work_limits = progress.limits(sum(BEFORE[:2]), reviewing=True)
 
         def send(event):
@@ -94,6 +96,23 @@ class PiReviewSettlementTests(unittest.TestCase):
         self.assertGreaterEqual(value["trigger"]["observed"],limit)
         self.assertLess(value["trigger"]["observed"],limit+0.2)
         return value
+
+    def test_default_review_finishes_beyond_previous_time_and_token_caps(self):
+        provider = self.provider([(1, message_start()),
+            (400, message_end((600000, 5000, 550000), text="NO_FINDINGS")),
+            (400.01, {"type": "agent_settled"})])
+        progress = FeatureProgress({"id": "checkpoint_5"}, loop_policy(), 0)
+        provider.work_limits = progress.limits(sum(BEFORE[:2]), reviewing=True)
+
+        reply = provider.turn("pi-review", "Review the assigned requirements.",
+                              "checkpoint_5-review-1", writable=True)
+
+        self.assertEqual(reply, "NO_FINDINGS")
+        self.assertEqual(provider.usage.raw - sum(BEFORE[:2]), 605000)
+        self.assertGreaterEqual(self.now - self.start, 400)
+        self.assertEqual(provider.turns[0]["status"], "completed")
+        self.assertTrue(provider.report()["measurement_complete"])
+        self.assertFalse(self.aborts(provider))
 
     def test_silent_first_response_waits_for_finalized_usage_before_abort(self):
         provider=self.provider([(1,message_start()),(130,message_end())])

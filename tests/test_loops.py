@@ -122,10 +122,24 @@ class LoopWorkflowTests(unittest.TestCase):
             script[f"one-review-{round_number}"] = [finding(f"Distinct defect {round_number}")]
             if round_number < 4:
                 script[f"one-fix-{round_number}"] = [edit(round_number + 1, round_number), "Finished."]
-        result, backend = self.execute(script)
+        result, backend = self.execute(script, policy={"max_repair_attempts": 3})
         self.assert_attention(result, "repair_limit_reached")
         self.assertEqual(result["attention"]["repair_attempts"], 3)
         self.assertEqual(backend.calls[-1][0], "one-review-4")
+
+    def test_default_allows_four_distinct_repairs_then_approval(self):
+        script = {"one-implement": [edit(1), "Finished."]}
+        for round_number in range(1, 5):
+            script[f"one-review-{round_number}"] = [finding(f"Distinct defect {round_number}")]
+            script[f"one-fix-{round_number}"] = [edit(round_number + 1, round_number), "Finished."]
+        script["one-review-5"] = ["NO_FINDINGS"]
+        result, backend = self.execute(script)
+        self.assertEqual(result["status"], "passed", result)
+        self.assertEqual(result["loop_flags"], [])
+        self.assertEqual(result["checkpoints"][0]["review_rounds"], 5)
+        self.assertEqual((backend.repo / "one.py").read_text(), "value = 5\n")
+        self.assertEqual(len([call for call in backend.calls if "-fix-" in call[0]]), 4)
+        self.assertTrue(result["reviews"][-1]["approved"])
 
     def test_successful_last_allowed_repair_is_approved(self):
         result, _ = self.execute({"one-implement": [edit(1), "Finished."],
@@ -134,6 +148,20 @@ class LoopWorkflowTests(unittest.TestCase):
                                  policy={"max_repair_attempts": 1})
         self.assertEqual(result["status"], "passed", result)
         self.assertEqual(result["loop_flags"], [])
+
+    def test_default_review_and_repair_finish_after_old_stage_token_limits(self):
+        result, backend = self.execute({
+            "one-implement": [(edit(1), 2_600_000), "Finished."],
+            "one-review-1": [(finding("Wrong value"), 600_000)],
+            "one-fix-1": [edit(2, 1), "Finished."],
+            "one-review-2": [("NO_FINDINGS", 600_000)],
+        })
+        self.assertEqual(result["status"], "passed", result)
+        self.assertEqual(result["loop_flags"], [])
+        self.assertEqual(result["checkpoints"][0]["review_rounds"], 2)
+        self.assertGreater(result["usage"]["observed_raw_tokens"], 3_000_000)
+        self.assertEqual((backend.repo / "one.py").read_text(), "value = 2\n")
+        self.assertTrue(result["reviews"][-1]["approved"])
 
     def test_checkpoint_token_budget_stops_before_host_executes_over_budget_proposal(self):
         result, backend = self.execute({"one-implement": [(edit(1), 300), (edit(2, 1), 600)],
@@ -268,18 +296,76 @@ class LoopConfigurationTests(unittest.TestCase):
 
     def test_invalid_policy_is_rejected(self):
         for value in ([], {"wat": 1}, {"enabled": 1}, {"max_feature_raw": True}, {"repeat_limit": 1},
-                      {"max_review_raw": 3000000}, {"max_repair_attempts": -1}, {"max_review_seconds": 0}):
+                      {"max_review_raw": 3000000, "max_feature_raw": 3000000},
+                      {"max_repair_attempts": -1}, {"max_review_seconds": 0}):
             with self.subTest(value=value), self.assertRaises(ValueError):
                 loop_policy(value)
 
-    def test_review_time_and_token_limits_are_inclusive(self):
+    def test_only_optional_stage_and_repair_caps_accept_none(self):
+        nullable = {"max_feature_raw", "max_review_raw", "max_review_seconds", "max_repair_attempts"}
+        for key in loop_policy():
+            with self.subTest(key=key):
+                if key in nullable:
+                    self.assertIsNone(loop_policy({key: None})[key])
+                else:
+                    with self.assertRaises(ValueError):
+                        loop_policy({key: None})
+
+    def test_explicit_stage_and_repair_caps_require_positive_integers(self):
+        for key in ("max_feature_raw", "max_review_raw", "max_review_seconds", "max_repair_attempts"):
+            for value in (False, True, 0, -1, 1.5, "100"):
+                with self.subTest(key=key, value=value), self.assertRaises(ValueError):
+                    loop_policy({key: value})
+
+    def test_default_limits_do_not_cut_off_long_reviews_or_features(self):
         progress = FeatureProgress({"id": "one"}, loop_policy(), 100)
+        with patch("lab.loops.time.monotonic", return_value=10):
+            for reviewing in (False, True):
+                with self.subTest(reviewing=reviewing):
+                    limits = progress.limits(200, reviewing=reviewing)
+                    self.assertEqual(limits, [])
+                    self.assertIsNone(work_limit_error(limits, 3_500_100, now=610))
+
+    def test_feature_cap_alone_does_not_reserve_an_unspecified_review_budget(self):
+        progress = FeatureProgress({"id": "one"}, loop_policy({"max_feature_raw": 1000}), 100)
+        for reviewing in (False, True):
+            with self.subTest(reviewing=reviewing):
+                limits = progress.limits(200, reviewing=reviewing)
+                self.assertEqual(limits, [{"reason": "feature_token_limit", "metric": "observed_raw_tokens",
+                                          "start": 100, "limit": 1000}])
+                self.assertIsNone(work_limit_error(limits, 1099))
+                self.assertEqual(work_limit_error(limits, 1100).signal["reason"], "feature_token_limit")
+
+    def test_review_caps_alone_do_not_limit_author_work(self):
+        for overrides in ({"max_review_raw": 1000}, {"max_review_seconds": 1000}):
+            with self.subTest(overrides=overrides):
+                progress = FeatureProgress({"id": "one"}, loop_policy(overrides), 100)
+                self.assertEqual(progress.limits(4_000_000), [])
+                with patch("lab.loops.time.monotonic", return_value=10):
+                    limits = progress.limits(4_000_000, reviewing=True)
+                self.assertEqual(len(limits), 1)
+                self.assertIsNone(work_limit_error(limits, 4_000_999, now=1009))
+                self.assertIsInstance(work_limit_error(limits, 4_001_000, now=1010), WorkLimitReached)
+
+    def test_final_review_reserve_requires_both_caps_and_final_review_enabled(self):
+        for final_review, expected in ((False, 1000), (True, 800)):
+            with self.subTest(final_review=final_review):
+                progress = FeatureProgress({"id": "one"}, loop_policy({
+                    "max_feature_raw": 1000, "max_review_raw": 200, "final_review": final_review}), 100)
+                self.assertEqual(progress.limits(200)[0]["limit"], expected)
+                self.assertEqual(progress.limits(200, reviewing=True)[0]["limit"], 1000)
+        policy = loop_policy({"max_feature_raw": 1000, "max_review_raw": 2000, "final_review": False})
+        self.assertEqual(FeatureProgress({"id": "one"}, policy, 100).limits(200)[0]["limit"], 1000)
+
+    def test_review_time_and_token_limits_are_inclusive(self):
+        progress = FeatureProgress({"id": "one"}, loop_policy({
+            "max_feature_raw": 3_000_000, "max_review_raw": 500_000, "max_review_seconds": 300}), 100)
         limits = progress.limits(200, reviewing=True)
         self.assertIsNone(work_limit_error(limits, 200, limits[-1]["start"]))
         error = work_limit_error(limits, 200, limits[-1]["start"] + 300)
         self.assertIsInstance(error, WorkLimitReached)
-        self.assertIsInstance(error, WorkLimitReached)
         self.assertEqual(error.signal["reason"], "review_time_limit")
+        self.assertEqual(error.settle_seconds, 600)
         error = work_limit_error(limits, 500200, limits[-1]["start"])
         self.assertEqual(error.signal["reason"], "review_token_limit")
         self.assertEqual(error.signal["kind"], "budget_exhausted")

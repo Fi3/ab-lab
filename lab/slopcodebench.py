@@ -17,7 +17,7 @@ RUNNER_REVISION = "31ceea3add480edb33431e70475c4c70597e6b31"
 ENVIRONMENT = "configs/environments/docker-python3.12-uv.yaml"
 BRIDGE = Path(__file__).with_name("scb_bridge.py")
 SEED_IGNORE = "__pycache__/\n*.pyc\n.venv/\n.pytest_cache/\n"
-CHECKPOINT_STOP_POLICY = "retain-grade-and-continue-v1"
+CHECKPOINT_STOP_POLICY = "review-approval-required-v2"
 
 
 def pinned(repo, revision):
@@ -143,7 +143,7 @@ def retain_attempt(checkout, feature):
     previous = git(checkout, "rev-parse", "HEAD").decode().strip()
     dirty = git(checkout, "status", "--porcelain").decode()
     if git(checkout, "ls-files", "--unmerged"):
-        raise Fatal("cannot continue SlopCodeBench from an unmerged attempt")
+        raise Fatal("cannot retain an unmerged SlopCodeBench attempt")
     if dirty:
         git(checkout, "add", "--all")
         if git(checkout, "diff", "--cached", "--name-only"):

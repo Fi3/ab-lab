@@ -91,7 +91,9 @@ class ReviewSettlementTests(unittest.TestCase):
         provider.refresh_native_usage(force=True)
         self.events = deque((1000.0+at, copy.deepcopy(event), native)
                             for at,event,native in scheduled)
-        progress = FeatureProgress({"id": "checkpoint_5"}, loop_policy({"max_review_seconds": review_seconds}), 0)
+        progress = FeatureProgress({"id": "checkpoint_5"}, loop_policy({
+            "max_feature_raw": 3_000_000, "max_review_raw": 500_000,
+            "max_review_seconds": review_seconds}), 0)
         provider.work_limits = progress.limits(sum(BEFORE[:2]), reviewing=True)
         self.start = self.now
 
@@ -152,14 +154,35 @@ class ReviewSettlementTests(unittest.TestCase):
 
     def test_policy_versions_elapsed_review_settlement_explicitly(self):
         policy = loop_policy()
-        self.assertEqual(POLICY_VERSION, "external-limits-no-coaching-v4")
+        self.assertEqual(POLICY_VERSION, "global-budget-defaults-v5")
         self.assertEqual(policy["max_review_settle_seconds"], 600)
         progress = FeatureProgress({"id": "checkpoint_5"}, policy, 0)
+        self.assertEqual(progress.limits(0, reviewing=True), [])
+        progress = FeatureProgress({"id": "checkpoint_5"}, loop_policy({
+            "max_feature_raw": 3_000_000, "max_review_raw": 500_000,
+            "max_review_seconds": 300}), 0)
         limits = progress.limits(0, reviewing=True)
         self.assertEqual(limits[-1]["settle_seconds"], 600)
         self.assertNotIn("settle_seconds", limits[0])
         self.assertNotIn("settle_seconds", limits[-2])
         self.assertFalse(any("action" in item for item in limits))
+
+    def test_default_review_finishes_beyond_previous_time_and_token_caps(self):
+        total = tuple(a+b for a, b in zip(BEFORE, (600000, 5000, 550000)))
+        provider = self.provider([(1, started(), None), (399.9, message(), None),
+                                  (400, price(total), total), (400.01, completed(), None)])
+        progress = FeatureProgress({"id": "checkpoint_5"}, loop_policy(), 0)
+        provider.work_limits = progress.limits(sum(BEFORE[:2]), reviewing=True)
+
+        reply = provider.turn(THREAD, "Review the assigned requirements.",
+                              "checkpoint_5-review-1", writable=True)
+
+        self.assertEqual(reply, "NO_FINDINGS")
+        self.assertEqual(provider.usage.raw - sum(BEFORE[:2]), 605000)
+        self.assertGreaterEqual(self.now - self.start, 400)
+        self.assertEqual(provider.turns[0]["status"], "completed")
+        self.assertTrue(provider.report()["measurement_complete"])
+        self.assertFalse(provider.sent)
 
     def test_silent_first_response_waits_for_owned_receipt_after_ninety_seconds(self):
         provider = self.provider([(1, started(), None), (130, price(), AFTER)])

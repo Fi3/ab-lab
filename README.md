@@ -5,7 +5,7 @@ benchmark. The runner records implementation, independent review, repairs,
 integration, benchmark grades, and token accounting. It does not assume that
 an enabled condition improves quality or reduces work.
 
-The current workflow is `host-tools-upstream-prompts-v1`. There are **eight
+The current workflow is `host-tools-review-approval-v2`. There are **eight
 active factors**. C25 and the old printed-command protocol have been removed;
 there is no legacy execution mode. Historical run artifacts remain historical
 evidence and are not directly interchangeable with current runs.
@@ -69,20 +69,23 @@ history has one commit per feature. `--skip-linearization` preserves existing
 reviewed commits and permits new integration commits without rewriting history.
 The runner also executes the configured final checks.
 
-Limits are enforced outside agent prompts. Default feature policy:
+Limits are enforced outside agent prompts. By default, author and reviewer
+work share the explicitly selected whole-run time, token, and turn limits.
+There is no separate feature token cap or review token/time cap. Default
+feature policy:
 
 | Setting | Default |
 | --- | ---: |
-| Feature observed raw tokens | 3,000,000 |
-| Tokens reserved for a final review | 500,000 |
-| Per-review observed raw tokens | 500,000 |
-| Per-review wall time | 300 seconds |
+| Feature observed raw tokens | No separate cap |
+| Per-review observed raw tokens | No separate cap |
+| Per-review wall time | No separate cap |
 | Review receipt settlement allowance | 600 seconds |
-| Repair attempts | 3 |
+| Repair attempts | No separate cap |
 | Repeated failed-operation cycle threshold | 3 |
 
-A review limit stops that review; it does not start another generation asking
-for a conclusion. The settlement allowance lets an already in-flight response
+A configured review limit stops the workflow; it does not start another
+generation asking for a conclusion or advance to the next feature. The
+settlement allowance lets an already in-flight response
 supply its accounting receipt. It does not grant approval to a late verdict,
 and global or token limits can end settlement sooner. Observed-token limits can
 overshoot while usage arrives and cancellation takes effect; they are not
@@ -90,13 +93,18 @@ hard billing caps.
 
 Repeated reads and successful polling are not treated as failed-operation
 loops. Repeated failing operations with unchanged state, repeated rejected
-source trees, repeated blocking findings, exhausted repairs, and exhausted
+source trees, repeated blocking findings, and exhausted explicit repair or
 feature limits can produce `needs_attention`. A stopped author may receive one
 final review when configured and when the remaining limits permit it.
 
-Ordinary dependent feature workflows stop on unresolved attempts. SlopCodeBench
-retains and grades a stopped checkpoint snapshot and proceeds to the next
-cumulative checkpoint within the overall limits. A provider refusal,
+Every feature needs a completed approving review before the next feature or
+integration can start. Blocking findings trigger author repairs and another
+review within the run's limits and repair/loop guardrails. An unfinished or
+unresolved review stops the workflow as incomplete. For a local review/loop
+stop, SlopCodeBench retains and independently grades the stopped snapshot;
+later checkpoints and final assembly remain unrun. Whole-run or provider stops
+retain the checkout and grade already captured snapshots; an uncaptured active
+checkpoint remains ungraded. A provider refusal,
 unreconciled interruption, missing accounting, or infrastructure failure is
 reported separately; it is not approval or a successful benchmark result.
 
@@ -105,15 +113,16 @@ state, retry rules, and outcome ownership. A new invocation requires a fresh
 output directory. There is no automatic resume of an interrupted run and no
 silent replacement run.
 
-Use `--loop-policy policy.json` to override known policy fields, for example:
+Use `--loop-policy policy.json` to override known policy fields. These are the
+defaults; optional stage caps accept a positive integer instead of `null`:
 
 ```json
 {
-  "max_feature_raw": 3000000,
-  "max_review_raw": 500000,
-  "max_review_seconds": 300,
+  "max_feature_raw": null,
+  "max_review_raw": null,
+  "max_review_seconds": null,
   "max_review_settle_seconds": 600,
-  "max_repair_attempts": 3,
+  "max_repair_attempts": null,
   "repeat_limit": 3,
   "final_review": true
 }
@@ -121,7 +130,9 @@ Use `--loop-policy policy.json` to override known policy fields, for example:
 
 `--no-loop-detection` disables the feature stopping policy while retaining the
 global wall-time, token, and turn limits. Policy version
-`external-limits-no-coaching-v4` is recorded in results.
+`global-budget-defaults-v5` is recorded in results. If both feature and review
+token caps are explicitly configured, a final review reserve is taken from
+the feature budget when `final_review` is enabled.
 
 ## Setup and a first run
 
@@ -267,7 +278,7 @@ For SlopCodeBench, read execution and correctness separately:
 
 | Field | Meaning |
 | --- | --- |
-| `execution_status` | Whether all checkpoint attempts and final assembly completed. |
+| `execution_status` | Whether all checkpoints received review approval and final assembly completed. |
 | `status` | Overall workflow outcome, including reviews and evaluation. |
 | `slopcodebench.checkpoints` | Independent grade for each recorded checkpoint snapshot. |
 | `slopcodebench.final` | Independent grade for the assembled final snapshot. |
@@ -311,5 +322,10 @@ Historical experiment reports describe the versions and limitations they
 actually tested.
 
 The [host-tools verification report](docs/HOST_TOOLS_VERIFICATION.md) records
-the reproductions, 421 passing runner tests, and complete Codex/Pi benchmark
-executions, including their remaining benchmark failures and review limits.
+the earlier protocol reproductions and benchmark executions. Those runs used
+the previous stop-and-continue policy; their completed execution status does
+not establish completed review/repair for every checkpoint.
+
+The [review-completion verification report](docs/REVIEW_COMPLETION_VERIFICATION.md)
+records the current limit and approval-gate regressions, end-to-end smoke runs,
+and full-benchmark attempts, including their unresolved outcomes.

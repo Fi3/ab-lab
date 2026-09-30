@@ -10,15 +10,15 @@ from .host import Fatal, git, snapshot, state_summary
 
 DEFAULT_LOOP_POLICY = {
     "enabled": True,
-    "max_feature_raw": 3_000_000,
-    "max_repair_attempts": 3,
+    "max_feature_raw": None,
+    "max_repair_attempts": None,
     "repeat_limit": 3,
-    "max_review_raw": 500_000,
-    "max_review_seconds": 300,
+    "max_review_raw": None,
+    "max_review_seconds": None,
     "max_review_settle_seconds": 600,
     "final_review": True,
 }
-POLICY_VERSION = "external-limits-no-coaching-v4"
+POLICY_VERSION = "global-budget-defaults-v5"
 
 
 def loop_policy(value=None):
@@ -30,11 +30,15 @@ def loop_policy(value=None):
             raise ValueError(f"loop policy {key} must be boolean")
     for key in ("max_feature_raw", "max_repair_attempts", "repeat_limit", "max_review_raw", "max_review_seconds",
                 "max_review_settle_seconds"):
+        if key in ("max_feature_raw", "max_review_raw", "max_review_seconds", "max_repair_attempts") and policy[key] is None:
+            continue
         if type(policy[key]) is not int or policy[key] <= 0:
             raise ValueError(f"loop policy {key} must be a positive integer")
     if policy["repeat_limit"] < 2:
         raise ValueError("loop policy repeat_limit must be at least two")
-    if policy["final_review"] and policy["max_review_raw"] >= policy["max_feature_raw"]:
+    if (policy["final_review"] and policy["max_review_raw"] is not None
+            and policy["max_feature_raw"] is not None
+            and policy["max_review_raw"] >= policy["max_feature_raw"]):
         raise ValueError("final review reserve must be smaller than the feature budget")
     return policy
 
@@ -79,19 +83,24 @@ class FeatureProgress:
     def limits(self, raw, *, reviewing=False):
         if not self.policy["enabled"]:
             return []
-        # An ongoing review can use the feature's remaining allowance. Reserve
-        # only author work, so a verdict is not replaced by another full review.
-        reserve = self.policy["max_review_raw"] if self.policy["final_review"] and not reviewing else 0
-        limits = [{"reason": "feature_token_limit", "metric": "observed_raw_tokens",
-                   "start": self.raw_start, "limit": self.policy["max_feature_raw"] - reserve}]
+        limits = []
+        feature_raw = self.policy["max_feature_raw"]
+        review_raw = self.policy["max_review_raw"]
+        review_seconds = self.policy["max_review_seconds"]
+        if feature_raw is not None:
+            # Only an explicit review cap provides a definite reserve. Reviews
+            # themselves can use the feature's entire remaining allowance.
+            reserve = (review_raw or 0) if self.policy["final_review"] and not reviewing else 0
+            limits.append({"reason": "feature_token_limit", "metric": "observed_raw_tokens",
+                           "start": self.raw_start, "limit": feature_raw - reserve})
         if reviewing:
-            limits += [
-                {"reason": "review_token_limit", "metric": "observed_raw_tokens",
-                 "start": raw, "limit": self.policy["max_review_raw"]},
-                {"reason": "review_time_limit", "metric": "seconds",
-                 "start": time.monotonic(), "limit": self.policy["max_review_seconds"],
-                 "settle_seconds": self.policy["max_review_settle_seconds"]},
-            ]
+            if review_raw is not None:
+                limits.append({"reason": "review_token_limit", "metric": "observed_raw_tokens",
+                               "start": raw, "limit": review_raw})
+            if review_seconds is not None:
+                limits.append({"reason": "review_time_limit", "metric": "seconds",
+                               "start": time.monotonic(), "limit": review_seconds,
+                               "settle_seconds": self.policy["max_review_settle_seconds"]})
         return limits
 
     def observe_review(self, review, tree):
@@ -111,7 +120,7 @@ class FeatureProgress:
             if repeated:
                 return {"reason": "repeated_blocking_findings", "kind": "loop_detected",
                         "rounds": [r["round"] for r in window], "findings": sorted(repeated)}
-        if self.repairs >= self.policy["max_repair_attempts"]:
+        if self.policy["max_repair_attempts"] is not None and self.repairs >= self.policy["max_repair_attempts"]:
             return {"reason": "repair_limit_reached", "kind": "attempt_limit",
                     "limit": self.policy["max_repair_attempts"], "observed": self.repairs}
         return None
@@ -184,7 +193,7 @@ class FeatureProgress:
             "`request.txt` contains the requirements, `reviews.json` the recorded reviews, "
             "and `handoff.json` the trigger, source state and final-review outcome. "
             "The provider_artifacts and host_artifacts paths in handoff.json retain operation and test evidence.\n"
-            + ("\nThe benchmark continued. Use the immutable attempt snapshot and commit in "
-               "handoff.json continuation, since the live checkout may now contain later checkpoints.\n"
-               if flag.get("continuation") else "")
+            + ("\nThe stopped checkpoint is retained in the immutable snapshot and commit recorded in "
+               "handoff.json retention. Subsequent checkpoints remain blocked until review approval.\n"
+               if flag.get("retention") else "")
         )

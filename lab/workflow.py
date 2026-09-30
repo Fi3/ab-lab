@@ -53,31 +53,7 @@ def integration_prompts(benchmark, base, checkpoints, *, skip_linearization=Fals
     detail = json.dumps(checkpoints, indent=2)
     plan = f"You are the final integration agent for {count} sequentially reviewed features.\n{contract}\nReviewed feature boundaries:\n{detail}\nInspect history and source, identify required documentation, and propose a plan. Do not edit, commit, rewrite history or run the check suite yet. End with your plan and wait for acceptance."
     accept = f"Accept the proposed plan and execute it.\n{contract}\nRun these final checks and all additional repository-required checks; repair genuine failures:\n"+"\n".join(benchmark["checks"])+"\nLeave the checkout clean and summarize final commits and actual verification results."
-    if any(item.get("status") == "needs_attention" for item in checkpoints):
-        # Integration still runs, but must not manufacture review approval or
-        # reopen the stopped checkpoint's repair loop under a different label.
-        notice = ("Some checkpoint attempts stopped with unresolved review findings. "
-                  "Their recorded snapshots and review outcomes remain unchanged. "
-                  "Do not restart those stopped review/repair loops during integration. "
-                  "Complete assembly, required documentation, and final checks; repairs to genuine "
-                  "final-validation failures may change the final tree without approving earlier attempts. "
-                  "Report actual failures.\n")
-        plan = plan.replace("sequentially reviewed features", "sequential checkpoint attempts")
-        plan = plan.replace("Reviewed feature boundaries:", "Checkpoint boundaries and review outcomes:")
-        plan = notice + plan
-        accept = notice + accept
     return plan, accept
-
-
-def prior_attention_note(checkpoints):
-    unresolved = [{key: item.get(key) for key in ("feature", "head", "review_approved", "blocking_findings",
-                                                "incomplete_reason", "stop_reason", "loop_flags")}
-                  for item in checkpoints if item.get("status") == "needs_attention"]
-    if not unresolved:
-        return ""
-    return ("\n\nEarlier checkpoint attempts stopped with unresolved findings. "
-            "The current source contains those attempts; they were not approved. "
-            "Earlier snapshot grades and review outcomes remain separate.\n" + json.dumps(unresolved))
 
 
 def after_read_fixture(host, fixture, output, deadline):
@@ -344,8 +320,7 @@ def run(benchmark, factors, output, seconds, max_raw, max_turns,
             stopped_flag = None
             round_number = 0
             try:
-                author_stop = implement(author_prompt(benchmark, feature, factors)
-                                        + prior_attention_note(result["checkpoints"]), name+"-implement")
+                author_stop = implement(author_prompt(benchmark, feature, factors), name+"-implement")
                 # Checks need build-output writes just as author/integration checks
                 # do. The snapshot guard below still rejects reviewer source edits.
                 reviewer = None
@@ -446,11 +421,11 @@ def run(benchmark, factors, output, seconds, max_raw, max_turns,
             except NeedsAttention as exc:
                 if "slopcodebench" not in benchmark:
                     raise
-                # A local attempt limit ends this checkpoint's agent work, not
-                # the experiment. Global/provider/integrity failures still escape.
+                # Retain the stopped attempt for independent grading, then end
+                # the workflow. Later features require this review's approval.
                 stopped_flag = exc.flag
                 retention = slopcodebench.retain_attempt(checkout, name)
-                stopped_flag["continuation"] = {"status": "continued", **retention}
+                stopped_flag["retention"] = retention
                 progress.save_flag(stopped_flag)
                 no_changes = git(checkout, "rev-parse", "HEAD").decode().strip() == feature_base
 
@@ -482,12 +457,14 @@ def run(benchmark, factors, output, seconds, max_raw, max_turns,
                 item["review_approved"] = checkpoint["review_approved"]
                 item["attempt_status"] = checkpoint["status"]
                 if stopped_flag:
-                    stopped_flag["continuation"].update({key: item[key] for key in ("snapshot", "commit", "tree")})
+                    stopped_flag["retention"].update({key: item[key] for key in ("snapshot", "commit", "tree")})
                     progress.save_flag(stopped_flag)
                 if quality is not None:
                     item["quality"] = scb.measure(checkout, output, "checkpoint-" + name, quality["tool"], deadline)
                     if item["quality"]["status"] != "completed":
                         raise Fatal("scb-check checkpoint measurement failed: " + item["quality"]["error"])
+            if stopped_flag:
+                raise NeedsAttention(stopped_flag)
 
         score("after_implementation")
         reviewed = git(checkout, "rev-parse", "HEAD").decode().strip()
@@ -531,14 +508,9 @@ def run(benchmark, factors, output, seconds, max_raw, max_turns,
             raise Fatal("runner source changed during execution")
         if not provider.report().get("measurement_complete"):
             raise Fatal("incomplete whole-workflow token measurement, including nested verification")
-        unresolved = [c for c in result["checkpoints"] if c.get("status") == "needs_attention"]
-        result.update(status="needs_attention" if unresolved else "passed", final_commits=commits)
+        result.update(status="passed", final_commits=commits)
         if "slopcodebench" in result:
             result["execution_status"] = "completed"
-        if unresolved:
-            result["attention_features"] = [c["feature"] for c in unresolved]
-            result["blocked_features"] = []
-            result["error"] = "Benchmark execution completed with unresolved checkpoint reviews; see loop_flags and slopcodebench grades"
     except NeedsAttention as exc:
         result.update(status="needs_attention", error=str(exc), attention=exc.flag,
                       blocked_features=[f["id"] for f in benchmark["features"][feature_index+1:]])

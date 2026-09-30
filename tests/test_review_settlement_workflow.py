@@ -1,8 +1,8 @@
-"""A priced, stopped review must remain unapproved through SCB assembly.
+"""A priced, stopped review retains its evidence and blocks dependent work.
 
 Provider timing/receipts are scripted here; transport receipt ownership is
-covered by test_review_settlement. Host operations, Git commits, final checks,
-snapshot capture, and the existing subprocess evaluator fixture all run.
+covered by test_review_settlement. Host operations, Git commits, snapshot
+capture, and the existing subprocess evaluator fixture all run.
 """
 import json
 from pathlib import Path
@@ -44,8 +44,8 @@ class ReviewSettlementWorkflowTests(unittest.TestCase):
                 return report
 
         def settle(backend):
-            # Advance this review's timer only. Keep it expired after raising:
-            # a stale limit would stop the next stage's real workflow precheck.
+            # Keep the explicit timer expired while accounting settles. Neither
+            # a priced interruption nor a late verdict authorizes a new stage.
             now = time.monotonic()
             limit = next(item for item in backend.work_limits
                          if item["reason"] == "review_time_limit")
@@ -96,20 +96,22 @@ class ReviewSettlementWorkflowTests(unittest.TestCase):
         before_evaluation = len(self.evaluated())
         result = self.workflow(benchmark=benchmark, name=name, backend=Backend,
                                skip_linearization=preserve,
-                               loop_options={"max_feature_raw": 4000, "max_review_raw": 500})
+                               loop_options={"max_feature_raw": 4000, "max_review_raw": 500,
+                                             "max_review_seconds": 300})
         return result, Backend.instances[-1], self.evaluated()[before_evaluation:]
 
-    def assert_completed_unapproved(self, result, backend, evaluated, stopped_feature):
+    def assert_stopped_unapproved(self, result, backend, evaluated, stopped_feature):
+        attempted = ["one"] if stopped_feature == "one" else ["one", "two"]
         self.assertEqual(result["status"], "needs_attention", result.get("error"))
-        self.assertEqual(result["execution_status"], "completed", result.get("error"))
-        self.assertEqual(result["attention_features"], [stopped_feature])
-        self.assertEqual(result["blocked_features"], [])
+        self.assertEqual(result["execution_status"], "incomplete", result.get("error"))
+        self.assertEqual(result["blocked_features"], ["two"] if stopped_feature == "one" else [])
         self.assertTrue(result["usage"]["measurement_complete"])
         self.assertEqual(result["usage"]["unpriced_or_incomplete_turns"], [])
         self.assertEqual(backend.raw_after_settlement - backend.raw_before_settlement, 73)
         self.assertEqual(sum(item["observed_raw_tokens"] for item in result["checkpoints"]),
                          result["usage"]["observed_raw_tokens"])
         checkpoints = {item["feature"]: item for item in result["checkpoints"]}
+        self.assertEqual(list(checkpoints), attempted)
         stopped = checkpoints[stopped_feature]
         self.assertEqual(stopped["status"], "needs_attention")
         self.assertIsNone(stopped["review_approved"])
@@ -122,32 +124,28 @@ class ReviewSettlementWorkflowTests(unittest.TestCase):
         self.assertEqual(flag["observed"], 300.125)
         self.assertEqual(flag["review"]["status"], "stopped")
         self.assertIsNone(flag["review_approved"])
-        self.assertEqual(flag["continuation"]["status"], "continued")
-        self.assertEqual(flag["continuation"]["commit"], stopped["head"])
+        self.assertNotIn("continuation", flag)
+        self.assertEqual(flag["retention"]["commit"], stopped["head"])
         self.assertEqual(json.loads(Path(flag["artifact"]).read_text()), flag)
         labels = [label for label, *_ in backend.calls]
         self.assertEqual(labels.count(stopped_feature + "-review-1"), 1)
-        self.assertFalse(any("-fix-" in label for label in labels))
-        self.assertEqual(labels[-2:], ["integration-plan", "integration-accept"])
-        threads = {label: thread for label, thread, *_ in backend.calls}
-        self.assertEqual(threads[stopped_feature + "-review-1"],
-                         threads[stopped_feature + "-review-1"])
-        self.assertEqual(threads["integration-plan"], threads["integration-accept"])
+        self.assertEqual(labels[-1], stopped_feature + "-review-1")
+        self.assertFalse(any("-fix-" in label or label.startswith("integration-") for label in labels))
         self.assertIsNotNone(work_limit_error(backend.expired_limits, backend.raw))
         self.assertEqual(backend.work_limits, [])
-        self.assertTrue(all(not limits for label, limits in backend.limits_by_call
-                            if label.startswith("integration-")))
-        for label, _, prompt, _ in backend.calls:
+        for _, _, prompt, _ in backend.calls:
             self.assertNotIn("EVALUATOR_SECRET", prompt)
-            if label.startswith("integration-"):
-                self.assertIn("Do not restart those stopped review/repair loops", prompt)
 
         report = result["slopcodebench"]
-        self.assertEqual(report["status"], "completed", report)
-        self.assertTrue(report["all_tests_passed"])
+        self.assertEqual(report["status"], "incomplete", report)
+        self.assertIsNone(report["all_tests_passed"])
         self.assertFalse(report["solved"])
-        self.assertEqual([item["checkpoint"] for item in evaluated], ["one", "two", "two"])
-        for item in [*report["checkpoints"], report["final"]]:
+        self.assertIsNone(report["final"])
+        self.assertEqual([item["checkpoint"] for item in evaluated], attempted)
+        for item in report["checkpoints"]:
+            if item["feature"] not in attempted:
+                self.assertEqual(item, {"feature": "two", "status": "not_run"})
+                continue
             self.assertEqual(item["status"], "passed", item)
             saved = Path(item["snapshot"])
             self.assertEqual((saved / "one.py").read_text(), "value = 2\n")
@@ -157,31 +155,27 @@ class ReviewSettlementWorkflowTests(unittest.TestCase):
                 self.assertIsNone(item["review_approved"])
                 self.assertEqual(item["attempt_status"], "needs_attention")
                 self.assertEqual(item["commit"], stopped["head"])
-        self.assertEqual(len(result["final_commits"]), 2)
+        self.assertNotIn("final_commits", result)
         self.assertEqual(git(backend.repo, "status", "--porcelain"), b"")
-        self.assertEqual(result["checks"][0]["exit_code"], 0)
-        self.assertEqual((Path(result["output"]) / "check-01/stdout.txt").read_text(),
-                         "assembly checked\n")
-        for feature in ("one", "two"):
+        self.assertEqual(result["checks"], [])
+        self.assertFalse((Path(result["output"]) / "check-01").exists())
+        for feature in attempted:
             receipts = list((Path(result["output"]) / (feature + "-host")).glob("tools/call-*/result.json"))
             self.assertEqual(len(receipts), 2, "real host edit and check must both execute")
         self.assertEqual(json.loads((Path(result["output"]) / "result.json").read_text()), result)
 
-    def test_final_checkpoint_timed_review_is_graded_and_assembled_without_approval(self):
+    def test_final_checkpoint_timed_review_is_graded_but_blocks_assembly(self):
         for preserve in (False, True):
             with self.subTest(preserve_history=preserve):
                 result, backend, evaluated = self.execute(preserve=preserve, name=f"final-{preserve}")
-                self.assert_completed_unapproved(result, backend, evaluated, "two")
+                self.assert_stopped_unapproved(result, backend, evaluated, "two")
                 self.assertEqual(Path(backend.settled_turn["reply_file"]).read_text(), "NO_FINDINGS")
 
-    def test_priced_interrupted_review_continues_with_next_feature_and_fresh_limits(self):
+    def test_priced_interrupted_review_blocks_next_feature(self):
         result, backend, evaluated = self.execute("one", verdict="")
-        self.assert_completed_unapproved(result, backend, evaluated, "one")
-        limits = next(limits for label, limits in backend.limits_by_call if label == "two-implement")
-        self.assertEqual(limits[0]["start"], backend.raw_after_settlement)
-        later = next(prompt for label, _, prompt, _ in backend.calls if label == "two-implement")
-        self.assertIn("review_time_limit", later)
-        self.assertIn("they were not approved", later)
+        self.assert_stopped_unapproved(result, backend, evaluated, "one")
+        self.assertFalse(any(label.startswith("two-") for label, *_ in backend.calls))
+        self.assertFalse((backend.repo / "two.py").exists())
 
     def test_missing_settlement_receipt_blocks_final_capture_and_integration(self):
         result, backend, evaluated = self.execute(complete=False, verdict="")
@@ -191,7 +185,7 @@ class ReviewSettlementWorkflowTests(unittest.TestCase):
         self.assertEqual(backend.raw_after_settlement, backend.raw_before_settlement)
         self.assertEqual(len(result["usage"]["unpriced_or_incomplete_turns"]), 1)
         self.assertEqual([item["feature"] for item in result["checkpoints"]], ["one"])
-        self.assertNotIn("continuation", result["loop_flags"][0])
+        self.assertNotIn("retention", result["loop_flags"][0])
         self.assertEqual(result["slopcodebench"]["status"], "incomplete")
         self.assertIsNone(result["slopcodebench"]["final"])
         self.assertEqual([item["checkpoint"] for item in evaluated], ["one"])

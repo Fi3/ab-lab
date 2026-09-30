@@ -1,5 +1,10 @@
 # Host tools verification — 2026-09-30
 
+This report describes the earlier stop-and-continue policy. Its completed
+executions included unfinished reviews and do not verify approval of all five
+features. The current runner requires review approval before advancing and
+uses whole-run safety limits by default; see README.md for current behavior.
+
 Workflow: `host-tools-upstream-prompts-v1`. This replaces the printed command
 protocol; there is no alternate legacy execution path. Eight factors remain;
 C25 is retired because its printed-request interruption boundary no longer exists.
