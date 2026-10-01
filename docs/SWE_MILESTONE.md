@@ -1,8 +1,25 @@
 # SWE-Milestone projects
 
 `benchmarks/swe_milestone.py` imports [SWE-Milestone](https://github.com/DeepCommit-ai/SWE-Milestone)
-into the existing benchmark JSON format. Each project is prepared and run
-separately. **No runner changes are required.**
+into the existing benchmark JSON format. All seven benchmark definitions are
+committed under `benchmarks/`; each project is prepared and run separately.
+**No runner changes are required.**
+
+Use these files as the first argument to `python3 -m lab run`:
+
+| Project | Benchmark file |
+| --- | --- |
+| Ripgrep | `benchmarks/swe-milestone-ripgrep.json` |
+| Dubbo | `benchmarks/swe-milestone-dubbo.json` |
+| Element Web | `benchmarks/swe-milestone-element-web.json` |
+| Navidrome | `benchmarks/swe-milestone-navidrome.json` |
+| Nushell | `benchmarks/swe-milestone-nushell.json` |
+| scikit-learn | `benchmarks/swe-milestone-scikit-learn.json` |
+| go-zero | `benchmarks/swe-milestone-go-zero.json` |
+
+The definitions include the exact upstream task text and baseline revision.
+The starting repositories are local setup artifacts under `.benchmarks/` and
+are not committed. On a fresh checkout, prepare the project before running it.
 
 | Project argument | Release range | Tasks | Graded tasks |
 | --- | --- | ---: | ---: |
@@ -51,15 +68,19 @@ underscores in lab feature IDs; grading retains the original IDs.
 
 Preparation does not launch a model, modify runner code, or install project
 toolchains on the host. Docker images can be large. Dataset downloads, exported
-repositories and generated benchmark files are under the already ignored
-`.benchmarks/` directory.
+repositories and preparation receipts are under the already ignored
+`.benchmarks/` directory. Preparation also retains a local benchmark copy there;
+the committed definitions above refer to the same source and tasks.
+
+For scikit-learn, setup is `python3 benchmarks/swe_milestone.py prepare scikit-learn`.
+Its run argument is `benchmarks/swe-milestone-scikit-learn.json`.
 
 ## Run with the existing runner
 
 For example, replacing `MODEL_ID` with the model being tested:
 
 ```bash
-python3 -m lab run .benchmarks/swe-milestone-projects/ripgrep/benchmark.json \
+python3 -m lab run benchmarks/swe-milestone-ripgrep.json \
   --out runs/milestone-ripgrep-1 \
   --harness codex --model MODEL_ID --effort xhigh \
   --preset all --max-review-loops 3 --skip-linearization \
@@ -82,9 +103,11 @@ upstream execution environment must be recorded in comparisons.
 The frozen runtime policy controls the independent grader only; it does not
 apply upstream's network quarantine to the author.
 
-The catalog supplies public build checks for integration. To choose a different
-public check, pass `--check 'COMMAND'` during preparation (repeatable). The
-runner's existing 300-second per-command ceiling still applies. Changing checks
+The committed definitions use the catalog's public build checks for integration. To choose
+a different public check, pass `--check 'COMMAND'` during preparation (repeatable)
+and run the generated `.benchmarks/swe-milestone-projects/PROJECT/benchmark.json`;
+preparation does not change the committed definitions. The runner's existing
+300-second per-command ceiling still applies. Changing checks
 changes the experimental configuration. Successful public builds and reviewer
 approval **do not establish SWE-Milestone correctness**.
 
@@ -146,14 +169,16 @@ The adapter supports one pinned release, with no compatibility modes:
 - Harness: commit `17a8f1593e172e26b36cea15e2b30fb9536c93f5`.
 - Images: the harness's `manifests/digests-v1.0.2.tsv`.
 
-The upstream harness and dataset are MIT licensed; their notices stay with the
-downloaded repositories. Specifications are imported locally, not vendored into
-this repository.
+The upstream harness and dataset are MIT licensed. The committed definitions
+vendor the selected specifications verbatim; attribution, source pins and the
+upstream MIT notice are in [benchmarks/swe-milestone.LICENSE](../benchmarks/swe-milestone.LICENSE).
+Source repositories, Docker images, hidden evaluation tests and run artifacts
+remain outside Git.
 
 Offline adapter tests:
 
 ```bash
-python3 -m unittest discover -s tests -p test_swe_milestone.py -v
+python3 -m unittest discover -s tests -p 'test_swe_milestone*.py' -v
 ```
 
 Implementation verification also loaded all seven task sequences and exercised

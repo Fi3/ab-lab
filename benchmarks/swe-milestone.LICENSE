@@ -1,0 +1,35 @@
+SWE-Milestone benchmark definitions
+
+The task specifications in swe-milestone-{project}.json are reproduced verbatim
+from the SWE-Milestone dataset, which declares the MIT license:
+https://huggingface.co/datasets/DeepCommit-ai/SWE-Milestone-data
+Dataset revision: 3500478e740d42583277c2658aa7729eb36e10f4
+Release: v1.0.2
+
+The adapter uses the corresponding upstream harness:
+https://github.com/DeepCommit-ai/SWE-Milestone
+Harness revision: 17a8f1593e172e26b36cea15e2b30fb9536c93f5
+
+The upstream project's license notice is preserved below.
+
+MIT License
+
+Copyright (c) 2025 SWE-Milestone Contributors
+
+Permission is hereby granted, free of charge, to any person obtaining a copy
+of this software and associated documentation files (the "Software"), to deal
+in the Software without restriction, including without limitation the rights
+to use, copy, modify, merge, publish, distribute, sublicense, and/or sell
+copies of the Software, and to permit persons to whom the Software is
+furnished to do so, subject to the following conditions:
+
+The above copyright notice and this permission notice shall be included in all
+copies or substantial portions of the Software.
+
+THE SOFTWARE IS PROVIDED "AS IS", WITHOUT WARRANTY OF ANY KIND, EXPRESS OR
+IMPLIED, INCLUDING BUT NOT LIMITED TO THE WARRANTIES OF MERCHANTABILITY,
+FITNESS FOR A PARTICULAR PURPOSE AND NONINFRINGEMENT. IN NO EVENT SHALL THE
+AUTHORS OR COPYRIGHT HOLDERS BE LIABLE FOR ANY CLAIM, DAMAGES OR OTHER
+LIABILITY, WHETHER IN AN ACTION OF CONTRACT, TORT OR OTHERWISE, ARISING FROM,
+OUT OF OR IN CONNECTION WITH THE SOFTWARE OR THE USE OR OTHER DEALINGS IN THE
+SOFTWARE.
