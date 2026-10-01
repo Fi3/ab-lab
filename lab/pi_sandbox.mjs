@@ -77,7 +77,17 @@ export async function execute(policy, request, signal, onUpdate) {
 
 export default async function (pi) {
   const sdk = await import(process.env.AGENT_LAB_PI_MODULE);
-  for (const kind of ['Read', 'Bash', 'Edit', 'Write']) {
+  const native = JSON.parse(readFileSync(process.env.AGENT_LAB_PI_POLICY, 'utf8')).native_process === true;
+  const hostTools = process.env.AGENT_LAB_PI_HOST_TOOLS
+    ? JSON.parse(readFileSync(process.env.AGENT_LAB_PI_HOST_TOOLS, 'utf8')).map(tool => tool.name) : [];
+  const selectTools = () => {
+    // The CLI allowlist retains all role tools; only this policy selects which
+    // ones are exposed to the next model request.
+    const policy = JSON.parse(readFileSync(process.env.AGENT_LAB_PI_POLICY, 'utf8'));
+    if (native) return;
+    pi.setActiveTools(['read', 'bash', ...(policy.writable ? ['edit', 'write'] : []), ...hostTools]);
+  };
+  for (const kind of native ? [] : ['Read', 'Bash', 'Edit', 'Write']) {
     const tool = sdk['create' + kind + 'ToolDefinition'](process.cwd());
     pi.registerTool({ ...tool, execute(id, params, signal, onUpdate, ctx) {
       const policy = JSON.parse(readFileSync(process.env.AGENT_LAB_PI_POLICY, 'utf8'));
@@ -89,14 +99,17 @@ export default async function (pi) {
     } });
   }
   registerHostTools(pi);
+  pi.on('before_agent_start', selectTools);
   // The lab never uses Pi's interactive !command path. It must not provide a
   // second, unsandboxed execution route through RPC.
-  pi.on('user_bash', () => { throw new Error('Use the sandboxed bash tool'); });
+  if (!native) pi.on('user_bash', () => { throw new Error('Use the sandboxed bash tool'); });
   pi.on('session_start', (_event, ctx) => {
+    selectTools();
     installRequestGuard(ctx.modelRegistry.runtime, process.env.AGENT_LAB_PI_POLICY,
       process.env.AGENT_LAB_PI_REQUEST_JOURNAL, process.env.AGENT_LAB_PI_THREAD_ID);
     writeFileSync(process.env.AGENT_LAB_PI_POLICY + '.ready', JSON.stringify({
-      pid: process.pid, request_guard: 'pre-dispatch-v1',
+      pid: process.pid, nonce: process.env.AGENT_LAB_PI_NONCE, request_guard: 'pre-dispatch-v1',
+      tools: pi.getAllTools().map(tool => ({name: tool.name, description: tool.description})),
     }));
   });
 }

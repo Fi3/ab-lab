@@ -218,34 +218,22 @@ class SlopCodeBenchTests(unittest.TestCase):
                 with self.assertRaisesRegex(ValueError, 'checkpoint_limit'):
                     self.benchmark()
 
-    def test_one_checkpoint_completes_reviews_repairs_assembly_and_external_grading(self):
-        class SingleCheckpointCodex(ClosingCodex):
-            def turn(self, thread, prompt, label, **kwargs):
-                if label == 'integration-accept':
-                    self.calls.append((label, thread, prompt, kwargs))
-                    base = git(self.repo, 'rev-list', '--max-parents=0', 'HEAD').decode().strip()
-                    git(self.repo, 'reset', '--soft', base)
-                    git(self.repo, 'commit', '-qm', 'ADD one')
-                    return 'Finished'
-                return super().turn(thread, prompt, label, **kwargs)
-
+    def test_one_checkpoint_completes_reviews_repairs_and_external_grading(self):
         self.raw['slopcodebench']['checkpoint_limit'] = 1
         self.raw['checks'] = ['test -f one.py && test ! -f two.py']
-        result = self.workflow(backend=SingleCheckpointCodex, scb_check=checker_at(self.root))
+        result = self.workflow(backend=ClosingCodex, scb_check=checker_at(self.root))
         self.assertEqual(result['status'], 'passed', result)
         self.assertEqual(result['factors'], settings({}))
         self.assertEqual([item['review_rounds'] for item in result['checkpoints']], [2])
-        self.assertEqual(len(result['final_commits']), 1)
+        self.assertEqual(len(result['final_commits']), 2)
         self.assertEqual(result['checks'][0]['exit_code'], 0)
         self.assertTrue(result['usage']['measurement_complete'])
-        calls = SingleCheckpointCodex.instances[-1].calls
+        calls = ClosingCodex.instances[-1].calls
         self.assertEqual(list(dict.fromkeys(label for label, _, _, _ in calls)), [
-            'one-implement', 'one-review-1', 'one-fix-1', 'one-review-2',
-            'integration-plan', 'integration-accept'])
+            'one-implement', 'one-review-1', 'one-fix-1', 'one-review-2'])
         threads = {label: thread for label, thread, _, _ in calls}
         self.assertEqual(threads['one-implement'], threads['one-fix-1'])
         self.assertEqual(threads['one-review-1'], threads['one-review-2'])
-        self.assertEqual(threads['integration-plan'], threads['integration-accept'])
         self.assertNotEqual(threads['one-implement'], threads['one-review-1'])
         for _, _, prompt, _ in calls:
             self.assertNotIn('SECOND_SPEC', prompt)
@@ -266,7 +254,6 @@ class SlopCodeBenchTests(unittest.TestCase):
         measurements = result['scb_check']['measurements']
         self.assertEqual(measurements['before_changes']['status'], 'not_applicable')
         self.assertEqual(measurements['after_implementation']['status'], 'completed')
-        self.assertEqual(measurements['after_assembly']['status'], 'completed')
         self.assertEqual(result['scb_check']['status'], 'completed')
         self.assertEqual(result, json.loads((self.root / 'run/result.json').read_text()))
 
@@ -281,14 +268,13 @@ class SlopCodeBenchTests(unittest.TestCase):
                 self.assertTrue(result['slopcodebench']['solved'])
                 self.assertEqual(result['slopcodebench']['workflow_status'], 'passed')
                 self.assertEqual([item['review_rounds'] for item in result['checkpoints']], [2, 1])
-                self.assertEqual(len(result['final_commits']), 2)
+                self.assertEqual(len(result['final_commits']), 3)
                 self.assertEqual(result['checks'][0]['exit_code'], 0)
                 self.assertEqual(result['usage']['observed_raw_tokens'], 100)
                 calls = backend.instances[-1].calls
                 threads = {label: thread for label, thread, _, _ in calls}
                 self.assertEqual(threads['one-implement'], threads['one-fix-1'])
                 self.assertEqual(threads['one-review-1'], threads['one-review-2'])
-                self.assertEqual(threads['integration-plan'], threads['integration-accept'])
                 for _, _, prompt, _ in calls:
                     self.assertNotIn('EVALUATOR_SECRET', prompt)
                     self.assertNotIn('strict_pass', prompt)
@@ -301,22 +287,19 @@ class SlopCodeBenchTests(unittest.TestCase):
         self.assertEqual(len(self.evaluated()), 6)
         self.assertFalse((self.seed / 'one.py').exists())
 
-    def test_reviewed_failure_remains_visible_when_final_assembly_repairs_it(self):
-        class FinalRepair(ClosingCodex):
-            def turn(self, thread, prompt, label, **kwargs):
-                if label == 'integration-accept':
-                    (self.repo / 'two.py').write_text('value = 2\n')
-                return super().turn(thread, prompt, label, **kwargs)
-
-        result = self.workflow(self.benchmark('needs_final_repair'), backend=FinalRepair)
+    def test_final_evaluation_keeps_last_author_submission_without_repairs(self):
+        result = self.workflow(self.benchmark('needs_final_repair'))
         report = result['slopcodebench']
         self.assertEqual(result['status'], 'failed', result)
         self.assertEqual(report['workflow_status'], 'passed')
         self.assertEqual(report['status'], 'completed')
         self.assertFalse(report['solved'])
         self.assertEqual([item['status'] for item in report['checkpoints']], ['passed', 'failed'])
-        self.assertEqual(report['final']['status'], 'passed')
-        self.assertNotEqual(report['checkpoints'][1]['tree'], report['final']['tree'])
+        self.assertEqual(report['final']['status'], 'failed')
+        self.assertEqual(report['checkpoints'][1]['tree'], report['final']['tree'])
+        self.assertEqual(report['checkpoints'][1]['commit'], report['final']['commit'])
+        self.assertEqual((Path(report['final']['snapshot']) / 'two.py').read_text(), 'value = 1\n')
+        self.assertFalse(any(label.startswith('integration-') for label, *_ in ClosingCodex.instances[-1].calls))
 
     def test_partial_author_failure_retains_reviewed_grade_and_complete_usage(self):
         class StopsAtSecond(ClosingCodex):
@@ -378,7 +361,6 @@ class SlopCodeBenchTests(unittest.TestCase):
         self.assertEqual(measurements['before_changes']['status'], 'not_applicable')
         self.assertNotIn('report', measurements['before_changes'])
         self.assertEqual(measurements['after_implementation']['status'], 'completed')
-        self.assertEqual(measurements['after_assembly']['status'], 'completed')
         self.assertEqual(result['scb_check']['status'], 'completed')
         for item in result['slopcodebench']['checkpoints']:
             self.assertEqual(item['quality']['status'], 'completed')
@@ -442,13 +424,12 @@ class SlopCodeBenchTests(unittest.TestCase):
     def test_batch_admission_preserves_pinned_task_and_all_execution_options(self):
         benchmark = self.benchmark()
         result = run_batch(benchmark, settings({}), self.root / 'batch', 2, 2,
-            seconds=30, max_raw=10000, max_turns=30, harness='pi', skip_linearization=True,
+            seconds=30, max_raw=10000, max_turns=30, harness='pi',
             _worker_command=worker_at(self.root))
         self.assertEqual(result['status'], 'passed', result)
         config = json.loads((self.root / 'batch/batch-input.json').read_text())
         self.assertEqual(config['benchmark'], benchmark)
         self.assertEqual(config['options']['harness'], 'pi')
-        self.assertTrue(config['options']['skip_linearization'])
         self.assertEqual({row['base_commit'] for row in result['results']}, {config['base_commit']})
 
     def test_cancellation_stops_remaining_evaluator_calls(self):

@@ -120,14 +120,13 @@ def pending(benchmark):
 
 
 def capture(checkout, output, name):
-    """Archive a committed attempt, whether approved or stopped, before integration."""
+    """Archive a committed attempt, whether approved or stopped, for evaluation."""
     folder = output / "slopcodebench" / "snapshots" / name
     folder.mkdir(parents=True)
     head = git(checkout, "rev-parse", "HEAD").decode().strip()
     archive = folder.parent / (name + ".tar")
     with archive.open("xb") as stream:
-        subprocess.run(["git", "-C", str(checkout), "archive", head], stdout=stream,
-                       stderr=subprocess.PIPE, check=True, env=clean_env(), timeout=30)
+        stream.write(git(checkout, "archive", head))
     with tarfile.open(archive) as stream:
         stream.extractall(folder, filter="data")
     return {"snapshot": str(folder), "commit": head,
@@ -231,7 +230,7 @@ def evaluate(benchmark, result, output):
             result.update(status="failed", error="SlopCodeBench evaluator infrastructure failed; see slopcodebench results",
                           failure={"origin": "evaluator", "stage": "evaluation", "message": "Evaluator infrastructure failed"})
         elif not report["solved"] and result["status"] == "passed":
-            result.update(status="failed", error="SlopCodeBench correctness did not pass at every checkpoint and final assembly; see slopcodebench results",
+            result.update(status="failed", error="SlopCodeBench correctness did not pass at every checkpoint and final evaluation; see slopcodebench results",
                           failure={"origin": "agent", "stage": "evaluation", "message": "Submission failed benchmark tests"})
     except (Exception, KeyboardInterrupt) as exc:
         report.update(status="error", solved=None, error=str(exc) or "evaluation interrupted")

@@ -1,7 +1,8 @@
-"""Regression coverage for native Git writes and no-op integration verification."""
+"""Regression coverage for native Git writes and preflight."""
 from pathlib import Path
 import tempfile
 import unittest
+from unittest.mock import patch
 
 from lab.config import settings
 from lab.host import Fatal, git
@@ -23,26 +24,31 @@ class GitPermissionTests(unittest.TestCase):
             return {"turn": {"id": "u"}}
         p.rpc = rpc
         p.turn("t", "commit the feature", "author", writable=True)
-        self.assertEqual(calls[0][1]["sandboxPolicy"], {"type": "workspaceWrite",
-            "writableRoots": [str(p.repo), str(p.repo / ".git")], "networkAccess": True})
+        self.assertEqual(calls[0][1]["permissions"], p.sandbox.profile(True))
+        self.assertNotIn("sandboxPolicy", calls[0][1])
+        self.assertEqual(p.sandbox.filesystem(True)[str(p.repo / ".git")], "write")
 
     def test_read_only_turn_does_not_gain_git_write_access(self):
         p = self.provider([stream.message("NO_FINDINGS"), stream.price(), stream.completed()])
         calls = []
         p.rpc = lambda method, params: calls.append(params) or {"turn": {"id": "u"}}
         p.turn("t", "review", "review")
-        self.assertEqual(calls[0]["sandboxPolicy"], {"type": "readOnly", "networkAccess": True})
+        self.assertEqual(calls[0]["permissions"], p.sandbox.profile(False))
+        self.assertNotIn("sandboxPolicy", calls[0])
+        self.assertEqual(p.sandbox.filesystem(False)[str(p.repo / ".git")], "read")
 
     def test_preflight_records_native_failure_without_starting_a_model_turn(self):
         p = self.provider([])
-        calls = []
-        p.rpc = lambda method, params: calls.append((method, params)) or {
-            "exitCode": 128, "stdout": "", "stderr": "index.lock: Read-only file system"}
-        with self.assertRaisesRegex(Fatal, "Git-write preflight failed"):
-            p.verify_git_write()
-        self.assertEqual(len(calls), 1)
-        self.assertEqual(calls[0][0], "command/exec")
-        self.assertEqual(calls[0][1]["command"], ["git", "update-index", "--refresh"])
+        p.command_env = {}
+        with patch("lab.provider.subprocess.run") as execute:
+            execute.return_value.returncode = 128
+            execute.return_value.stdout = ""
+            execute.return_value.stderr = "index.lock: Read-only file system"
+            with self.assertRaisesRegex(Fatal, "Git-write preflight failed"):
+                p.verify_git_write()
+        execute.assert_called_once()
+        self.assertEqual(execute.call_args.args[0],
+                         p.sandbox.command(True, ["git", "update-index", "--refresh"]))
         self.assertEqual(p.turns, [])
         self.assertTrue((p.artifacts / "git-write-preflight.json").exists())
 
@@ -62,25 +68,3 @@ class GitPermissionTests(unittest.TestCase):
             self.assertEqual(result["status"], "failed")
             self.assertEqual(result["error"], "Git-write preflight failed")
             self.assertEqual(Denied.instances[-1].calls, [])
-
-    def test_verification_rejects_already_correct_but_unchanged_history(self):
-        from real_integration import verify_rewritten_history
-        with tempfile.TemporaryDirectory() as directory:
-            repo = repo_at(Path(directory) / "repo")
-            base = git(repo, "rev-parse", "HEAD").decode().strip()
-            git(repo, "commit", "--allow-empty", "-qm", "ADD completed feature")
-            before = git(repo, "rev-parse", "HEAD").decode().strip()
-            with self.assertRaisesRegex(AssertionError, "did not rewrite"):
-                verify_rewritten_history(repo, base, before, 1)
-
-    def test_verification_accepts_required_history_collapse(self):
-        from real_integration import verify_rewritten_history
-        with tempfile.TemporaryDirectory() as directory:
-            repo = repo_at(Path(directory) / "repo")
-            base = git(repo, "rev-parse", "HEAD").decode().strip()
-            git(repo, "commit", "--allow-empty", "-qm", "ADD completed feature")
-            feature = git(repo, "rev-parse", "HEAD").decode().strip()
-            git(repo, "commit", "--allow-empty", "-qm", "ADD disposable verification checkpoint")
-            before = git(repo, "rev-parse", "HEAD").decode().strip()
-            git(repo, "reset", "--soft", feature)
-            self.assertEqual(verify_rewritten_history(repo, base, before, 1), [feature])

@@ -2,14 +2,14 @@
 
 Compare coding-agent harnesses and selected behavior conditions on the same
 benchmark. The runner records implementation, independent review, repairs,
-integration, benchmark grades, and token accounting. It does not assume that
+benchmark grades, and token accounting. It does not assume that
 an enabled condition improves quality or reduces work.
 
 [SWE-Milestone projects](docs/SWE_MILESTONE.md) can be imported and run separately
 with the existing runner. The adapter adds independent grading and per-milestone
 code-quality measurements after a run.
 
-The current workflow is `host-tools-bounded-reviews-v3`. There are **eight
+The current workflow is `benchmark-native-delegation-no-integration-v5`. There are **eight
 active factors**. C25 and the old printed-command protocol have been removed;
 there is no legacy execution mode. Historical run artifacts remain historical
 evidence and are not directly interchangeable with current runs.
@@ -39,8 +39,9 @@ Commands do not declare which files they might write. The runner records actual
 tracked changes, new source files, deletions, and executable-bit changes after
 execution. It commits source effects even when the command returns a failure,
 so the next action can use the real state. Ignored build artifacts remain
-ignored. Commands that change the host-owned Git index/history or create
-unsupported source objects stop with their actual state retained.
+ignored. The command sandbox denies writes to the host-owned Git metadata;
+the runner publishes source changes after execution. Unsupported source objects
+stop execution with their actual state retained.
 
 Tool requests and results are journaled by call identity. A repeated completed
 call returns its recorded result without executing again. A call whose effects
@@ -56,15 +57,24 @@ command for the runner to parse.
 Native tools still use configured filesystem permissions. Native mode means
 native harness tools, not unrestricted access to the laptop. Execution uses the
 isolated checkout, permitted run-owned paths, and temporary storage. The shared
-execution policy permits network access. Independent reviewers may run checks
-but must leave submission source unchanged. These restrictions are recorded
+execution policy permits network access. Independent reviewers have read-only
+access to the submission and writable temporary space. Their `review_run` tool
+runs checks in fresh writable copies of the reviewed commit. Changing tracked
+source in a copy invalidates that check; the submission remains unchanged.
+Pi hides native edit/write tools from read-only roles. These restrictions are recorded
 experimental conditions, independent of whether evaluation uses Docker.
+
+Reviewers submit structured findings through `submit_review`, bound to the
+current round and commit. Invalid arguments receive tool feedback; missing or
+incomplete verdicts cannot approve a feature. The runner applies the configured
+priority threshold to the submitted findings. Final prose is not parsed as a verdict.
 
 ## Workflow and failure handling
 
 Each feature gets a fresh author conversation and, when enabled, an independent
 reviewer conversation. `--max-review-loops N` sets the maximum number of reviews
-per feature and defaults to **3**. After the initial implementation,
+per feature and defaults to **3** with `--preset all`, or **0** with
+`--preset native`. After the initial implementation,
 each review with blocking findings is followed by an author repair. After the
 Nth repair, the workflow continues to the next feature without another review.
 An approving review ends the loop sooner. `--max-review-loops 0` skips feature
@@ -76,11 +86,11 @@ approval. Reaching the review allowance is normal workflow completion, but the
 final repair remains unreviewed and is not recorded as approved. Independent
 benchmark evaluation determines correctness.
 
-After feature attempts, an integration agent proposes a plan. The runner accepts
-it, then the agent completes integration and validation. By default the final
-history has one commit per feature. `--skip-linearization` preserves existing
-commits and permits new integration commits without rewriting history.
-The runner also executes the configured final checks.
+After feature attempts, the runner executes the configured final checks and
+independent evaluation against the final author submission. There is no final
+integration agent, plan/accept exchange, repair stage, or history linearization.
+The runner preserves author commits and records uncommitted source at checkpoint
+boundaries so every evaluation has an immutable source identity.
 
 Limits are enforced outside agent prompts. By default, author and reviewer
 work share the explicitly selected whole-run time, token, and turn limits.
@@ -89,12 +99,12 @@ feature policy:
 
 | Setting | Default |
 | --- | ---: |
-| Reviews per feature (`--max-review-loops`) | 3 |
+| Reviews per feature (`--max-review-loops`) | 3 for all; 0 for native |
 | Feature observed raw tokens | No separate cap |
 | Per-review observed raw tokens | No separate cap |
 | Per-review wall time | No separate cap |
 | Review receipt settlement allowance | 600 seconds |
-| Repeated failed-operation cycle threshold | 3 |
+| Repeated failed-operation cycle threshold | 3 for all; disabled for native |
 
 A configured review token or time cap stops the workflow; it does not start
 another generation asking for a conclusion or advance to the next feature. The
@@ -115,7 +125,7 @@ or implementation when reviews are disabled. An unfinished review, failed repair
 or safety guard still stops the workflow as incomplete; exhausting the review
 allowance does not bypass these failures. For a local review/loop
 stop, SlopCodeBench retains and independently grades the stopped snapshot;
-later checkpoints and final assembly remain unrun. Whole-run or provider stops
+later checkpoints and final evaluation remain unrun. Whole-run or provider stops
 retain the checkout and grade already captured snapshots; an uncaptured active
 checkpoint remains ungraded. A provider refusal,
 unreconciled interruption, missing accounting, or infrastructure failure is
@@ -143,7 +153,8 @@ defaults; optional stage caps accept a positive integer instead of `null`:
 `--max-review-loops` is a separate CLI option and is recorded in plans, run
 manifests, batch configurations, and results. `--no-loop-detection` disables the
 feature stopping policy while retaining the review allowance and global
-wall-time, token, and turn limits. Policy version
+wall-time, token, and turn limits. Native defaults to this disabled policy unless
+`--loop-policy` is explicitly supplied. Policy version
 `bounded-review-loops-v6` is recorded in results. If both feature and review
 token caps are explicitly configured, a final review reserve is taken from
 the feature budget when `final_review` is enabled.
@@ -154,15 +165,21 @@ The Python runner uses the standard library. It requires Git, an installed
 Codex binary with an existing ChatGPT subscription login, and a separately
 installed `scb-check` executable. Pi runs additionally require an installed Pi
 harness and its SDK. API-key authentication is rejected; there is no API-credit
-fallback. Child Codex processes use the selected model, effort, and subscription
-policy.
+fallback.
 
-Codex native subagents are tracked from their spawn events. They can continue
-working during a parent host command; before the parent stage is accepted, the
-adapter waits for their completion and validates their own usage receipts.
-Inherited parent history is excluded from child accounting. The adapter records
-`codex-owned-native-children-v3` in provider metadata. Existing run artifacts and
-comparison keys remain unchanged; new runs retain their new source provenance.
+With **C17 off**, delegation follows the native harness configuration. Codex
+collaboration and configured apps are available; Pi keeps normal tools and
+extension discovery inside a process sandbox. Pi delegation depends on the
+installed extensions or CLI usage; Pi has no built-in subagent tool. Owned child
+sessions contribute to usage and global budgets, and may use their own configured
+models and effort. With **C17 on**, delegation is disabled to preserve host
+ownership of edits and commands. This policy follows the condition, not the model.
+See [delegation and accounting](docs/nested-verification.md) and the
+[native baseline audit](docs/NATIVE_BASELINE.md).
+
+Policy versions and effective settings are recorded in provider metadata.
+Historical runs retain the restrictions under which they actually ran; removing
+integration accounting does not turn them into native baseline runs.
 
 Install the quality checker in an environment with Python 3.12 or newer:
 
@@ -204,7 +221,7 @@ The limits above are example settings, not a guarantee that a task will finish.
 | Factor | Enabled behavior | Disabled behavior |
 | --- | --- | --- |
 | C08 | Conflict refresh uses a diff against previously delivered text. | Return complete changed-file text. |
-| C13 | Ask for focused author validation, with broad validation at integration. | No added validation instruction. |
+| C13 | Ask for focused author validation, with broad validation when needed. | No added validation instruction. |
 | C14 | Ask to submit related implementation and tests together. | No added grouping instruction. |
 | C15 | Design required tests first; no mandatory deliberately failing execution. | No test-order override. |
 | C16 | Ask for exact-context structured patches. | No added edit-format instruction. |
@@ -212,8 +229,9 @@ The limits above are example settings, not a guarantee that a task will finish.
 | C20 | Add guidance to choose the next action from actual operation results. | Results contain facts without that guidance. |
 | C38 | Add reminders to finish once required work and checks are complete. | No added completion reminder. |
 
-All eight factors default on. `--preset native` turns off C17 and C08 while
-leaving the other factors unchanged. C08 requires C17. Use `--off` and `--on`
+All eight factors default on with `--preset all`. `--preset native` turns
+**all eight off**, defaults to zero external reviews, and disables the runner
+loop detector. C08 requires C17. Use `--off` and `--on`
 with comma-separated factor IDs:
 
 ```sh
@@ -255,7 +273,7 @@ python3 -m lab plan benchmarks/scb-code-search.json
 python3 -m lab run benchmarks/scb-code-search.json \
   --harness codex --out runs/code-search-current \
   --seconds 7200 --max-raw 16000000 --max-turns 250 \
-  --scb-check .venv/bin/scb-check --skip-linearization
+  --scb-check .venv/bin/scb-check
 ```
 
 SlopCodeBench prompts come from its pinned upstream `just-solve.jinja` template
@@ -273,7 +291,7 @@ byte identity to raw specifications.
 
 Independent evaluation uses retained checkpoint snapshots after model sessions
 have closed. Hidden evaluator tests and results are not fed back into the
-author/review/repair loop. A final assembled snapshot is evaluated separately.
+author/review/repair loop. The final author snapshot is also evaluated against the complete test sequence.
 The `scb-check` quality measurements are separate from benchmark correctness:
 its findings can be present on a correctly functioning submission.
 
@@ -299,13 +317,13 @@ For SlopCodeBench, read execution and correctness separately:
 
 | Field | Meaning |
 | --- | --- |
-| `execution_status` | Whether all checkpoints completed their configured review/repair sequence and final assembly completed. |
+| `execution_status` | Whether all checkpoints completed their configured review/repair sequence and final checks completed. |
 | `status` | Overall workflow outcome, including reviews and evaluation. |
 | `max_review_loops` | Maximum reviews per feature; zero disables feature review. |
 | `checkpoints[].status` | `approved`, `review_limit_reached`, or `review_skipped` for completed feature attempts; stopped attempts retain their failure status. |
 | `checkpoints[].review_approved` | Approval of the recorded final feature state; `null` when that state was not reviewed. |
 | `slopcodebench.checkpoints` | Independent grade for each recorded checkpoint snapshot. |
-| `slopcodebench.final` | Independent grade for the assembled final snapshot. |
+| `slopcodebench.final` | Independent grade for the final author snapshot. |
 | `slopcodebench.solved` | Benchmark success from its evaluation, not a completion inference. |
 | `failure.origin` | Component associated with a terminal execution failure, when present. |
 | `usage.measurement_complete` | Whether required accounting evidence was captured. |
@@ -327,9 +345,22 @@ python3 summarize.py runs/example-codex/result.json
 python3 -m lab compare runs/reference/result.json runs/changed/result.json
 ```
 
+Historical results can receive an evidence-based integration exclusion:
+
+```sh
+python3 -m lab.exclude_integration runs/OLD/result.json --apply --report runs/exclusion-audit.json
+```
+
+This attaches derived metadata and preserves original usage, outcomes and source.
+`summarize.py` displays comparison tokens alongside actual consumed tokens. It
+uses the verified last checkpoint and before-integration quality measurement
+when available; missing child attribution, snapshots, time or final checks are
+reported as unavailable. It never makes an old restricted run a native baseline.
+Omit `--apply` to inspect the proposed correction without writing results.
+
 `compare` requires successful, completely measured workflows with matching
 non-factor settings. Source version, prompt provenance, model, harness,
-benchmark revision, policies, review allowance, limits, and integration settings
+benchmark revision, policies, review allowance, and limits
 can change the experiment. Rerun comparison cells under the same current runner instead of
 claiming a model or factor effect from old and new runner versions.
 

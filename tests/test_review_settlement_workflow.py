@@ -15,6 +15,7 @@ from lab.host import git, save_json
 from lab.loops import WorkLimitReached, work_limit_error
 import test_scb_attention as attention
 import test_slopcodebench as fixtures
+from test_workflow import verdict as review_verdict
 
 
 def check_command(names, marker):
@@ -33,7 +34,7 @@ class ReviewSettlementWorkflowTests(unittest.TestCase):
     evaluated = fixtures.SlopCodeBenchTests.evaluated
 
     def execute(self, stopped_feature="two", *, complete=True, verdict="NO_FINDINGS",
-                preserve=True, name="run"):
+                name="run"):
         class Backend(attention.ScenarioBackend):
             def report(self):
                 report = super().report()
@@ -81,7 +82,6 @@ class ReviewSettlementWorkflowTests(unittest.TestCase):
             save_json(folder / "result.json", backend.settled_turn)
             raise stopped
 
-        Backend.preserve_history = preserve
         Backend.script = {}
         for feature, value in (("one", 2), ("two", 1)):
             Backend.script[feature + "-implement"] = [
@@ -89,13 +89,12 @@ class ReviewSettlementWorkflowTests(unittest.TestCase):
                 {"name": "host_run", "arguments": {"command": check_command({feature: value}, feature + " checked")}},
                 "Finished.",
             ]
-            Backend.script[feature + "-review-1"] = ["NO_FINDINGS"]
+            Backend.script[feature + "-review-1"] = [review_verdict()]
         Backend.script[stopped_feature + "-review-1"] = [(settle, 0)]
         benchmark = self.benchmark()
-        benchmark["checks"] = [check_command({"one": 2, "two": 1}, "assembly checked")]
+        benchmark["checks"] = [check_command({"one": 2, "two": 1}, "final validation checked")]
         before_evaluation = len(self.evaluated())
         result = self.workflow(benchmark=benchmark, name=name, backend=Backend,
-                               skip_linearization=preserve,
                                loop_options={"max_feature_raw": 4000, "max_review_raw": 500,
                                              "max_review_seconds": 300})
         return result, Backend.instances[-1], self.evaluated()[before_evaluation:]
@@ -164,12 +163,10 @@ class ReviewSettlementWorkflowTests(unittest.TestCase):
             self.assertEqual(len(receipts), 2, "real host edit and check must both execute")
         self.assertEqual(json.loads((Path(result["output"]) / "result.json").read_text()), result)
 
-    def test_final_checkpoint_timed_review_is_graded_but_blocks_assembly(self):
-        for preserve in (False, True):
-            with self.subTest(preserve_history=preserve):
-                result, backend, evaluated = self.execute(preserve=preserve, name=f"final-{preserve}")
-                self.assert_stopped_unapproved(result, backend, evaluated, "two")
-                self.assertEqual(Path(backend.settled_turn["reply_file"]).read_text(), "NO_FINDINGS")
+    def test_final_checkpoint_timed_review_is_graded_but_blocks_final_validation(self):
+        result, backend, evaluated = self.execute(name="final")
+        self.assert_stopped_unapproved(result, backend, evaluated, "two")
+        self.assertEqual(Path(backend.settled_turn["reply_file"]).read_text(), "NO_FINDINGS")
 
     def test_priced_interrupted_review_blocks_next_feature(self):
         result, backend, evaluated = self.execute("one", verdict="")
@@ -177,7 +174,7 @@ class ReviewSettlementWorkflowTests(unittest.TestCase):
         self.assertFalse(any(label.startswith("two-") for label, *_ in backend.calls))
         self.assertFalse((backend.repo / "two.py").exists())
 
-    def test_missing_settlement_receipt_blocks_final_capture_and_integration(self):
+    def test_missing_settlement_receipt_blocks_final_capture_and_validation(self):
         result, backend, evaluated = self.execute(complete=False, verdict="")
         self.assertEqual(result["status"], "failed", result)
         self.assertIn("incomplete token measurement", result["error"])

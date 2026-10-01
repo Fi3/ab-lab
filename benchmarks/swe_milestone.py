@@ -416,16 +416,16 @@ def quality(repo, commit, folder, executable):
             "executable": checker, "executable_sha256": digest(Path(checker))}
 
 
-def final_assembly(run_dir, imported, prepared, output, only, seconds, checkpoints):
+def final_evaluation(run_dir, imported, prepared, output, only, seconds, checkpoints):
     """Use the runner's recorded final measurement commit, never a mutable HEAD."""
     final = {"commit": None, "milestones": []}
-    receipt_path = run_dir / "scb-check" / "after_assembly" / "result.json"
+    receipt_path = run_dir / "scb-check" / "after_implementation" / "result.json"
     if receipt_path.exists():
         receipt = json.loads(receipt_path.read_text())
         if receipt.get("status") == "completed":
             commit = receipt.get("commit", "")
             if not re.fullmatch(r"[0-9a-f]{40,64}", commit):
-                raise ValueError("final assembly lacks an immutable commit")
+                raise ValueError("final evaluation lacks an immutable commit")
             git(run_dir / "checkout", "merge-base", "--is-ancestor", imported["revision"], commit)
             final.update(commit=commit, quality=receipt)
     previous = {row["milestone"]: row for row in checkpoints}
@@ -442,7 +442,7 @@ def final_assembly(run_dir, imported, prepared, output, only, seconds, checkpoin
             continue
         folder = output / "final" / task["milestone"]
         folder.mkdir(parents=True)
-        print(f"Final assembly: {task['milestone']} at {final['commit'][:12]}", flush=True)
+        print(f"Final evaluation: {task['milestone']} at {final['commit'][:12]}", flush=True)
         try:
             row.update(grade(run_dir / "checkout", final["commit"], imported, prepared, folder, seconds))
         except (OSError, ValueError, subprocess.SubprocessError) as exc:
@@ -496,7 +496,7 @@ def evaluate(project, run_dir, output, only, seconds, checker):
     graded = [row for row in report["milestones"] if row["graded"]]
     report["passed"] = sum(row["resolved"] for row in graded)
     report["total"] = len(graded)
-    report["final"] = final_assembly(run_dir, imported, prepared, output, only, seconds, report["milestones"])
+    report["final"] = final_evaluation(run_dir, imported, prepared, output, only, seconds, report["milestones"])
     complete = all(row["status"] in ("passed", "failed", "not_graded")
                    and row.get("quality", {}).get("status") == "completed" for row in report["milestones"])
     complete = complete and bool(graded) and report["final"]["commit"] is not None and all(

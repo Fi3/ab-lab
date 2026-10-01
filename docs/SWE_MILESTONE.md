@@ -83,13 +83,13 @@ For example, replacing `MODEL_ID` with the model being tested:
 python3 -m lab run benchmarks/swe-milestone-ripgrep.json \
   --out runs/milestone-ripgrep-1 \
   --harness codex --model MODEL_ID --effort xhigh \
-  --preset all --max-review-loops 3 --skip-linearization \
+  --preset all --max-review-loops 3 \
   --seconds 10800 --max-raw 15000000 --max-turns 1000 \
   --scb-check .venv/bin/scb-check
 ```
 
 Use the same imported configuration, execution environment and budgets when
-comparing models or factors. `--skip-linearization` keeps the original feature
+comparing models or factors. The runner keeps the original feature
 history easy to inspect. Preserve the run's `checkout/` and checkpoint receipts
 until grading completes.
 
@@ -103,7 +103,7 @@ upstream execution environment must be recorded in comparisons.
 The frozen runtime policy controls the independent grader only; it does not
 apply upstream's network quarantine to the author.
 
-The committed definitions use the catalog's public build checks for integration. To choose
+The committed definitions use the catalog's public final build checks. To choose
 a different public check, pass `--check 'COMMAND'` during preparation (repeatable)
 and run the generated `.benchmarks/swe-milestone-projects/PROJECT/benchmark.json`;
 preparation does not change the committed definitions. The runner's existing
@@ -135,12 +135,12 @@ grader findings back to an author. It:
 4. Pulls the required milestone images by their published digest and invokes
    the unmodified official evaluator. It uses the release's filtered verdict
    when available, preserving the underlying reports and test counts.
-5. Grades every graded milestone against the recorded final assembly commit
+5. Grades every graded milestone against the recorded final author commit
    too. An identical commit already graded for that milestone reuses its result.
 
-The normal runner already records before/after implementation and assembly
+The normal runner already records before/after implementation
 quality. The adapter adds the missing per-milestone measurements. Final grading
-uses the commit in `scb-check/after_assembly/result.json`, never whatever happens
+uses the commit in `scb-check/after_implementation/result.json`, never whatever happens
 to be checked out when grading is requested.
 
 Results go to `RUN/swe-milestone/result.json`, with detailed logs, source
@@ -148,9 +148,9 @@ snapshots and grader reports beside it. This is separate from `RUN/result.json`:
 the existing `summarize.py` describes the lab workflow and does not read the new
 correctness report. Consult both. No existing result is rewritten.
 
-`solved` requires every graded checkpoint and final-assembly evaluation to pass,
+`solved` requires every graded checkpoint and final evaluation to pass,
 with all milestone quality measurements complete. Missing checkpoints, missing
-final assembly or grader errors leave the report incomplete. Failed tests are
+final measurement or grader errors leave the report incomplete. Failed tests are
 preserved as failures. Exit codes are 0 for solved, 1 for completed but unsolved,
 and 2 for incomplete or an adapter/grader error.
 

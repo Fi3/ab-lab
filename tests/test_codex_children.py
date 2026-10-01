@@ -4,11 +4,9 @@ import json
 from pathlib import Path
 import queue
 import tempfile
-from types import SimpleNamespace
 import unittest
 from unittest.mock import patch
 
-from lab.child_process import Children
 from lab.codex_children import NativeChildren
 from lab.host import Fatal
 from lab.nested import NestedUsage
@@ -60,9 +58,6 @@ class NativeChildIntegrationTests(unittest.TestCase):
         p.counter, p.active = 0, None
         p.sandbox = CommandSandbox(p.repo, "codex")
         p.nested = NestedUsage(p.repo, p.model, p.effort, self.root / "sessions")
-        children = Children(self.root / "commands", p.deadline)
-        self.addCleanup(children.close)
-        p.commands = SimpleNamespace(children=children, close=children.close)
         p.sent, p.received = [], []
         p.send = p.sent.append
         p.record = lambda direction, value: p.received.append(value)

@@ -154,6 +154,7 @@ class PiHostToolTests(unittest.TestCase):
             rpc=lambda message, timeout=5: {"success": True, "data": {"tokens": {
                 "input": 100, "output": 20, "cacheRead": 5}}})
         thread.policy = p.artifacts / "policy.json"
+        thread.request_journal = p.artifacts / "requests.jsonl"
         save_json(thread.policy, {})
         p.threads = {"t1": thread}
         return p
@@ -221,7 +222,7 @@ class PiHostToolTests(unittest.TestCase):
         p.repo, p.command_env = p.artifacts, {}
         p.sessions_dir = p.artifacts / "sessions"
         p.sessions_dir.mkdir()
-        p.sandbox = SimpleNamespace(configure=lambda *args: None, module="file:///sdk.js")
+        p.sandbox = SimpleNamespace(configure=lambda *args, **kwargs: None, module="file:///sdk.js")
         with patch("lab.provider.PiThread", return_value=SimpleNamespace()) as constructor:
             p.new_thread("t", tools=TOOLS)
         argv = constructor.call_args.args[1]

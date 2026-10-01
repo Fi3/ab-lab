@@ -12,12 +12,12 @@ from unittest.mock import patch
 from lab.__main__ import main
 from lab.config import settings
 from lab.host import git, snapshot
+from lab.scb import PHASES
 from lab.workflow import run
 from test_core import repo_at
 from test_workflow import FakeCodex
 
 
-PHASES = ("before_changes", "after_implementation", "after_assembly")
 SCORES = {"verbosity": 0.25, "erosion": 0.1, "cog_erosion": 0.2,
           "files_scanned": 1, "total_loc": 4, "clone_loc": 1}
 
@@ -43,7 +43,7 @@ def benchmark_at(root):
 
 
 class ScbWorkflowTests(unittest.TestCase):
-    def test_three_measurements_use_correct_source_and_do_not_change_prompts(self):
+    def test_two_measurements_use_correct_source_and_do_not_change_prompts(self):
         with tempfile.TemporaryDirectory() as d:
             root = Path(d)
             b = benchmark_at(root)
@@ -61,13 +61,12 @@ class ScbWorkflowTests(unittest.TestCase):
             quality = result["scb_check"]
             self.assertEqual(quality["status"], "completed")
             self.assertEqual(list(quality["measurements"]), list(PHASES))
-            before, implemented, final = (quality["measurements"][p] for p in PHASES)
+            before, implemented = (quality["measurements"][p] for p in PHASES)
             self.assertNotIn("one.py", before["report"]["observed_files"])
             self.assertEqual(implemented["report"]["observed_files"]["one.py"], "value = 2\n")
             self.assertEqual(implemented["report"]["commits"], "4")
-            self.assertEqual(final["report"]["commits"], "3")
-            self.assertEqual(implemented["tree"], final["tree"])
-            for measurement in (before, implemented, final):
+            self.assertEqual(git(root / "scored/checkout", "rev-list", "--count", "HEAD").strip(), b"4")
+            for measurement in (before, implemented):
                 self.assertEqual(measurement["status"], "completed")
                 self.assertTrue(measurement["findings_present"])
                 self.assertEqual(measurement["exit_code"], 1)
@@ -119,7 +118,6 @@ class ScbWorkflowTests(unittest.TestCase):
                 measured = result["scb_check"]["measurements"]
                 self.assertEqual(measured["before_changes"]["status"], "error")
                 self.assertEqual(measured["after_implementation"]["status"], "not_run")
-                self.assertEqual(measured["after_assembly"]["status"], "not_run")
                 self.assertTrue((root / "run/scb-check/before_changes/stderr.txt").exists())
 
     def test_timeout_is_bounded_and_retained(self):
@@ -133,7 +131,7 @@ class ScbWorkflowTests(unittest.TestCase):
             self.assertEqual(result["status"], "failed")
             self.assertTrue(result["scb_check"]["measurements"]["before_changes"]["timed_out"])
 
-    def test_intermediate_measurement_error_retains_first_score_and_stops_before_assembly(self):
+    def test_final_measurement_error_retains_first_score_and_stops_before_checks(self):
         with tempfile.TemporaryDirectory() as d:
             root = Path(d)
             tool = checker_at(root,
@@ -146,7 +144,6 @@ class ScbWorkflowTests(unittest.TestCase):
             measured = result["scb_check"]["measurements"]
             self.assertEqual(measured["before_changes"]["status"], "completed")
             self.assertEqual(measured["after_implementation"]["status"], "error")
-            self.assertEqual(measured["after_assembly"]["status"], "not_run")
             self.assertEqual(len(result["checkpoints"]), 2)
             self.assertNotIn("integration-plan", [c[0] for c in FakeCodex.instances[-1].calls])
 
@@ -175,7 +172,8 @@ class ScbWorkflowTests(unittest.TestCase):
                 self.assertEqual(main(), 0)
             new, old = json.loads(output.getvalue())
             self.assertEqual(new["scb_check"], quality)
-            self.assertIsNone(old["scb_check"])
+            self.assertNotIn("scb_check", old)
+            self.assertEqual(old, report)
 
     def test_cli_requires_scoring_by_default_and_supports_an_explicit_executable(self):
         with tempfile.TemporaryDirectory() as d:

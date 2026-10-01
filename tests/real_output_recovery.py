@@ -75,7 +75,7 @@ def verify_recovery(provider, repo, thread, out, expected, injection):
         "turn/start", "thread/compact/start", "turn/start"]
     assert all(event["params"]["threadId"] == thread for event in requests)
     first, last = requests[0]["params"], requests[-1]["params"]
-    assert first["sandboxPolicy"] == last["sandboxPolicy"] == provider.sandbox.policy(False)
+    assert first["permissions"] == last["permissions"] == provider.sandbox.profile(False)
     assert first["approvalPolicy"] == last["approvalPolicy"] == "never"
     assert first["model"] == last["model"] == MODEL
     assert first["effort"] == last["effort"] == EFFORT

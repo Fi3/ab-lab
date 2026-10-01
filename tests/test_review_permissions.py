@@ -18,19 +18,19 @@ class ReviewPermissionTests(unittest.TestCase):
             "checks": ["true"]}
         return run(benchmark, settings({}), root / "run", 30, 10000, 30, backend=backend)
 
-    def test_review_can_write_build_outputs_but_author_inspection_stays_read_only(self):
+    def test_review_build_outputs_use_private_copy_and_original_stays_read_only(self):
         class Builds(FakeCodex):
-            def __init__(self, *args, **kwargs):
-                super().__init__(*args, **kwargs)
-                (self.repo / ".git/info/exclude").write_text("build/\n")
-
             def turn(self, thread, prompt, label, **options):
                 if "-review-" in label:
-                    if not options.get("writable"):
-                        raise RuntimeError("review cannot write build output")
-                    folder = self.repo / "build"
-                    folder.mkdir(exist_ok=True)
-                    (folder / "test-output").write_text("built and tested\n")
+                    if options.get("writable"):
+                        raise RuntimeError("review unexpectedly gained native write access")
+                    response = self.tool_call(thread, "review_run", {
+                        "command": "mkdir -p build && printf 'built and tested\\n' > build/test-output && test -f one.py"
+                    }, label + "-build")
+                    if not response["success"]:
+                        raise RuntimeError(response["text"])
+                    if (self.repo / "build").exists():
+                        raise RuntimeError("review build escaped its private copy")
                 elif label.endswith("-implement") and options.get("writable"):
                     raise RuntimeError("mediated author unexpectedly gained native write access")
                 return super().turn(thread, prompt, label, **options)

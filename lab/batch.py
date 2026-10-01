@@ -21,8 +21,7 @@ SHUTDOWN_SECONDS = 20
 def failure(config, output, error, *, status='failed', duration=None):
     benchmark = config['benchmark']
     return {'schema': 'agent-behavior-lab/v1', 'status': status, 'output': str(output),
-        'benchmark': benchmark['name'], 'factors': config['factors'],
-        'skip_linearization': config['options'].get('skip_linearization', False),
+        'benchmark': benchmark['name'], 'factors': config['factors'], 'preset': config['options'].get('preset'),
         'review_priorities': list(config['options'].get('review_priorities', DEFAULT_PRIORITIES)),
         'max_review_loops': config['options'].get('max_review_loops', DEFAULT_MAX_REVIEW_LOOPS),
         'loop_policy': loop_policy(config['options'].get('loop_options')),
@@ -51,9 +50,9 @@ def collect(config, output, exit_code, duration):
 
 def run_batch(benchmark, factors, output, repeat, parallel, *, seconds, max_raw, max_turns,
               model='gpt-5.5', effort='xhigh', executable='codex', harness=None,
-              scb_check=None, scb_seconds=300, child_codex='codex', skip_linearization=False,
+              scb_check=None, scb_seconds=300, child_codex='codex',
               review_priorities=DEFAULT_PRIORITIES, max_review_loops=DEFAULT_MAX_REVIEW_LOOPS,
-              loop_options=None,
+              loop_options=None, preset=None,
               _worker_command=None):
     review_priorities = normalize_priorities(review_priorities)
     max_review_loops = normalize_review_loops(max_review_loops)
@@ -77,9 +76,9 @@ def run_batch(benchmark, factors, output, repeat, parallel, *, seconds, max_raw,
         'options': {'seconds': seconds, 'max_raw': max_raw, 'max_turns': max_turns,
             'model': model, 'effort': effort, 'executable': executable, 'harness': harness, 'child_codex': child_codex,
             'scb_check': str(scb_check) if scb_check is not None else None, 'scb_seconds': scb_seconds,
-            'skip_linearization': skip_linearization, 'review_priorities': list(review_priorities),
+            'review_priorities': list(review_priorities),
             'max_review_loops': max_review_loops,
-            'loop_options': progress_policy}}
+            'loop_options': progress_policy, 'preset': preset}}
     config_path = output/'batch-input.json'
     save_json(config_path, config)
     prefix = _worker_command or [sys.executable, '-m', 'lab.batch']
@@ -163,8 +162,7 @@ def run_batch(benchmark, factors, output, repeat, parallel, *, seconds, max_raw,
             result = {'schema': 'agent-behavior-lab/batch-v1',
                 'status': 'passed' if not interrupted and not controller_error and all(r['status'] == 'passed' for r in results) else 'failed',
                 'output': str(output), 'benchmark': benchmark['name'], 'base_commit': base,
-                'factors': factors, 'repeat': repeat, 'parallel': parallel,
-                'skip_linearization': skip_linearization,
+                'factors': factors, 'preset': preset, 'repeat': repeat, 'parallel': parallel,
                 'review_priorities': list(review_priorities),
                 'max_review_loops': max_review_loops,
                 'loop_policy': progress_policy,

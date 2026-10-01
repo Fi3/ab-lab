@@ -33,11 +33,11 @@ class PiSandbox:
     def command(self, writable, command=None):
         return self.execution.command(writable, command if command is not None else [self.node, str(self.worker)])
 
-    def policy(self, writable, deadline=None):
-        return {'argv': self.command(writable), 'shell_argv': self.command(writable, []), 'writable': writable,
+    def policy(self, writable, deadline=None, *, native_process=False):
+        return {'argv': self.command(writable), 'shell_argv': self.command(writable, []), 'writable': writable, 'native_process': native_process,
                 'deadline': time.time() + (max(0, deadline-time.monotonic()) if deadline is not None else 30)}
 
-    def configure(self, path, writable, deadline):
+    def configure(self, path, writable, deadline, *, native_process=False):
         staged = path.with_name(path.name + '.next')
-        staged.write_text(json.dumps(self.policy(writable, deadline)))
+        staged.write_text(json.dumps(self.policy(writable, deadline, native_process=native_process)))
         staged.replace(path)

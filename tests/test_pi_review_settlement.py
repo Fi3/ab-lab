@@ -76,7 +76,8 @@ class PiReviewSettlementTests(unittest.TestCase):
             return {"success":True,"data":{"tokens":pi_tokens(values)}}
         policy = provider.artifacts / "pi-review-sandbox.json"
         policy.write_text("{}")
-        provider.threads={"pi-review":SimpleNamespace(send=send,incoming=incoming,rpc=rpc,policy=policy)}
+        provider.threads={"pi-review":SimpleNamespace(send=send,incoming=incoming,rpc=rpc,policy=policy,
+            request_journal=provider.artifacts / "pi-review-requests.jsonl")}
         return provider
 
     def stop(self, provider, expected=WorkLimitReached):

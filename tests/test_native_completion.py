@@ -18,10 +18,7 @@ class NativeCompletionTests(unittest.TestCase):
                 if label == 'present-implement':
                     return 'Verified the existing behavior and tests.'
                 if label == 'present-review-1':
-                    return 'NO_FINDINGS'
-                if label == 'integration-accept':
-                    git(self.repo, 'commit', '--allow-empty', '-qm',
-                        'UPDATE Verify the existing feature meets its request')
+                    return self.submit_review(thread, prompt, label)
                 return 'Finished'
 
         with tempfile.TemporaryDirectory() as directory:
@@ -34,7 +31,7 @@ class NativeCompletionTests(unittest.TestCase):
             result = run(benchmark, factors, root / 'run', 30, 10000, 10, backend=Native)
             self.assertEqual(result['status'], 'passed', result)
             self.assertEqual([row[0] for row in Native.instances[-1].calls],
-                ['present-implement', 'present-review-1', 'integration-plan', 'integration-accept'])
+                ['present-implement', 'present-review-1'])
             self.assertTrue(result['checkpoints'][0]['already_satisfied'])
 
     def test_native_changes_are_captured_without_an_agent_commit(self):
@@ -44,7 +41,7 @@ class NativeCompletionTests(unittest.TestCase):
                 if label == "new-implement":
                     (self.repo / "new.py").write_text("value = 1\n")
                 if "-review-" in label:
-                    return "NO_FINDINGS"
+                    return self.submit_review(thread, prompt, label)
                 return "Finished."
         with tempfile.TemporaryDirectory() as directory:
             root = Path(directory)
@@ -52,7 +49,7 @@ class NativeCompletionTests(unittest.TestCase):
             benchmark = {"name": "natural", "repo": str(repo), "revision": "HEAD",
                 "features": [{"id": "new", "request": "Create new.py"}], "checks": ["test -f new.py"]}
             result = run(benchmark, settings({key: False for key in settings({})}), root / "run",
-                         30, 10000, 10, backend=Native, skip_linearization=True)
+                         30, 10000, 10, backend=Native)
             self.assertEqual(result["status"], "passed", result)
             self.assertEqual(len(result["final_commits"]), 1)
             self.assertTrue((root / "run/new-implement-source.json").exists())

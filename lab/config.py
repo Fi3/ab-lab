@@ -5,16 +5,16 @@ import re
 
 FACTORS = {
     "C08": ("Compact conflict refresh", "diff from previously delivered text", "complete changed-file text"),
-    "C13": ("Focused validation", "focused author checks; full checks at integration", "no extra validation instruction"),
+    "C13": ("Focused validation", "focused author checks; broad checks when needed", "no extra validation instruction"),
     "C14": ("Cohesive publication", "group related implementation and tests", "no edit-grouping instruction"),
     "C15": ("No procedural failing-test step", "design tests first; no mandatory RED execution", "no test-order override; retain repository and agent rules"),
     "C16": ("Structured edit format", "exact-context structured patches", "no edit-format instruction; host accepts either supported format"),
     "C17": ("Host-owned edits and commits", "host applies, commits and reports actual results", "agent edits, checks and commits with native tools"),
     "C20": ("Next-action guidance", "command results include next-action guidance", "command results contain facts only"),
-    "C38": ("Completion guidance", "explicitly hand over when required work is ready", "no extra finishing reminder"),
+    "C38": ("Completion guidance", "explicitly finish the turn when required work is ready", "no extra finishing reminder"),
 }
 
-WORKFLOW_VERSION = "host-tools-bounded-reviews-v3"
+WORKFLOW_VERSION = "benchmark-native-delegation-no-integration-v5"
 def settings(overrides):
     if not isinstance(overrides, dict):
         raise ValueError("factors must be an object of C identifiers and booleans")
@@ -32,7 +32,7 @@ def policy_blocks(f):
     # Each fragment belongs to one switch. Interactions are explicit, not
     # resolved by silently changing another factor's value.
     return {
-        "C13": ("Run focused checks while implementing; fix and rerun them as needed. Leave broad cross-feature validation to final integration unless necessary to finish correctly."
+        "C13": ("Run focused checks while implementing; fix and rerun them as needed. Run broad cross-feature validation when necessary to finish correctly."
                 if f["C13"] else ""),
         "C14": ("Submit related implementation and focused tests together where the required test order permits. One edit may contain multiple related files and hunks."
                 if f["C14"] else ""),
@@ -42,7 +42,7 @@ def policy_blocks(f):
                 if f["C16"] else ""),
         "C20": ("Use actual operation results to choose the next concrete action. Do not repeat accepted work or infer success from missing output."
                 if f["C20"] else ""),
-        "C38": ("When all assigned work and relevant checks are complete, hand over for independent review. Do not add speculative work or extra reporting exchanges. Genuine failures and unfinished requirements still need work."
+        "C38": ("When all assigned work and relevant checks are complete, finish this turn. The runner handles any configured independent review. Do not add speculative work or extra reporting exchanges. Genuine failures and unfinished requirements still need work."
                 if f["C38"] else ""),
     }
 

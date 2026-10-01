@@ -5,7 +5,7 @@ import tempfile
 import unittest
 
 from lab.config import FACTORS, author_policy, load_benchmark, settings
-from lab.workflow import author_prompt, integration_prompts, review_prompt
+from lab.workflow import author_prompt, review_prompt
 
 
 class PromptContractTests(unittest.TestCase):
@@ -44,11 +44,10 @@ class PromptContractTests(unittest.TestCase):
         with self.assertRaises(ValueError):
             settings({"C25": True})
 
-    def test_review_and_integration_do_not_repeat_local_setup_coaching(self):
+    def test_review_does_not_repeat_local_setup_coaching(self):
         feature = {"id": "one", "request": "Original specification."}
         benchmark = {"features": [feature], "checks": ["true"], "instructions": "EXTRA_COACHING"}
-        prompts = [review_prompt(benchmark, feature, "base", ""),
-                   *integration_prompts(benchmark, "base", [])]
+        prompts = [review_prompt(benchmark, feature, "base", "")]
         for prompt in prompts:
             self.assertNotIn("EXTRA_COACHING", prompt)
             self.assertNotIn("within run budget", prompt)

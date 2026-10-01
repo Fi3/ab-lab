@@ -7,6 +7,7 @@ from lab.config import settings
 from lab.host import Fatal, git
 from lab.workflow import run
 import test_slopcodebench as fixtures
+from test_workflow import verdict
 
 
 def edit(name, value, previous=None):
@@ -27,7 +28,6 @@ def native_edit(name, value, *, commit=True):
 
 class ScenarioBackend(fixtures.ClosingCodex):
     script = {}
-    preserve_history = True
 
     def __init__(self, *args, **kwargs):
         super().__init__(*args, **kwargs)
@@ -37,17 +37,15 @@ class ScenarioBackend(fixtures.ClosingCodex):
         self.limits_by_call = []
 
     def turn(self, thread, prompt, label, **kwargs):
-        if label == "integration-accept" and not self.preserve_history:
-            return super().turn(thread, prompt, label, **kwargs)
         self.calls.append((label, thread, prompt, kwargs))
         self.limits_by_call.append((label, [dict(limit) for limit in self.work_limits]))
-        if label.startswith("integration-"):
-            return "Keep the checkpoint commits and retained findings."
         while self.script[label]:
             action = self.script[label].pop(0)
             reply, cost = action if isinstance(action, tuple) else (action, 10)
             self.raw += cost
             reply = reply(self) if callable(reply) else reply
+            if isinstance(reply, dict) and "status" in reply:
+                return self.submit_review(thread, prompt, label, reply)
             if isinstance(reply, dict):
                 from lab.loops import work_limit_error
                 from lab.host import Fatal
@@ -73,17 +71,15 @@ class SlopAttentionTests(unittest.TestCase):
     workflow = fixtures.SlopCodeBenchTests.workflow
     evaluated = fixtures.SlopCodeBenchTests.evaluated
 
-    def execute(self, script, *, name="run", native=False, harness="codex", preserve=True,
+    def execute(self, script, *, name="run", native=False, harness="codex",
                 policy=None, benchmark=None, max_raw=10_000, max_review_loops=3):
         class Backend(ScenarioBackend):
             pass
         Backend.script = script
-        Backend.preserve_history = preserve
         Backend.transport = "pi-rpc-stdio" if harness == "pi" else "codex-app-server-stdio"
         factors = settings({"C17": False, "C08": False}) if native else settings({})
         result = run(benchmark or self.benchmark(), factors, self.root / name, 30, max_raw, 30,
-                     backend=Backend, harness=harness, skip_linearization=preserve,
-                     loop_options=policy, max_review_loops=max_review_loops)
+                     backend=Backend, harness=harness,                      loop_options=policy, max_review_loops=max_review_loops)
         return result, Backend.instances[-1]
 
     def assert_stopped_attention(self, result, backend):
@@ -114,68 +110,66 @@ class SlopAttentionTests(unittest.TestCase):
             self.assertEqual(flag["retention"]["commit"], result["checkpoints"][0]["head"])
             self.assertEqual(json.loads(Path(flag["artifact"]).read_text()), flag)
 
-    def test_bounded_reviews_advance_across_harness_custody_and_history_modes(self):
+    def test_bounded_reviews_advance_across_harness_and_custody_modes(self):
         for harness in ("codex", "pi"):
             for native in (False, True):
-                for preserve in (False, True):
-                    for limit in (0, 1, 3):
-                        with self.subTest(harness=harness, native=native, preserve=preserve, limit=limit):
-                            actions = lambda name, value, previous=None: ([native_edit(name, value)] if native
-                                else [edit(name, value, previous), "Finished."])
-                            previous = 1 if limit else 2
-                            script = {"one-implement": actions("one", previous),
-                                      "two-implement": actions("two", 1)}
-                            expected = ["one-implement"]
-                            for number in range(1, limit + 1):
-                                script[f"one-review-{number}"] = [f"FINDINGS\n- [P2] Defect {number}."]
-                                value = 2 if number == limit else previous + 1
-                                script[f"one-fix-{number}"] = actions("one", value, previous)
-                                previous = value
-                                expected += [f"one-review-{number}", f"one-fix-{number}"]
-                            expected.append("two-implement")
-                            if limit:
-                                script["two-review-1"] = ["NO_FINDINGS"]
-                                expected.append("two-review-1")
-                            expected += ["integration-plan", "integration-accept"]
-                            name = f"{harness}-{native}-{preserve}-{limit}"
-                            before = len(self.evaluated())
-                            result, backend = self.execute(script, name=name, native=native,
-                                harness=harness, preserve=preserve, max_review_loops=limit)
-                            self.assertEqual(result["status"], "passed", result.get("error"))
-                            self.assertEqual(result["execution_status"], "completed")
-                            self.assertTrue((self.root / name / "provider-closed").exists())
-                            self.assertEqual([label for label, *_ in backend.calls], expected)
-                            self.assertEqual(result["loop_flags"], [])
-                            one, two = result["checkpoints"]
-                            self.assertEqual(one["status"], "review_limit_reached" if limit else "review_skipped")
-                            self.assertIsNone(one["review_approved"])
-                            self.assertIsNone(one["reviewed_head"])
-                            self.assertFalse(one["already_satisfied"])
-                            self.assertEqual(one["review_rounds"], limit)
-                            self.assertEqual(one["repair_attempts"], limit)
-                            self.assertIs(two["review_approved"], True if limit else None)
-                            if limit:
-                                self.assertNotEqual(one["head"], result["reviews"][limit-1]["head"])
-                            else:
-                                self.assertEqual(result["reviews"], [])
-                                self.assertEqual(backend.threads, 3)
-                            self.assertTrue(result["slopcodebench"]["solved"])
-                            saved = result["slopcodebench"]["checkpoints"][0]
-                            self.assertEqual(saved["commit"], one["head"])
-                            self.assertEqual((Path(saved["snapshot"]) / "one.py").read_text(), "value = 2\n")
-                            self.assertIsNone(saved["review_approved"])
-                            self.assertEqual(saved["attempt_status"], one["status"])
-                            manifest = json.loads((self.root / name / "manifest.json").read_text())
-                            self.assertEqual(manifest["transport"], backend.transport)
-                            self.assertEqual(manifest["max_review_loops"], limit)
-                            self.assertEqual(result["max_review_loops"], limit)
-                            self.assertEqual([x["checkpoint"] for x in self.evaluated()[before:]], ["one", "two", "two"])
+                for limit in (0, 1, 3):
+                    with self.subTest(harness=harness, native=native, limit=limit):
+                        actions = lambda name, value, previous=None: ([native_edit(name, value)] if native
+                            else [edit(name, value, previous), "Finished."])
+                        previous = 1 if limit else 2
+                        script = {"one-implement": actions("one", previous),
+                                  "two-implement": actions("two", 1)}
+                        expected = ["one-implement"]
+                        for number in range(1, limit + 1):
+                            script[f"one-review-{number}"] = [verdict(f"Defect {number}.")]
+                            value = 2 if number == limit else previous + 1
+                            script[f"one-fix-{number}"] = actions("one", value, previous)
+                            previous = value
+                            expected += [f"one-review-{number}", f"one-fix-{number}"]
+                        expected.append("two-implement")
+                        if limit:
+                            script["two-review-1"] = [verdict()]
+                            expected.append("two-review-1")
+                        name = f"{harness}-{native}-{limit}"
+                        before = len(self.evaluated())
+                        result, backend = self.execute(script, name=name, native=native,
+                            harness=harness, max_review_loops=limit)
+                        self.assertEqual(result["status"], "passed", result.get("error"))
+                        self.assertEqual(result["execution_status"], "completed")
+                        self.assertTrue((self.root / name / "provider-closed").exists())
+                        self.assertEqual([label for label, *_ in backend.calls], expected)
+                        self.assertEqual(result["loop_flags"], [])
+                        one, two = result["checkpoints"]
+                        self.assertEqual(one["status"], "review_limit_reached" if limit else "review_skipped")
+                        self.assertIsNone(one["review_approved"])
+                        self.assertIsNone(one["reviewed_head"])
+                        self.assertFalse(one["already_satisfied"])
+                        self.assertEqual(one["review_rounds"], limit)
+                        self.assertEqual(one["repair_attempts"], limit)
+                        self.assertIs(two["review_approved"], True if limit else None)
+                        if limit:
+                            self.assertNotEqual(one["head"], result["reviews"][limit-1]["head"])
+                        else:
+                            self.assertEqual(result["reviews"], [])
+                            self.assertEqual(backend.threads, 2)
+                        self.assertTrue(result["slopcodebench"]["solved"])
+                        saved = result["slopcodebench"]["checkpoints"][0]
+                        self.assertEqual(saved["commit"], one["head"])
+                        self.assertEqual((Path(saved["snapshot"]) / "one.py").read_text(), "value = 2\n")
+                        self.assertIsNone(saved["review_approved"])
+                        self.assertEqual(saved["attempt_status"], one["status"])
+                        manifest = json.loads((self.root / name / "manifest.json").read_text())
+                        self.assertEqual(manifest["transport"], backend.transport)
+                        self.assertEqual(manifest["max_review_loops"], limit)
+                        self.assertEqual(result["max_review_loops"], limit)
+                        self.assertEqual([x["checkpoint"] for x in self.evaluated()[before:]], ["one", "two", "two"])
 
     def test_review_limit_is_part_of_comparison_identity(self):
         script = {"one-implement": [edit("one", 2), "Finished."],
-                  "one-review-1": ["NO_FINDINGS"],
+                  "one-review-1": [verdict()],
                   "two-implement": [edit("two", 1), "Finished."],
-                  "two-review-1": ["NO_FINDINGS"]}
+                  "two-review-1": [verdict()]}
         first, _ = self.execute(script, name="one-review", max_review_loops=1)
         second, _ = self.execute(script, name="three-reviews", max_review_loops=3)
         self.assertEqual(first["status"], "passed", first.get("error"))
@@ -191,11 +185,11 @@ class SlopAttentionTests(unittest.TestCase):
     def test_default_review_can_exceed_former_cutoff_and_repair_before_progressing(self):
         result, backend = self.execute({
             "one-implement": [edit("one", 1), "Finished."],
-            "one-review-1": [("FINDINGS\n- [P2] Set the required value to 2.", 600_000)],
+            "one-review-1": [(verdict('Set the required value to 2.'), 600_000)],
             "one-fix-1": [edit("one", 2, 1), "Finished."],
-            "one-review-2": [("NO_FINDINGS", 600_000)],
+            "one-review-2": [(verdict(), 600_000)],
             "two-implement": [edit("two", 1), "Finished."],
-            "two-review-1": ["NO_FINDINGS"],
+            "two-review-1": [verdict()],
         }, max_raw=5_000_000)
         self.assertEqual(result["status"], "passed", result.get("error"))
         self.assertEqual(result["execution_status"], "completed")
@@ -214,9 +208,9 @@ class SlopAttentionTests(unittest.TestCase):
     def test_explicit_former_review_cutoff_stops_without_skipping_to_next_feature(self):
         result, backend = self.execute({
             "one-implement": [edit("one", 2), "Finished."],
-            "one-review-1": [("NO_FINDINGS", 600_000)],
+            "one-review-1": [(verdict(), 600_000)],
             "two-implement": [edit("two", 1), "Finished."],
-            "two-review-1": ["NO_FINDINGS"],
+            "two-review-1": [verdict()],
         }, policy={"max_review_raw": 500_000}, max_raw=5_000_000)
         self.assert_stopped_attention(result, backend)
         flag, = result["loop_flags"]
@@ -230,9 +224,9 @@ class SlopAttentionTests(unittest.TestCase):
     def test_feature_budget_stop_retains_attempt_and_blocks_next_checkpoint(self):
         result, backend = self.execute({
             "one-implement": [edit("one", 1), ({"name": "host_read", "arguments": {"path": "one.py"}}, 900)],
-            "one-review-1": ["FINDINGS\n- [P2] First attempt remains incorrect."],
+            "one-review-1": [verdict('First attempt remains incorrect.')],
             "two-implement": [edit("two", 1), "Finished."],
-            "two-review-1": ["NO_FINDINGS"],
+            "two-review-1": [verdict()],
         }, policy={"max_feature_raw": 1000, "max_review_raw": 200})
         self.assert_stopped_attention(result, backend)
         self.assertEqual(result["loop_flags"][0]["reason"], "feature_token_limit")
@@ -242,11 +236,11 @@ class SlopAttentionTests(unittest.TestCase):
     def test_repeated_rejection_blocks_successors_without_replaying_unchanged_repairs(self):
         result, backend = self.execute({
             "one-implement": [edit("one", 1), "Finished."],
-            "one-review-1": ["FINDINGS\n- [P2] The required value must be 2."],
+            "one-review-1": [verdict('The required value must be 2.')],
             "one-fix-1": ["No edits were made."],
-            "one-review-2": ["FINDINGS\n- [P2] The required value must still be 2."],
+            "one-review-2": [verdict('The required value must still be 2.')],
             "two-implement": [edit("two", 1), "Finished."],
-            "two-review-1": ["NO_FINDINGS"],
+            "two-review-1": [verdict()],
         })
         self.assert_stopped_attention(result, backend)
         flag, = result["loop_flags"]
@@ -257,14 +251,14 @@ class SlopAttentionTests(unittest.TestCase):
         self.assertFalse(any(label == "one-fix-2" for label, *_ in backend.calls))
 
     def test_incomplete_review_preserves_unknown_approval_and_blocks_successors(self):
-        for verdict in ("INCOMPLETE_REVIEW\nMISSING_ONE_EVIDENCE", "Not a verdict"):
-            with self.subTest(verdict=verdict):
+        for value in (verdict(incomplete_reason="MISSING_ONE_EVIDENCE"), "Not a verdict"):
+            with self.subTest(verdict=value):
                 result, backend = self.execute({
                     "one-implement": [edit("one", 2), "Finished."],
-                    "one-review-1": [verdict],
+                    "one-review-1": [value],
                     "two-implement": [edit("two", 1), "Finished."],
-                    "two-review-1": ["NO_FINDINGS"],
-                }, name="incomplete" if verdict.startswith("INCOMPLETE") else "malformed")
+                    "two-review-1": [verdict()],
+                }, name="incomplete" if isinstance(value, dict) else "malformed")
                 self.assert_stopped_attention(result, backend)
                 self.assertEqual(len(result["loop_flags"]), 1)
                 checkpoint, = result["checkpoints"]
@@ -277,7 +271,7 @@ class SlopAttentionTests(unittest.TestCase):
         result, backend = self.execute({
             "one-implement": [(native_edit("one", 1, commit=False), 900)],
             "two-implement": [native_edit("two", 1)],
-            "two-review-1": ["NO_FINDINGS"],
+            "two-review-1": [verdict()],
         }, native=True, policy={"max_feature_raw": 1000, "max_review_raw": 200})
         self.assert_stopped_attention(result, backend)
         flag = result["loop_flags"][0]
@@ -304,7 +298,7 @@ class SlopAttentionTests(unittest.TestCase):
         result, backend = self.execute({
             "one-implement": [(staged_then_restored, 900)],
             "two-implement": [native_edit("two", 1)],
-            "two-review-1": ["NO_FINDINGS"],
+            "two-review-1": [verdict()],
         }, native=True, policy={"max_feature_raw": 1000, "max_review_raw": 200})
         self.assert_stopped_attention(result, backend)
         retention = result["loop_flags"][0]["retention"]
@@ -328,7 +322,7 @@ class SlopAttentionTests(unittest.TestCase):
     def test_incomplete_accounting_does_not_capture_or_approve_stopped_checkpoint(self):
         def unpriced(backend):
             backend.complete = False
-            return "INCOMPLETE_REVIEW\nNeed evidence."
+            return verdict(incomplete_reason='Need evidence.')
         result, backend = self.execute({
             "one-implement": [edit("one", 1), "Finished."],
             "one-review-1": [unpriced],
@@ -346,9 +340,9 @@ class SlopAttentionTests(unittest.TestCase):
     def test_evaluator_infrastructure_failure_is_not_hidden_by_attention(self):
         result, backend = self.execute({
             "one-implement": [edit("one", 2), "Finished."],
-            "one-review-1": ["INCOMPLETE_REVIEW\nNeed evidence."],
+            "one-review-1": [verdict(incomplete_reason='Need evidence.')],
             "two-implement": [edit("two", 1), "Finished."],
-            "two-review-1": ["NO_FINDINGS"],
+            "two-review-1": [verdict()],
         }, benchmark=self.benchmark("infrastructure"))
         self.assertEqual(result["status"], "failed", result)
         self.assertEqual(result["execution_status"], "incomplete")
@@ -364,7 +358,7 @@ class SlopAttentionTests(unittest.TestCase):
         del benchmark["slopcodebench"]
         result, backend = self.execute({
             "one-implement": [edit("one", 1), "Finished."],
-            "one-review-1": ["INCOMPLETE_REVIEW\nNeed evidence."],
+            "one-review-1": [verdict(incomplete_reason='Need evidence.')],
         }, benchmark=benchmark)
         self.assertEqual(result["status"], "needs_attention", result)
         self.assertEqual(result["checkpoints"], [])

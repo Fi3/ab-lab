@@ -5,13 +5,15 @@ import math
 from pathlib import Path
 import subprocess
 import time
+from contextlib import ExitStack
 
 from .config import WORKFLOW_VERSION, author_policy
-from .host import Fatal, Host, execute_child, git, save_json, snapshot, relative_path
+from .exclude_integration import comparison_view
+from .host import Fatal, Host, execute_child, git, git_execution, save_json, snapshot, relative_path
 from .host_tools import HOST_TOOLS, HostTools
 from .provider import Codex, Pi, clean_env
 from .review import (DEFAULT_PRIORITIES, DEFAULT_MAX_REVIEW_LOOPS, format_findings,
-                     normalize_priorities, normalize_review_loops, parse_review, review_clean, review_instructions)
+                     normalize_priorities, normalize_review_loops, REVIEW_TOOLS, ReviewTools, review_instructions)
 from .loops import FeatureProgress, NeedsAttention, POLICY_VERSION, WorkLimitReached, loop_policy, work_limit_error
 from . import scb, slopcodebench
 
@@ -35,28 +37,13 @@ def author_prompt(benchmark, feature, factors, findings=None):
     return "\n\n".join(parts)
 
 
-def review_prompt(benchmark, feature, base, evidence, no_changes=False, *, review_priorities=DEFAULT_PRIORITIES):
+def review_prompt(benchmark, feature, base, evidence, no_changes=False, *, review_priorities=DEFAULT_PRIORITIES, review_id=None):
     instructions = review_instructions(review_priorities)
     if no_changes:
         scope = f"There are no changes since {base}. Verify whether the requested behavior is already satisfied; an empty diff is not approval."
     else:
         scope = f"Inspect {base}..HEAD for defects introduced by this feature. Exclude unrelated pre-existing issues."
-    return f"Independently review the following request. Do not modify submission files.\n{scope}\n\n{feature['request']}\n\n{evidence}\n{instructions}"
-
-
-def integration_prompts(benchmark, base, checkpoints, *, skip_linearization=False):
-    count = len(benchmark["features"])
-    contract = f"Produce exactly {count} final commits rooted at {base}, one per feature. Fold implementation, tests, review repairs, validation fixes and required documentation into the corresponding feature commit. No separate support or documentation-only commits. Preserve implemented behavior and follow repository commit-message rules. Do not push or modify other checkouts."
-    if skip_linearization:
-        contract = "Preserve all feature commits exactly as generated. Do not reorder, squash, amend, rebase or replace existing commits. Complete required documentation and repair genuine final-validation failures using new commits only. There is no required commit count; already-satisfied features need no empty commits. Preserve implemented behavior and follow repository commit-message rules. Do not push or modify other checkouts."
-    elif any(item.get("already_satisfied") for item in checkpoints):
-        contract += " A boundary marked already_satisfied was independently verified without source changes. Use an explicitly described verification-only empty commit for that feature; do not invent edits."
-    detail = json.dumps(checkpoints, indent=2)
-    if any(item.get("review_approved") is not True for item in checkpoints):
-        contract += " Some features have no approving review. Their recorded status is not approval. Do not restart their review/repair cycles; repair genuine final-validation failures."
-    plan = f"You are the final integration agent for {count} sequential features.\n{contract}\nFeature boundaries and review outcomes:\n{detail}\nInspect history and source, identify required documentation, and propose a plan. Do not edit, commit, rewrite history or run the check suite yet. End with your plan and wait for acceptance."
-    accept = f"Accept the proposed plan and execute it.\n{contract}\nRun these final checks and all additional repository-required checks; repair genuine failures:\n"+"\n".join(benchmark["checks"])+"\nLeave the checkout clean and summarize final commits and actual verification results."
-    return plan, accept
+    return f"Independently review the following request. The submission is read-only; use writable temporary scratch space or a scratch copy for tests that create files.\nReview target: {review_id}\n{scope}\n\n{feature['request']}\n\n{evidence}\n{instructions}"
 
 
 def after_read_fixture(host, fixture, output, deadline):
@@ -107,9 +94,9 @@ def capture_native_work(checkout, stage, output):
 
 def run(benchmark, factors, output, seconds, max_raw, max_turns,
         model="gpt-5.5", effort="xhigh", executable="codex", backend=Codex, *,
-        harness=None, scb_check=None, scb_seconds=300, child_codex="codex", skip_linearization=False,
+        harness=None, scb_check=None, scb_seconds=300, child_codex="codex",
         review_priorities=DEFAULT_PRIORITIES, max_review_loops=DEFAULT_MAX_REVIEW_LOOPS,
-        loop_options=None, _base_commit=None):
+        loop_options=None, preset=None, _base_commit=None):
     if seconds <= 0 or max_raw <= 0 or max_turns <= 0:
         raise ValueError("positive wall-time, observed-token and turn limits are required")
     if not math.isfinite(scb_seconds) or scb_seconds <= 0:
@@ -132,9 +119,9 @@ def run(benchmark, factors, output, seconds, max_raw, max_turns,
     output.mkdir(parents=True, exist_ok=False)
     deadline = time.monotonic()+seconds
     provider = None
+    git_context = ExitStack()
     result = {"schema": "agent-behavior-lab/v1", "status": "failed", "factors": factors,
-              "output": str(output), "benchmark": benchmark["name"],
-              "skip_linearization": skip_linearization,
+              "output": str(output), "benchmark": benchmark["name"], "preset": preset,
               "max_review_loops": max_review_loops,
               "review_priorities": list(review_priorities), "reviews": [],
               "loop_policy": progress_policy, "loop_policy_version": POLICY_VERSION, "loop_flags": [], "workflow_version": WORKFLOW_VERSION,
@@ -155,19 +142,16 @@ def run(benchmark, factors, output, seconds, max_raw, max_turns,
         default_transport = "pi-rpc-stdio" if harness == "pi" else "codex-app-server-stdio"
         transport = backend.transport if isinstance(getattr(backend, "transport", None), str) else default_transport
         manifest = {"schema": "agent-behavior-lab/v1", "benchmark": benchmark, "base_commit": base,
-                    "factors": factors, "limits": {"seconds": seconds, "observed_raw_tokens": max_raw, "turns": max_turns},
+                    "factors": factors, "preset": preset, "limits": {"seconds": seconds, "observed_raw_tokens": max_raw, "turns": max_turns},
                     "model": model, "effort": effort, "source_sha256": code,
-                    "workflow": "sequential-implement-review-repair-then-plan-accept-and-one-commit-per-feature",
+                    "workflow": "sequential-implement-optional-review-repair-and-evaluate",
                     "transport": transport, "created_at_unix": time.time()}
         manifest["checkout_policy"] = "pinned-history-no-remotes-v1"
         manifest["workflow_version"] = WORKFLOW_VERSION
-        manifest["skip_linearization"] = skip_linearization
         manifest["review_priorities"] = list(review_priorities)
         manifest["max_review_loops"] = max_review_loops
         manifest["loop_policy"] = progress_policy
         manifest["loop_policy_version"] = POLICY_VERSION
-        if skip_linearization:
-            manifest["workflow"] = "sequential-implement-review-repair-then-plan-accept-preserving-commits"
         if scb_check is not None:
             manifest["scb_check"] = {"executable": str(scb_check), "seconds_per_check": scb_seconds}
         if "slopcodebench" in benchmark:
@@ -218,7 +202,9 @@ def run(benchmark, factors, output, seconds, max_raw, max_turns,
         score("before_changes")
         failure_origin = "provider"
         provider = backend(checkout, output / "provider", model, effort, deadline, max_raw, max_turns, executable,
-                           require_git_write=True, **({"codex_executable": child_codex} if backend is Pi else {}))
+                           require_git_write=True, allow_delegation=not factors["C17"], **({"codex_executable": child_codex} if backend is Pi else {}))
+        git_context.enter_context(git_execution(checkout, getattr(provider, "git_argv", lambda argv: argv),
+                                               getattr(provider, "command_env", clean_env()), deadline))
         failure_origin = "runner"
         if manifest["model"] is None and provider.identity.get("model"):
             manifest["model"] = provider.identity["model"]
@@ -329,9 +315,11 @@ def run(benchmark, factors, output, seconds, max_raw, max_turns,
             approved = False
             try:
                 author_stop = implement(author_prompt(benchmark, feature, factors), name+"-implement")
-                # Checks need build-output writes just as author/integration checks
-                # do. The snapshot guard below still rejects reviewer source edits.
                 reviewer = None
+                review_tools = ReviewTools(output / (name + "-reviews"), review_priorities,
+                    repo=checkout, deadline=deadline,
+                    command_env=getattr(provider, "command_env", None),
+                    command_argv=getattr(provider, "review_command_argv", None))
                 evidence = ""
 
                 while True:
@@ -363,21 +351,21 @@ def run(benchmark, factors, output, seconds, max_raw, max_turns,
                     round_number += 1
                     provider.work_limits = progress.limits(observed_raw(), reviewing=True)
                     if reviewer is None:
-                        reviewer = start_agent(f"{name}-review-{round_number}", writable=True)
+                        reviewer = start_agent(f"{name}-review-{round_number}", writable=False,
+                                               tools=REVIEW_TOOLS, tool_handler=review_tools.execute)
                     before = snapshot(checkout)
                     no_changes = git(checkout, "rev-parse", "HEAD").decode().strip() == feature_base
                     review_label = f"{name}-review-{round_number}"
+                    review_id = review_tools.begin(review_label, before["head"])
                     try:
                         reply = turn(reviewer, review_prompt(benchmark, feature, feature_base, evidence, no_changes,
-                                     review_priorities=review_priorities), review_label, writable=True)
+                                     review_priorities=review_priorities, review_id=review_id), review_label, writable=False)
                         if snapshot(checkout) != before:
                             failure_origin = "agent"
                             raise Fatal("reviewer changed source, index or history")
-                        try:
-                            decision = parse_review(reply, review_priorities)
-                        except ValueError as exc:
-                            decision = {"approved": None, "blocking_findings": [], "advisory_findings": [],
-                                        "incomplete_reason": "Invalid reviewer verdict: " + str(exc)}
+                        decision = review_tools.decision or {
+                            "approved": None, "blocking_findings": [], "advisory_findings": [],
+                            "incomplete_reason": "Reviewer finished without an accepted submit_review verdict"}
                     except WorkLimitReached as exc:
                         if snapshot(checkout) != before:
                             failure_origin = "agent"
@@ -478,25 +466,8 @@ def run(benchmark, factors, output, seconds, max_raw, max_turns,
                 raise NeedsAttention(stopped_flag)
 
         score("after_implementation")
-        reviewed = git(checkout, "rev-parse", "HEAD").decode().strip()
-        git(checkout, "update-ref", "refs/agent-lab/reviewed", reviewed)
-        plan, accept = integration_prompts(benchmark, base, result["checkpoints"],
-                                           skip_linearization=skip_linearization)
-        integrator = start_agent("integration-plan")
-        before = snapshot(checkout)
-        turn(integrator, plan, "integration-plan")
-        if snapshot(checkout) != before:
-            failure_origin = "agent"
-            raise Fatal("integration planning modified source/index/history")
-        turn(integrator, accept, "integration-accept", writable=True)
-        git(checkout, "merge-base", "--is-ancestor", base, "HEAD")
         commits = git(checkout, "rev-list", "--reverse", base+"..HEAD").decode().splitlines()
-        if skip_linearization:
-            if git(checkout, "rev-list", reviewed, "--not", "HEAD"):
-                raise Fatal("final integration must preserve reviewed commits when linearization is skipped")
-        elif len(commits) != len(benchmark["features"]) or git(checkout, "rev-list", "--merges", base+"..HEAD"):
-            raise Fatal("final history must be linear with exactly one commit per feature")
-        score("after_assembly")
+        final_source = snapshot(checkout)
         if "slopcodebench" in result and not git(checkout, "status", "--porcelain"):
             result["slopcodebench"]["final"] = {"feature": "final", "status": "not_run",
                 **slopcodebench.capture(checkout, output, "final")}
@@ -513,6 +484,8 @@ def run(benchmark, factors, output, seconds, max_raw, max_turns,
             if receipt["exit_code"] or receipt["timed_out"] or receipt["cancelled_signal"]:
                 failure_origin = "validation"
                 raise Fatal(f"final check {index} failed; no automatic replacement")
+        if snapshot(checkout) != final_source:
+            raise Fatal("final validation changed submitted source, index or history")
         if git(checkout, "status", "--porcelain"):
             raise Fatal("final checkout is not clean")
         if source_hashes() != code:
@@ -544,11 +517,12 @@ def run(benchmark, factors, output, seconds, max_raw, max_turns,
         else:
             result["usage"] = {"observed_raw_tokens": None, "measurement_complete": False,
                                "reason": "provider did not initialize; inspect retained stderr"}
+        git_context.close()
         if ("slopcodebench" in result and "shutdown_error" not in result
                 and result.get("error") != "operator interruption"
                 and any("snapshot" in item for item in result["slopcodebench"]["checkpoints"])):
             # All model sessions, including nested verification, are closed.
-            # Hidden tests never enter the review/repair/integration loop.
+            # Hidden tests never enter the author/review/repair loop.
             save_json(output / "slopcodebench" / "before-evaluation.json", result)
             try:
                 slopcodebench.evaluate(benchmark, result, output)
@@ -571,6 +545,7 @@ def comparable(*reports):
 
 
 def compare(reference, changed):
+    reference, changed = map(comparison_view, (reference, changed))
     comparable(reference, changed)
     a, b = (r["usage"]["observed_raw_tokens"] for r in (reference, changed))
     if a <= 0:
@@ -582,6 +557,7 @@ def compare(reference, changed):
 
 
 def interaction(neither, a_only, b_only, both):
+    neither, a_only, b_only, both = map(comparison_view, (neither, a_only, b_only, both))
     comparable(neither, a_only, b_only, both)
     base = neither["factors"]
     a = {k for k in base if a_only["factors"][k] != base[k]}

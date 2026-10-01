@@ -192,11 +192,11 @@ class MilestoneTests(unittest.TestCase):
         self.assertEqual((report["passed"], report["total"], report["solved"]), (1, 2, False))
         self.assertEqual(report["milestones"][1]["status"], "not_run")
 
-    def test_final_assembly_regression_prevents_success_and_uses_recorded_commit(self):
+    def test_final_evaluation_regression_prevents_success_and_uses_recorded_commit(self):
         repo, bench, tasks, (base, _, _) = self.records()
         (repo / "source.py").write_text("value = 3\n")
         assembled = self.commit(repo)
-        receipt = repo.parent / "scb-check/after_assembly/result.json"
+        receipt = repo.parent / "scb-check/after_implementation/result.json"
         receipt.parent.mkdir(parents=True)
         sm.write_json(receipt, {"status": "completed", "commit": assembled})
         (repo / "source.py").write_text("value = 4\n")
@@ -228,7 +228,7 @@ class MilestoneTests(unittest.TestCase):
     def test_identical_final_commit_reuses_verdict_and_ungraded_tasks_stay_ungraded(self):
         repo, bench, tasks, (base, _, last) = self.records()
         tasks[0]["graded"] = False
-        receipt = repo.parent / "scb-check/after_assembly/result.json"
+        receipt = repo.parent / "scb-check/after_implementation/result.json"
         receipt.parent.mkdir(parents=True)
         sm.write_json(receipt, {"status": "completed", "commit": last})
         prepared = self.root / "prepared"

@@ -116,7 +116,7 @@ class ContextRecoveryTests(unittest.TestCase):
         self.assertEqual([params["threadId"] for _, params in provider.requests], ["thread"] * 3)
         starts = [params for method, params in provider.requests if method == "turn/start"]
         self.assertEqual([value["input"][0]["text"] for value in starts], [original, RECOVERY_PROMPT])
-        self.assertEqual(starts[0]["sandboxPolicy"], starts[1]["sandboxPolicy"])
+        self.assertEqual(starts[0]["permissions"], starts[1]["permissions"])
         self.assertIn("do not replay completed commands or accepted edits", RECOVERY_PROMPT)
         self.assertEqual(provider.usage.raw, 310)
         self.assertTrue(provider.report()["measurement_complete"])

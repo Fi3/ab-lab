@@ -10,10 +10,15 @@ import subprocess
 import time
 import tempfile
 import re
+from contextlib import contextmanager
+from contextvars import ContextVar
+
+from .environment import clean_env
 
 MAX_FINAL_BYTES = 4 * 1024 * 1024
 COMMAND_SECONDS = 300
 OUTPUT_CHARS = 12000
+_GIT_EXECUTION = ContextVar("agent_lab_git_execution", default=None)
 
 
 class Rejected(Exception):
@@ -34,13 +39,39 @@ def digest(data):
     return hashlib.sha256(data).hexdigest()
 
 
-def git(repo, *args):
-    env = dict(os.environ, GIT_OPTIONAL_LOCKS="0")
-    result = subprocess.run(["git", "-C", str(repo), *args], stdout=subprocess.PIPE,
-                            stderr=subprocess.PIPE, env=env, check=False)
-    if result.returncode:
-        raise Fatal(f"git {args[0]} failed ({result.returncode}): {result.stderr.decode(errors='replace')}")
-    return result.stdout
+@contextmanager
+def git_execution(repo, command_argv, env, deadline):
+    """Keep Git callbacks from an agent-owned checkout inside its sandbox."""
+    token = _GIT_EXECUTION.set((Path(repo).resolve(), command_argv, dict(env), deadline))
+    try:
+        yield
+    finally:
+        _GIT_EXECUTION.reset(token)
+
+
+def git(repo, *args, input=None, extra_env=None):
+    argv = ["git", "-C", str(repo), *args]
+    env, seconds = clean_env(), 30
+    execution = _GIT_EXECUTION.get()
+    if execution is not None and Path(repo).resolve() == execution[0]:
+        _, wrap, env, deadline = execution
+        argv = wrap(argv)
+        seconds = min(seconds, deadline - time.monotonic())
+    env = dict(clean_env(env), GIT_OPTIONAL_LOCKS="0", **(extra_env or {}))
+    # Git may launch hooks, clean filters or fsmonitor commands. Terminate their
+    # process group as well as Git when the command or workflow deadline ends.
+    with tempfile.TemporaryDirectory(prefix="agent-lab-git-") as directory:
+        folder = Path(directory)
+        incoming = folder / "stdin" if input is not None else None
+        if incoming is not None:
+            incoming.write_bytes(input)
+        receipt = execute_child(argv, repo, incoming, folder / "stdout", folder / "stderr", seconds, env)
+        if receipt["timed_out"] or receipt["cancelled_signal"]:
+            raise Fatal(f"git {args[0]} timed out or was interrupted")
+        if receipt["exit_code"]:
+            raise Fatal(f"git {args[0]} failed ({receipt['exit_code']}): "
+                        + (folder / "stderr").read_text(errors="replace"))
+        return (folder / "stdout").read_bytes()
 
 
 def relative_path(repo, value, allow_root=False):
@@ -522,13 +553,13 @@ def plan_unified(repo, patch):
     if not patch.endswith("\n"):
         patch += "\n"
     with tempfile.TemporaryDirectory(prefix="agent-lab-index-") as directory:
-        env = dict(os.environ, GIT_INDEX_FILE=str(Path(directory) / "index"))
+        env = {"GIT_INDEX_FILE": str(Path(directory) / "index")}
 
         def run(*args, input=None):
-            result = subprocess.run(["git", "-C", str(repo), *args], input=input, env=env, capture_output=True, timeout=30)
-            if result.returncode:
-                raise Rejected(result.stderr.decode(errors="replace"))
-            return result.stdout
+            try:
+                return git(repo, *args, input=input, extra_env=env)
+            except Fatal as exc:
+                raise Rejected(str(exc)) from exc
 
         run("read-tree", "HEAD")
         run("apply", "--cached", "--check", "--whitespace=nowarn", "-", input=patch.encode())

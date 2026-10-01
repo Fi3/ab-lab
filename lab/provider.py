@@ -14,11 +14,12 @@ import uuid
 
 from .host import Fatal, save_json
 from .environment import clean_env
-from .nested import CommandEnvironment, NestedUsage
+from .nested import (CommandEnvironment, NestedUsage, PiNestedUsage, DELEGATION_POLICY,
+                     NATIVE_DELEGATION_POLICY, pi_usage_tokens as nested_pi_usage_tokens)
 from .native_usage import NativeUsage
 from .codex_children import NativeChildren
 from .pi_sandbox import PiSandbox
-from .sandbox import EXECUTION_POLICY
+from .sandbox import CommandSandbox, EXECUTION_POLICY
 from .context import AUTO_COMPACT_TOKENS, CONTEXT_POLICY, OUTPUT_SETTLE_SECONDS, OutputGuard, compaction_threshold
 from .loops import work_limit_error, WorkLimitReached
 
@@ -191,7 +192,27 @@ class ChildAccounting:
         return result
 
     def command_argv(self, argv):
+        return self.commands.sandbox.command(True, argv, protect_git=True)
+
+    def git_argv(self, argv):
         return self.commands.sandbox.command(True, argv)
+
+    def review_command_argv(self, checkout, argv):
+        sandbox = self.commands.sandbox
+        isolated = CommandSandbox(checkout, sandbox.codex,
+            blocked_paths=sandbox.blocked_paths, read_only_paths=[self.repo])
+        return isolated.command(True, argv, protect_git=True)
+
+    def verify_git_write(self):
+        # Exercise the actual native-write profile, including delegation masks,
+        # before any model request. Refresh only this workflow's clean index.
+        argv = self.sandbox.command(True, ["git", "update-index", "--refresh"])
+        receipt = subprocess.run(argv, cwd=self.repo, env=self.command_env, text=True, capture_output=True,
+                                 timeout=max(0.001, min(10, self.deadline-time.monotonic())))
+        save_json(self.artifacts / "git-write-preflight.json", {"request": argv,
+                  "response": {"exitCode": receipt.returncode, "stdout": receipt.stdout, "stderr": receipt.stderr}})
+        if receipt.returncode != 0:
+            raise Fatal("Git-write preflight failed before model generation: " + receipt.stderr)
 
     def budget_error(self):
         raw = self.observed_raw()
@@ -206,12 +227,27 @@ class ChildAccounting:
                     "measurement_complete": True, "errors": [], "incomplete": []}
         self.refresh_children(force=force)
         parents = self.accounted_threads()
-        report = self.nested.report(parents)
-        if hasattr(self, "commands"):
-            processes = self.commands.children.report()
-            report["processes"] = processes
-            report["measurement_complete"] &= processes["measurement_complete"]
-            report["errors"].extend(processes["errors"])
+        report = self.nested.report(parents, external_readers=getattr(self, "native_usage", {}))
+        pi_nested = getattr(self, "pi_nested", None)
+        if pi_nested is not None:
+            pi = pi_nested.report(force=force)
+            report["pi"] = pi
+            report["observed_raw_tokens"] += pi["observed_raw_tokens"]
+            report["cached_input_tokens"] += pi["cached_input_tokens"]
+            report["thread_totals"].update(pi["thread_totals"])
+            report["threads"].update(pi["threads"])
+            report["errors"].extend(pi["errors"])
+            report["incomplete"].extend(pi["incomplete"])
+            report["measurement_complete"] &= pi["measurement_complete"]
+        processes = getattr(getattr(self, "commands", None), "children", None)
+        if processes is not None:
+            owned = processes.report()
+            report["processes"] = owned
+            report["measurement_complete"] &= owned["measurement_complete"]
+            report["errors"].extend(owned["errors"])
+        if getattr(self, "delegation_disabled", False) and report.get("threads"):
+            report["errors"].append("agent-created model session observed despite delegation prohibition")
+            report["measurement_complete"] = False
         return report
 
     def refresh_children(self, force=False):
@@ -224,20 +260,20 @@ class ChildAccounting:
         self.settle_children()
 
     def settle_children(self):
-        if not hasattr(self, "commands"):
-            return
-        def check_budget():
-            error = self.budget_error()
-            if error:
-                raise error
-        try:
-            processes = self.commands.children.settle(check_budget)
-        except BaseException:
-            self.commands.close()
-            raise
+        processes = getattr(getattr(self, "commands", None), "children", None)
+        if processes is not None:
+            def check_budget():
+                error = self.budget_error()
+                if error:
+                    raise error
+            try:
+                processes.settle(check_budget)
+            except BaseException:
+                self.commands.close()
+                raise
         child = self.child_report(force=True)
-        if not processes["measurement_complete"] or not child["measurement_complete"]:
-            detail = processes["pending"] + processes["errors"] + child["errors"] + child["incomplete"]
+        if not child["measurement_complete"]:
+            detail = child["errors"] + child["incomplete"]
             raise Fatal("incomplete nested token measurement; no further generation: "+"; ".join(detail))
 
     def observed_raw(self):
@@ -248,7 +284,7 @@ class ChildAccounting:
 
 
 class Codex(ChildAccounting):
-    def __init__(self, repo, artifacts, model, effort, deadline, max_raw, max_turns, executable="codex", *, require_git_write=False):
+    def __init__(self, repo, artifacts, model, effort, deadline, max_raw, max_turns, executable="codex", *, require_git_write=False, allow_delegation=False):
         self.repo, self.artifacts = Path(repo), Path(artifacts)
         self.artifacts.mkdir(parents=True, exist_ok=False)
         self.deadline, self.max_raw, self.max_turns = deadline, max_raw, max_turns
@@ -256,6 +292,7 @@ class Codex(ChildAccounting):
         self.usage, self.turns, self.missing_turns = Usage(), [], []
         self.native_usage = {}
         self.native_children = NativeChildren()
+        self.delegation_disabled = not allow_delegation
         self.context_usage = {}
         self.auto_compact_limit = AUTO_COMPACT_TOKENS
         self.counter, self.events, self.pending = 0, queue.Queue(), deque()
@@ -265,13 +302,20 @@ class Codex(ChildAccounting):
         self.process = None
         if os.environ.get("AGENT_LAB_CHILD") == "1":
             raise Fatal("recursive benchmark generation is forbidden")
-        self.commands = CommandEnvironment(self.repo, self.artifacts / "commands", model, effort, executable,
-                                           deadline=deadline)
+        self.commands = CommandEnvironment(self.repo, self.artifacts / "commands", executable,
+                                           allow_delegation=allow_delegation, deadline=deadline)
         self.command_env = self.commands.env
+        if self.commands.children is not None:
+            self.pi_nested = PiNestedUsage(self.repo, self.commands.children.folder)
         self.sandbox = self.commands.sandbox
-        self.nested = NestedUsage(self.repo, model, effort)
+        self.nested = NestedUsage(self.repo, model, effort,
+            sessions=self.commands.native_state.sessions['codex'] if allow_delegation else None,
+            allow_model_variation=allow_delegation,
+            calls=self.commands.children.folder if allow_delegation else None)
         self.parent_threads = set()
-        argv = [self.commands.executable, "--disable", "apps", "-c", 'forced_login_method="chatgpt"',
+        restrictions = (["--disable", "apps", "--disable", "multi_agent", "--disable", "multi_agent_v2"]
+                        if self.delegation_disabled else [])
+        argv = [self.commands.executable, *restrictions, "-c", 'forced_login_method="chatgpt"',
                 "-c", 'model_provider="openai"', "-c", 'model='+json.dumps(model),
                 "-c", 'model_reasoning_effort='+json.dumps(effort),
                 *self.commands.config_arguments(),
@@ -289,8 +333,10 @@ class Codex(ChildAccounting):
             if (account.get("account") or {}).get("type") != "chatgpt":
                 raise Fatal("existing ChatGPT subscription login required; no API fallback")
             config = self.rpc("config/read", {"includeLayers": False}).get("config", {})
+            if self.delegation_disabled:
+                self.verify_delegation_disabled(config)
             configured_limit = config.get("model_auto_compact_token_limit")
-            if type(configured_limit) is int and configured_limit > 0:
+            if self.delegation_disabled and type(configured_limit) is int and configured_limit > 0:
                 self.auto_compact_limit = min(configured_limit, AUTO_COMPACT_TOKENS)
             if config.get("model_provider", "openai") != "openai" or config.get("forced_login_method") != "chatgpt":
                 raise Fatal("effective provider/login configuration does not match subscription-only policy")
@@ -298,14 +344,18 @@ class Codex(ChildAccounting):
             if provider.get("base_url") or provider.get("env_key") or provider.get("http_headers") or provider.get("env_http_headers"):
                 raise Fatal("custom OpenAI provider endpoint/auth configuration is not admitted")
             normalized_config = json.dumps(config, sort_keys=True).replace(str(self.artifacts.resolve()), "<RUN_PROVIDER>")
+            if self.commands.native_state is not None:
+                normalized_config = normalized_config.replace(str(self.commands.native_state.root), "<NATIVE_STATE>")
             self.identity = {"codex_version": subprocess.check_output([self.commands.executable, "--version"], text=True, env=clean_env()).strip(),
                 "auth": "chatgpt", "model": model, "effort": effort,
                 "effective_config_sha256": hashlib.sha256(normalized_config.encode()).hexdigest(),
                 "execution_policy": EXECUTION_POLICY,
                 "host_tool_transport": "native-tools-v1",
-                "context_policy": {**CONTEXT_POLICY, "auto_compact_tokens": self.auto_compact_limit,
-                                   "message_seconds": MESSAGE_SECONDS, "recovery_attempts": 1},
-                "nested_policy": "codex-owned-native-children-v3"}
+                "context_policy": ({**CONTEXT_POLICY, "auto_compact_tokens": self.auto_compact_limit,
+                                   "message_seconds": MESSAGE_SECONDS, "recovery_attempts": 1}
+                                   if self.delegation_disabled else {"mode": "harness-native"}),
+                "delegation_policy": DELEGATION_POLICY if self.delegation_disabled else NATIVE_DELEGATION_POLICY,
+                "native_configuration": self.commands.native_state.fingerprints if self.commands.native_state else None}
             save_json(self.artifacts / "provider.json", self.identity)
             if require_git_write:
                 self.verify_git_write()
@@ -391,7 +441,8 @@ class Codex(ChildAccounting):
 
     def native_child_report(self):
         children = getattr(self, "native_children", None)
-        return (children.report(getattr(self, "native_usage", {}), self.model, self.effort)
+        return (children.report(getattr(self, "native_usage", {}), self.model, self.effort,
+                               allow_model_variation=not getattr(self, "delegation_disabled", True))
                 if children else {"threads": {}, "errors": [], "pending": [],
                                   "active": False, "measurement_complete": True})
 
@@ -456,21 +507,19 @@ class Codex(ChildAccounting):
     def writable_policy(self):
         return self.sandbox.policy(True)
 
-    def verify_git_write(self):
-        # Called only for a newly cloned workflow, never by readback/doctor.
-        # Refreshing its clean index changes no source or commit history.
-        params = {"command": ["git", "update-index", "--refresh"],
-                  "cwd": str(self.repo), "sandboxPolicy": self.writable_policy(),
-                  "timeoutMs": 10000}
-        receipt = self.rpc("command/exec", params)
-        save_json(self.artifacts / "git-write-preflight.json", {"request": params, "response": receipt})
-        if receipt.get("exitCode") != 0:
-            raise Fatal("Git-write preflight failed before model generation: "+receipt.get("stderr", "unknown error"))
+    @staticmethod
+    def verify_delegation_disabled(config):
+        features = config.get("features") or {}
+        if any(features.get(name) is not False for name in ("multi_agent", "multi_agent_v2")):
+            raise Fatal("effective Codex configuration must disable multi_agent and multi_agent_v2")
 
     def start_thread(self, writable=False, tools=None, tool_handler=None):
         options = self.sandbox.thread_options(writable)
+        if getattr(self, 'delegation_disabled', True) or not writable:
+            options['config'].update({'features.multi_agent': False, 'features.multi_agent_v2': False})
         options['config']['model_reasoning_effort'] = self.effort
-        options['config']['model_auto_compact_token_limit'] = getattr(self, "auto_compact_limit", AUTO_COMPACT_TOKENS)
+        if getattr(self, 'delegation_disabled', True):
+            options['config']['model_auto_compact_token_limit'] = getattr(self, "auto_compact_limit", AUTO_COMPACT_TOKENS)
         params = {"cwd": str(self.repo), "model": self.model,
             "modelProvider": "openai", "approvalPolicy": "never",
             **options,
@@ -487,7 +536,7 @@ class Codex(ChildAccounting):
         path = thread.get("path")
         if not isinstance(path, str) or not path:
             raise Fatal("Codex did not return an owned rollout path; native token accounting is unavailable")
-        self.native_usage[thread["id"]] = NativeUsage(path, thread["id"], cwd or self.repo)
+        self.native_usage[thread["id"]] = NativeUsage(Path(path).resolve(), thread["id"], cwd or self.repo)
 
     def refresh_native_usage(self, force=False):
         if hasattr(self, "nested"):
@@ -523,6 +572,8 @@ class Codex(ChildAccounting):
         errors = [error for reader in getattr(self, "native_usage", {}).values() for error in reader.errors]
         if errors:
             raise Fatal("native token accounting failure: " + "; ".join(errors))
+        if getattr(self, "delegation_disabled", False) and self.native_children.threads:
+            raise Fatal("native subagent observed despite disabled Codex collaboration")
         child_errors = self.native_child_report()["errors"]
         if child_errors:
             raise Fatal("native child accounting failure: " + "; ".join(child_errors))
@@ -543,6 +594,10 @@ class Codex(ChildAccounting):
     def turn(self, thread, prompt, label, writable=False):
         self.settle_children()
         self.check_limits()
+        if not getattr(self, "delegation_disabled", True):
+            # Native context handling belongs to the harness. Record an actual
+            # failure without adding runner compaction or a synthetic retry.
+            return self._turn_once(thread, prompt, label, writable)
         context = getattr(self, "context_usage", {}).get(thread)
         if context:
             threshold = compaction_threshold(context["window"],
@@ -578,7 +633,7 @@ class Codex(ChildAccounting):
             row["kind"] = "compaction"
         self.turns.append(row)
         turn_id = None
-        guard = OutputGuard()
+        guard = OutputGuard() if getattr(self, "delegation_disabled", True) else None
         replies, interrupted = [], None
         priced, last_output, last_usage = False, 0.0, 0.0
         last_compaction = 0.0
@@ -590,12 +645,22 @@ class Codex(ChildAccounting):
         stop_budget = None
         tool_stop = None
         settlement = ReviewSettlement()
+        deferred_tool_results = []
         last_response_activity = 0.0
         recoverable, compacted = False, False
         compaction_items = set()
         compaction_active = False
         streaming = {}
         operation_end = min(self.deadline, time.monotonic() + 300) if compacting else self.deadline
+
+        def reply_tool(request, result):
+            self.send({"id": request["id"], "result": {"success": result["success"],
+                "contentItems": [{"type": "inputText", "text": result["text"]}]}})
+
+        def release_tool_results():
+            for request, result in deferred_tool_results:
+                reply_tool(request, result)
+            deferred_tool_results.clear()
 
         def compaction_covered():
             reader = getattr(self, "native_usage", {}).get(thread)
@@ -642,14 +707,14 @@ class Codex(ChildAccounting):
                 stream_log.write(json.dumps({"item_id": item_id, "delta": params.get("delta", "")}) + "\n")
                 stream_log.flush()
                 streaming.setdefault(item_id, now)
-                violation = guard.observe(item_id, params.get("delta", ""))
+                violation = guard.observe(item_id, params.get("delta", "")) if guard else None
             else:
                 item = params["item"]
                 text = item["text"]
                 replies.append(text)
                 item_id = item.get("id", "agent-message")
                 streaming.pop(item_id, None)
-                violation = guard.finish(item_id, text)
+                violation = guard.finish(item_id, text) if guard else None
             if violation:
                 output_rejected = True
             if violation and (stop_reason is None or (
@@ -681,7 +746,7 @@ class Codex(ChildAccounting):
             else:
                 params = {"threadId": thread, "input": [{"type": "text", "text": prompt}],
                     "model": self.model, "effort": self.effort, "approvalPolicy": "never",
-                    "sandboxPolicy": self.sandbox.policy(writable)}
+                    **self.sandbox.turn_options(writable)}
                 result = self.rpc("turn/start", params)
                 turn_id = result["turn"]["id"]
                 self.active = thread, turn_id
@@ -706,7 +771,7 @@ class Codex(ChildAccounting):
                         reason = None if waiting else "budget"
                         if waiting and failure:
                             settlement.outcome, reason = "provider_error", "provider_error"
-                        elif waiting and (row.get("output_guard", {}).get("hard_limit") or
+                        elif waiting and guard and (row.get("output_guard", {}).get("hard_limit") or
                                           (streaming and now - min(streaming.values()) >= MESSAGE_SECONDS)):
                             settlement.outcome, reason = "hard_limit", "runaway_output"
                             output_rejected = True
@@ -716,7 +781,7 @@ class Codex(ChildAccounting):
                         stop_reason, reason = "context compaction timed out", "compaction_timeout"
                     elif failure:
                         reason = "provider_error"
-                    elif not compacting and streaming and now - min(streaming.values()) >= MESSAGE_SECONDS:
+                    elif guard and not compacting and streaming and now - min(streaming.values()) >= MESSAGE_SECONDS:
                         stop_reason, reason = "agent message exceeded streaming time limit", "runaway_output"
                         output_rejected = True
                         recoverable = True
@@ -741,6 +806,7 @@ class Codex(ChildAccounting):
                         self.counter += 1
                         self.send({"id": self.counter, "method": "turn/interrupt", "params": {"threadId": thread, "turnId": turn_id}})
                         interrupted, stop_at = reason, now
+                        release_tool_results()
                 message = self.pending.popleft() if self.pending else self.incoming(0.1)
                 if message is None:
                     continue
@@ -748,26 +814,38 @@ class Codex(ChildAccounting):
                 if message.get("method") == "item/tool/call" and "id" in message:
                     owned = (params.get("threadId") == thread and params.get("turnId") == turn_id
                              and turn_id is not None and actual_tools and not compacting)
-                    if owned and interrupted is None and not stop_reason:
+                    if owned and interrupted is None and not stop_reason and settlement.error is None:
                         if params.get("namespace") is not None:
                             result = {"success": False, "text": "Unknown host tool namespace."}
                         else:
                             try:
                                 result = self.dispatch_host_tool(thread, turn_id, params.get("tool"),
                                     params.get("arguments"), params.get("callId"))
+                                error = self.budget_error()
+                                if error:
+                                    error.completed_tool_result = result
+                                    raise error
                             except WorkLimitReached as exc:
                                 tool_stop, stop_reason = exc, str(exc)
                                 result = getattr(exc, "completed_tool_result", {
                                     "success": False, "text": "Host operation stopped."})
-                                self.counter += 1
-                                self.send({"id": self.counter, "method": "turn/interrupt",
-                                    "params": {"threadId": thread, "turnId": turn_id}})
-                                interrupted, stop_at = "budget", time.monotonic()
+                                if not settlement.eligible(exc):
+                                    self.counter += 1
+                                    self.send({"id": self.counter, "method": "turn/interrupt",
+                                        "params": {"threadId": thread, "turnId": turn_id}})
+                                    interrupted, stop_at = "budget", time.monotonic()
+                                    release_tool_results()
                         row.setdefault("host_tool_calls", []).append(params.get("callId"))
                     else:
                         result = {"success": False, "text": "Host tool call is not owned by an active author turn."}
-                    self.send({"id": message["id"], "result": {"success": result["success"],
-                        "contentItems": [{"type": "inputText", "text": result["text"]}]}})
+                    if (owned and interrupted is None and
+                            (settlement.error is not None or settlement.eligible(tool_stop))):
+                        # Even a rejection lets the provider generate again.
+                        # Retain it until the current response is priced and
+                        # interruption has been sent, or the turn has ended.
+                        deferred_tool_results.append((message, result))
+                    else:
+                        reply_tool(message, result)
                     continue
                 if params.get("threadId") != thread:
                     continue
@@ -809,6 +887,7 @@ class Codex(ChildAccounting):
                     break
                 elif method == "error" and params.get("willRetry") is not True:
                     record_failure(params.get("error") or {}, "failed")
+            release_tool_results()
             # Terminal failures also drain and retain their usage before recovery.
             minimum_end = time.monotonic()+1.0
             end = minimum_end+4.0
@@ -872,7 +951,7 @@ class Codex(ChildAccounting):
             if stop_budget:
                 stop_reason, recoverable = str(stop_budget), False
             if stop_reason or failure:
-                row["recovery_eligible"] = recoverable and not compacting
+                row["recovery_eligible"] = recoverable and not compacting and guard is not None
                 if isinstance(stop_budget, WorkLimitReached) and not failure:
                     row["work_limit"] = stop_budget.signal
                     raise stop_budget
@@ -1102,17 +1181,10 @@ class PiThread:
 
 
 def pi_usage_tokens(value):
-    """Pi separates uncached input, cache reads and cache writes."""
-    if not isinstance(value, dict):
-        raise Fatal("Pi session/response usage is missing")
-    counts = (value.get("input"), value.get("output"), value.get("cacheRead", 0), value.get("cacheWrite", 0))
-    if any(type(n) is not int or n < 0 for n in counts):
-        raise Fatal("Pi session/response usage has invalid token counts")
-    for key in ("total", "totalTokens"):
-        if key in value and (type(value[key]) is not int or value[key] != sum(counts)):
-            raise Fatal("Pi session/response usage has inconsistent totals")
-    inputs, outputs, reads, writes = counts
-    return inputs + reads + writes, outputs, reads
+    try:
+        return nested_pi_usage_tokens(value)
+    except ValueError as exc:
+        raise Fatal(str(exc)) from exc
 
 
 class PiCancellationReceipts:
@@ -1168,11 +1240,12 @@ class PiCancellationReceipts:
 class Pi(ChildAccounting):
     transport = "pi-rpc-stdio"
 
-    def __init__(self, repo, artifacts, model, effort, deadline, max_raw, max_turns, executable="pi", *, require_git_write=False, codex_executable="codex"):
+    def __init__(self, repo, artifacts, model, effort, deadline, max_raw, max_turns, executable="pi", *, require_git_write=False, codex_executable="codex", allow_delegation=False):
         self.repo, self.artifacts = Path(repo).resolve(), Path(artifacts).resolve()
         self.artifacts.mkdir(parents=True, exist_ok=False)
         self.deadline, self.max_raw, self.max_turns = deadline, max_raw, max_turns
         self.model, self.effort = model or "gpt-5.5", effort
+        self.delegation_disabled = not allow_delegation
         self.usage, self.turns, self.missing_turns = Usage(), [], []
         self.threads = {}
         self.thread_counter = 0
@@ -1187,10 +1260,16 @@ class Pi(ChildAccounting):
             raise ValueError(f"Pi executable not found: {executable}")
         self.executable = str(Path(resolved).absolute())
         try:
-            self.commands = CommandEnvironment(self.repo, self.artifacts / "commands", self.model, effort,
-                                               codex_executable, deadline=deadline)
+            self.commands = CommandEnvironment(self.repo, self.artifacts / "commands", codex_executable,
+                                               pi_executable=self.executable, allow_delegation=allow_delegation,
+                                               deadline=deadline)
             self.command_env = self.commands.env
-            self.nested = NestedUsage(self.repo, self.model, effort)
+            if self.commands.children is not None:
+                self.pi_nested = PiNestedUsage(self.repo, self.commands.children.folder)
+            self.nested = NestedUsage(self.repo, self.model, effort,
+                sessions=self.commands.native_state.sessions['codex'] if allow_delegation else None,
+                allow_model_variation=allow_delegation,
+                calls=self.commands.children.folder if allow_delegation else None)
             self.parent_threads = set()
             self.sandbox = PiSandbox(self.repo, self.commands.executable, self.executable,
                                      execution=self.commands.sandbox)
@@ -1203,16 +1282,18 @@ class Pi(ChildAccounting):
 
     def _probe(self):
         version = subprocess.check_output([self.executable, "--version"], text=True, env=self.command_env, timeout=10).strip()
-        probe = self.new_thread("probe", writable=False, no_session=True)
+        probe = self.new_thread("probe", writable=not self.delegation_disabled, no_session=True)
         try:
-            self.prepare_turn(probe, False)
+            self.prepare_turn(probe, not self.delegation_disabled)
         finally:
             probe.close()
-        controls = {"pi_version": version, "model": self.model, "effort": self.effort,
+        ready = json.loads(probe.policy.with_suffix(".json.ready").read_text())
+        controls = {"native_tools": ready.get("tools", []), "pi_version": version, "model": self.model, "effort": self.effort,
                     "auth": "openai-codex", "sandbox": "codex-native-tools-v1",
                     "host_tool_transport": "native-tools-v1", "request_guard": "pre-dispatch-v1",
                     "execution_policy": EXECUTION_POLICY,
-                    "nested_policy": "same-model-subscription-supervised-native-history-v2"}
+                    "delegation_policy": DELEGATION_POLICY if self.delegation_disabled else NATIVE_DELEGATION_POLICY,
+                "native_configuration": self.commands.native_state.fingerprints if self.commands.native_state else None}
         self.identity = {
             **controls,
             "harness": "pi",
@@ -1222,19 +1303,12 @@ class Pi(ChildAccounting):
         }
         save_json(self.artifacts / "provider.json", self.identity)
 
-    def verify_git_write(self):
-        argv = self.sandbox.command(True, ["git", "update-index", "--refresh"])
-        receipt = subprocess.run(argv, cwd=self.repo, env=self.command_env, text=True, capture_output=True,
-                                 timeout=max(0.001, min(10, self.deadline-time.monotonic())))
-        save_json(self.artifacts / "git-write-preflight.json", {"request": argv,
-                  "response": {"exitCode": receipt.returncode, "stdout": receipt.stdout, "stderr": receipt.stderr}})
-        if receipt.returncode != 0:
-            raise Fatal("Git-write preflight failed before model generation: " + receipt.stderr)
-
-    def launch_arguments(self):
-        return [self.executable, "--mode", "rpc", "--approve", "--provider", "openai-codex",
-                "--model", self.model, "--thinking", self.effort, "--no-extensions",
-                "--extension", str(PiSandbox.extension), "--tools", "read,bash,edit,write"]
+    def launch_arguments(self, *, native=False):
+        argv = [self.executable, "--mode", "rpc", "--approve", "--provider", "openai-codex",
+                "--model", self.model, "--thinking", self.effort]
+        if not native:
+            argv += ["--no-extensions", "--tools", "read,bash,edit,write"]
+        return [*argv, "--extension", str(PiSandbox.extension)]
 
     def validate_state(self, response):
         data = response.get("data") or {}
@@ -1244,26 +1318,40 @@ class Pi(ChildAccounting):
             raise Fatal("Pi effective provider/model/effort differs from the benchmark; no generation")
 
     def new_thread(self, thread_id, writable=False, no_session=False, tools=None):
-        policy = self.artifacts / (thread_id + "-sandbox.json")
-        self.sandbox.configure(policy, writable, self.deadline)
-        argv = self.launch_arguments()
-        if tools:
+        native = not getattr(self, 'delegation_disabled', True) and writable
+        runtime = self.artifacts / (thread_id + "-runtime")
+        runtime.mkdir()
+        policy = runtime / "sandbox.json"
+        self.sandbox.configure(policy, writable, self.deadline, native_process=native)
+        argv = self.launch_arguments(native=native)
+        if tools and not native:
             tool_index = argv.index("--tools") + 1
             argv[tool_index] += "," + ",".join(tool["name"] for tool in tools)
+        session_dir = self.sessions_dir / thread_id
         if no_session:
             argv += ["--no-session"]
         else:
-            session_dir = self.sessions_dir / thread_id
             session_dir.mkdir()
             argv += ["--session-dir", str(session_dir)]
+        nonce = str(uuid.uuid4())
         env = {**self.command_env, "AGENT_LAB_PI_MODULE": self.sandbox.module,
                "AGENT_LAB_PI_POLICY": str(policy), "AGENT_LAB_PI_THREAD_ID": thread_id,
-               "AGENT_LAB_PI_REQUEST_JOURNAL": str(self.artifacts / (thread_id + "-requests.jsonl"))}
+               "AGENT_LAB_PI_NONCE": nonce,
+               "AGENT_LAB_PI_REQUEST_JOURNAL": str(runtime / "requests.jsonl")}
         if tools:
             definitions = self.artifacts / (thread_id + "-host-tools.json")
             env["AGENT_LAB_PI_HOST_TOOLS"] = str(definitions)
+        if native:
+            execution = self.commands.sandbox
+            # Extension code and tools run in the same OS boundary as the
+            # harness. Runtime/session files are the only additional writes.
+            process_sandbox = CommandSandbox(self.repo, execution.codex,
+                [*execution.roots, runtime, session_dir], blocked_paths=execution.blocked_paths,
+                read_only_paths=execution.read_only_paths)
+            argv = process_sandbox.command(True, argv)
         th = PiThread(thread_id, argv, self.repo, env, self.stderr, self.record, host_tools=tools)
-        th.policy = policy
+        th.policy, th.native_process, th.nonce = policy, native, nonce
+        th.request_journal = Path(env["AGENT_LAB_PI_REQUEST_JOURNAL"])
         return th
 
     def prepare_turn(self, thread, writable):
@@ -1271,9 +1359,9 @@ class Pi(ChildAccounting):
         self.validate_state(state)
         ready = thread.policy.with_suffix(".json.ready")
         receipt = json.loads(ready.read_text()) if ready.is_file() else {}
-        if receipt.get("pid") != thread.process.pid or receipt.get("request_guard") != "pre-dispatch-v1":
+        if receipt.get("nonce") != thread.nonce or receipt.get("request_guard") != "pre-dispatch-v1":
             raise Fatal("Pi sandbox extension did not load; refusing unsandboxed generation")
-        self.sandbox.configure(thread.policy, writable, self.deadline)
+        self.sandbox.configure(thread.policy, writable, self.deadline, native_process=thread.native_process)
 
     def record(self, direction, event):
         self.log.write(json.dumps({"time": time.time(), "direction": direction, "event": event}) + "\n")
@@ -1309,7 +1397,7 @@ class Pi(ChildAccounting):
         staged = th.policy.with_name(th.policy.name + ".next")
         staged.write_text(json.dumps(policy))
         staged.replace(th.policy)
-        cancellations = PiCancellationReceipts(self.artifacts / (thread + "-requests.jsonl"), thread, turn_id)
+        cancellations = PiCancellationReceipts(self.threads[thread].request_journal, thread, turn_id)
         before_raw = sum(self.usage.totals.get(thread, (0, 0, 0))[:2])
         counted_messages = set()
         replies, interrupted = [], None
@@ -1318,8 +1406,15 @@ class Pi(ChildAccounting):
         stop_budget = None
         tool_stop = None
         settlement = ReviewSettlement()
+        deferred_tool_results = []
         last_response_activity = 0.0
         buffered = None
+
+        def release_tool_results():
+            for call_id, result in deferred_tool_results:
+                th.host_result(call_id, result)
+            deferred_tool_results.clear()
+
         try:
             th.send({"id": turn_id, "type": "prompt", "message": prompt})
             while True:
@@ -1349,20 +1444,31 @@ class Pi(ChildAccounting):
                 if message.get("type") == "lab_host_tool_call":
                     owned = (actual_tools and message.get("threadId") == thread
                              and message.get("turnId") == turn_id)
-                    if owned and interrupted is None and not stop_reason:
+                    if owned and interrupted is None and not stop_reason and settlement.error is None:
                         try:
                             result = self.dispatch_host_tool(thread, turn_id, message.get("tool"),
                                 message.get("arguments"), message.get("callId"))
+                            error = self.budget_error()
+                            if error:
+                                error.completed_tool_result = result
+                                raise error
                         except WorkLimitReached as exc:
                             tool_stop, stop_reason = exc, str(exc)
                             result = getattr(exc, "completed_tool_result", {
                                 "success": False, "text": "Host operation stopped."})
-                            th.send({"type": "abort"})
-                            interrupted, stop_at = "budget", time.monotonic()
+                            if not settlement.eligible(exc):
+                                th.send({"type": "abort"})
+                                interrupted, stop_at = "budget", time.monotonic()
                         row.setdefault("host_tool_calls", []).append(message.get("callId"))
                     else:
                         result = {"success": False, "text": "Host tool call is not owned by an active author turn."}
-                    th.host_result(message.get("callId"), result)
+                    if owned and (settlement.error is not None or settlement.eligible(tool_stop)):
+                        # Abort and host replies use different pipes. Wait for
+                        # agent_settled before releasing a reply that could
+                        # otherwise win that race and start another response.
+                        deferred_tool_results.append((message.get("callId"), result))
+                    else:
+                        th.host_result(message.get("callId"), result)
                     continue
                 if message.get("type") == "extension_ui_request":
                     th.send({"type": "extension_ui_response", "id": message.get("id"), "cancelled": True})
@@ -1399,6 +1505,7 @@ class Pi(ChildAccounting):
                     row.update(status="interrupted" if interrupted else "failed" if stop_reason else "completed", interrupt_reason=interrupted)
                     break
 
+            release_tool_results()
             before_stats = self.usage.totals.get(thread, (0, 0, 0))
             stats = th.rpc({"type": "get_session_stats"}, timeout=5)
             if not isinstance(stats, dict) or not stats.get("success") or not isinstance(stats.get("data"), dict):

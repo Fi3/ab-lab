@@ -114,7 +114,7 @@ class SummaryTests(unittest.TestCase):
         checkpoint = next(line for line in section.splitlines() if 'checkpoint_2' in line)
         self.assertEqual([value.strip() for value in checkpoint.split('|')[1:-1]],
                          ['run-001', 'checkpoint_2', 'failed', 'fail', 'pass', 'fail', '9/12'])
-        self.assertIn('Final assembly', section)
+        self.assertIn('Final evaluation', section)
         self.assertNotIn('Verbosity', section)
 
     def test_slopcodebench_incomplete_results_keep_unknowns_and_optional_quality(self):

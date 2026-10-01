@@ -1,6 +1,6 @@
 """Opt-in real Codex check of priced settlement after an expired review deadline.
 
-One fresh, benign, tool-free review gets a one-second exploration allowance.
+One fresh, benign review gets a one-second exploration allowance.
 The expired review must remain stopped while its in-flight response settles.
 This verifies cancellation/accounting, not benchmark completion or solution grade.
 No prior conversation, failed request, benchmark source, or benchmark prompt is used.
@@ -18,7 +18,7 @@ sys.path.insert(0, str(ROOT))
 from lab.host import git, save_json, snapshot
 from lab.loops import FeatureProgress, POLICY_VERSION, WorkLimitReached, loop_policy
 from lab.provider import Codex
-from lab.review import parse_review, review_instructions
+from lab.review import REVIEW_TOOLS, ReviewTools, review_instructions
 from lab.workflow import source_hashes
 from real_compaction import native_receipts, save_native_receipts
 
@@ -95,7 +95,7 @@ class IntervalIndex:
 '''
 PROMPT = (
     "Independently review the complete source below. All evidence needed for this "
-    "bounded review is inline. Do not use tools, run commands, read additional files, "
+    "bounded review is inline. Use only submit_review; do not run commands, read additional files, "
     "edit anything, or delegate. Do not emit progress narration; give only your final "
     "supported review using the format below. The requirements are: accept finite "
     "iterables of half-open integer intervals; reject a reversed interval; ignore empty "
@@ -116,7 +116,7 @@ def sha256(value):
     return hashlib.sha256(value).hexdigest()
 
 
-def verify_transport(provider, row, output):
+def verify_transport(provider, row, output, prompt):
     records = [json.loads(line) for line in
                (provider.artifacts / "transport.jsonl").read_text().splitlines()]
     starts = [record for record in records
@@ -127,11 +127,11 @@ def verify_transport(provider, row, output):
     assert request["threadId"] == row["thread_id"]
     assert request["model"] == MODEL and request["effort"] == EFFORT
     assert request["approvalPolicy"] == "never"
-    assert request["sandboxPolicy"] == provider.sandbox.policy(False)
-    assert request["input"] == [{"type": "text", "text": PROMPT}]
+    assert request["permissions"] == provider.sandbox.profile(False)
+    assert request["input"] == [{"type": "text", "text": prompt}]
     assert "outputSchema" not in request, "review was incorrectly treated as a host operation"
     prompt_file = Path(row["prompt_file"])
-    assert prompt_file.read_text() == PROMPT, "retained prompt differs from wire request"
+    assert prompt_file.read_text() == prompt, "retained prompt differs from wire request"
     owned = []
     for record in records:
         event = record["event"]
@@ -141,7 +141,7 @@ def verify_transport(provider, row, output):
             owned.append(record)
     item_types = {record["event"]["params"]["item"]["type"] for record in owned
                   if record["event"].get("method") in ("item/started", "item/completed")}
-    assert item_types <= {"userMessage", "agentMessage", "reasoning"}, "unexpected native tool activity"
+    assert item_types <= {"userMessage", "agentMessage", "reasoning", "dynamicToolCall"}, "unexpected native tool activity"
     assert "reasoning" in item_types, "fixture did not exercise in-flight reasoning"
     assert not any(record["event"].get("method") == "thread/compact/start" for record in records)
     assert not any(record["event"].get("method") == "error" for record in owned), "provider error is not settlement success"
@@ -159,7 +159,7 @@ def verify_transport(provider, row, output):
     completed = [record for record in owned if record["event"].get("method") == "turn/completed"]
     assert len(completed) == 1 and completed[0]["event"]["params"]["turn"].get("error") is None
     assert completed[0]["event"]["params"]["turn"]["status"] in ("completed", "interrupted")
-    result = {"prompt_sha256": sha256(PROMPT.encode()), "prompt_file": str(prompt_file),
+    result = {"prompt_sha256": sha256(prompt.encode()), "prompt_file": str(prompt_file),
               "turn_start_requests": 1, "interrupt_requests": len(interrupts),
               "first_numeric_receipt_after_request_seconds": first_price_seconds,
               "turn_completed_after_request_seconds": completed[0]["time"] - start["time"],
@@ -215,12 +215,15 @@ def main():
         initial = snapshot(repo)
         provider = Codex(repo, output / "provider", MODEL, EFFORT,
                          started + SECONDS, MAX_RAW, MAX_TURNS)
-        thread = provider.start_thread()
+        reviews = ReviewTools(output / "reviews")
+        review_id = reviews.begin("review-settlement-verification", initial["head"])
+        thread = provider.start_thread(tools=[REVIEW_TOOLS[0]], tool_handler=reviews.execute)
         progress = FeatureProgress({"id": "review-settlement-verification"}, policy, 0)
         provider.work_limits = progress.limits(0, reviewing=True)
         save_json(output / "work-limits.json", provider.work_limits)
+        prompt = PROMPT + "\nReview target: " + review_id
         try:
-            provider.turn(thread, PROMPT, "review-settlement-verification")
+            provider.turn(thread, prompt, "review-settlement-verification")
         except WorkLimitReached as stopped:
             assert type(stopped) is WorkLimitReached, "review cap must remain a hard stop"
             assert stopped.signal["reason"] == "review_time_limit"
@@ -241,19 +244,13 @@ def main():
         assert not row.get("recovery_eligible", False)
         assert not row.get("output_guard"), "output rejection was mistaken for review settlement"
         assert not (output / "provider/turn-0001/host-operation.txt").exists()
-        result["transport"] = verify_transport(provider, row, output)
+        result["transport"] = verify_transport(provider, row, output, prompt)
         result["settlement"] = settlement
-        reply = (output / "provider/turn-0001/reply.txt").read_text()
-        if reply.strip():
-            try:
-                decision = parse_review(reply)
-            except ValueError:
-                result["retained_reply_has_valid_review_format"] = False
-            else:
-                result["retained_reply_has_valid_review_format"] = True
-                result["retained_verdict_eligible"] = False
-                result["retained_verdict_marker"] = reply.splitlines()[0].strip()
-                result["retained_findings_count"] = len(decision["blocking_findings"]) + len(decision["advisory_findings"])
+        if reviews.decision is not None:
+            decision = reviews.decision
+            result["retained_structured_verdict"] = decision
+            result["retained_verdict_eligible"] = False
+            result["retained_findings_count"] = len(decision["blocking_findings"]) + len(decision["advisory_findings"])
         assert snapshot(repo) == initial, "review altered fixture source or Git state"
         assert source_hashes() == source, "runner changed during verification"
         assert sha256(Path(__file__).read_bytes()) == script_hash, "verifier changed during execution"

@@ -5,8 +5,21 @@ import tempfile
 import unittest
 
 from lab.config import settings
-from lab.workflow import run, review_clean, compare, interaction
+from lab.workflow import run, compare, interaction
+from lab.review import validate_review
 from test_core import repo_at
+
+
+def verdict(text=None, priority="P2", *, incomplete_reason=None):
+    return {"status": "incomplete" if incomplete_reason is not None else "complete",
+            "findings": [] if text is None else [{"priority": priority, "text": text}],
+            "incomplete_reason": incomplete_reason}
+
+
+def review_arguments(prompt, value):
+    review_id = next(line.removeprefix("Review target: ") for line in prompt.splitlines()
+                     if line.startswith("Review target: "))
+    return {"review_id": review_id, **value}
 
 
 class FakeCodex:
@@ -14,6 +27,7 @@ class FakeCodex:
 
     def __init__(self, repo, artifacts, *args, **kwargs):
         self.repo = Path(repo)
+        self.options = kwargs
         self.artifacts = Path(artifacts)
         self.artifacts.mkdir()
         self.identity = {"codex_version": "test", "auth": "chatgpt", "model": "test", "effort": "test", "effective_config_sha256": "test"}
@@ -29,8 +43,15 @@ class FakeCodex:
             self.tool_handlers[thread] = tool_handler
         return thread
 
+    def review_command_argv(self, checkout, argv):
+        return argv
+
     def tool_call(self, thread, name, arguments, call_id):
         return self.tool_handlers[thread](name, arguments, f"{thread}:{call_id}")
+
+    def submit_review(self, thread, prompt, label, value=None):
+        self.tool_call(thread, "submit_review", review_arguments(prompt, verdict() if value is None else value), label + "-verdict")
+        return "Review submitted."
 
     def turn(self, thread, prompt, label, **kwargs):
         self.calls.append((label, thread, prompt, kwargs))
@@ -40,22 +61,11 @@ class FakeCodex:
             self.tool_call(thread, "host_edit", {"patch": patch}, label)
             return "Implemented."
         if "-review-" in label:
-            return "FINDINGS\n- [P2] Change one.py value to 2" if label == "one-review-1" else "NO_FINDINGS"
+            return self.submit_review(thread, prompt, label, verdict("Change one.py value to 2") if label == "one-review-1" else verdict())
         if "-fix-" in label:
             patch = "*** Begin Patch\n*** Update File: one.py\n@@\n-value = 1\n+value = 2\n*** End Patch\n"
             self.tool_call(thread, "host_edit", {"patch": patch}, label)
             return "Repaired."
-        if label == "integration-plan":
-            return "One final commit for each feature, with its tests and repairs."
-        if label == "integration-accept":
-            base = subprocess.check_output(["git", "-C", str(self.repo), "rev-list", "--max-parents=0", "HEAD"], text=True).strip()
-            # Tests rewrite only their own disposable clone.
-            subprocess.run(["git", "-C", str(self.repo), "reset", "--soft", base], check=True)
-            subprocess.run(["git", "-C", str(self.repo), "reset"], check=True, capture_output=True)
-            for name in ("one", "two"):
-                subprocess.run(["git", "-C", str(self.repo), "add", name+".py"], check=True)
-                subprocess.run(["git", "-C", str(self.repo), "commit", "-qm", "ADD "+name], check=True)
-            return "Finished"
         raise AssertionError(label)
 
     def report(self):
@@ -66,7 +76,7 @@ class FakeCodex:
 
 
 class WorkflowTests(unittest.TestCase):
-    def test_two_features_review_repair_same_threads_then_integrate(self):
+    def test_two_features_review_repair_same_threads_without_integration(self):
         with tempfile.TemporaryDirectory() as directory:
             root = Path(directory)
             repo = repo_at(root / "input")
@@ -78,12 +88,13 @@ class WorkflowTests(unittest.TestCase):
             self.assertEqual(result["status"], "passed", result)
             calls = FakeCodex.instances[-1].calls
             unique = list(dict.fromkeys(c[0] for c in calls))
-            self.assertEqual(unique, ["one-implement", "one-review-1", "one-fix-1", "one-review-2", "two-implement", "two-review-1", "integration-plan", "integration-accept"])
+            self.assertEqual(unique, ["one-implement", "one-review-1", "one-fix-1", "one-review-2", "two-implement", "two-review-1"])
             threads = {label: thread for label, thread, _, _ in calls}
             self.assertEqual(threads["one-implement"], threads["one-fix-1"])
             self.assertEqual(threads["one-review-1"], threads["one-review-2"])
-            self.assertEqual(threads["integration-plan"], threads["integration-accept"])
             self.assertNotEqual(threads["one-implement"], threads["one-review-1"])
+            self.assertEqual(len(result["final_commits"]), 3)
+            self.assertEqual(result["final_commits"][-1], result["checkpoints"][-1]["head"])
             self.assertEqual(initial, subprocess.check_output(["git", "-C", str(repo), "rev-parse", "HEAD"]))
             self.assertFalse((repo / "one.py").exists())
             with self.assertRaises(FileExistsError):
@@ -131,9 +142,7 @@ class WorkflowTests(unittest.TestCase):
                     self.tool_call(thread, "host_edit", {"patch": corrected}, label+"-corrected")
                     return "Implemented."
                 if label == "one-review-1":
-                    return "NO_FINDINGS"
-                if label == "integration-accept":
-                    return "Already two feature commits plus one fixture commit"
+                    return self.submit_review(thread, prompt, label)
                 return super().turn(thread, prompt, label, **kwargs)
 
         with tempfile.TemporaryDirectory() as directory:
@@ -143,9 +152,8 @@ class WorkflowTests(unittest.TestCase):
                 "features": [{"id": "one", "request": "implement one"}, {"id": "two", "request": "implement two"}],
                 "checks": ["true"],
                 "after_read": {"path": "source.py", "command": "printf 'peer\\nmiddle\\nlast\\n' > source.py"}}
-            # Final integration intentionally fails its commit-count gate in this
-            # fixture; the real author loop must still have exercised C08 first.
             result = run(benchmark, settings({}), root / "run", 30, 10000, 30, backend=ConflictCodex)
+            self.assertEqual(result["status"], "passed", result)
             self.assertEqual(len(ConflictCodex.feedback), 1, result)
             self.assertIn("+peer", ConflictCodex.feedback[0])
             events = (root / "run" / "one-host" / "events.jsonl").read_text()
@@ -156,12 +164,20 @@ class WorkflowTests(unittest.TestCase):
             self.assertEqual(len(ConflictCodex.feedback), 2, other)
             self.assertIn("Current complete file:\npeer\nmiddle\nlast", ConflictCodex.feedback[1])
 
-    def test_ambiguous_or_missing_review_marker_is_not_success(self):
-        self.assertTrue(review_clean("NO_FINDINGS\nLooks good."))
-        self.assertFalse(review_clean("FINDINGS\n- [P2] Broken"))
-        for text in ("probably okay", "NO_FINDINGS\nFINDINGS\n- Oops"):
-            with self.assertRaises(ValueError):
-                review_clean(text)
+    def test_final_prose_is_never_a_review_verdict(self):
+        class Prose(FakeCodex):
+            def turn(self, thread, prompt, label, **options):
+                if "-review-" in label:
+                    return "NO_FINDINGS"
+                return super().turn(thread, prompt, label, **options)
+        with tempfile.TemporaryDirectory() as directory:
+            root = Path(directory)
+            bench = {"name": "prose", "repo": str(repo_at(root / "input")), "revision": "HEAD",
+                     "features": [{"id": "one", "request": "create one"}], "checks": ["true"]}
+            result = run(bench, settings({}), root / "run", 30, 10000, 20, backend=Prose)
+            self.assertEqual(result["status"], "needs_attention", result)
+            self.assertIsNone(result["reviews"][0]["approved"])
+            self.assertIn("without an accepted submit_review", result["reviews"][0]["incomplete_reason"])
 
 
 class ComparisonTests(unittest.TestCase):

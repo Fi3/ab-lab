@@ -16,7 +16,7 @@ from lab.loops import FeatureProgress, WorkLimitReached, loop_policy, work_limit
 from lab.summary import records, render
 from lab.workflow import run
 from test_core import repo_at
-from test_workflow import FakeCodex
+from test_workflow import FakeCodex, verdict
 from test_batch import worker_at
 
 
@@ -27,7 +27,7 @@ def edit(value, previous=None):
 
 
 def finding(text):
-    return "FINDINGS\n- [P2] " + text
+    return verdict(text)
 
 
 class Scripted(FakeCodex):
@@ -40,13 +40,13 @@ class Scripted(FakeCodex):
 
     def turn(self, thread, prompt, label, **kwargs):
         self.calls.append((label, thread, prompt, kwargs))
-        if label.startswith("integration-"):
-            return "Keep all reviewed commits."
         while self.pending_script[label]:
             action = self.pending_script[label].pop(0)
             reply, charge = action if isinstance(action, tuple) else (action, 10)
             self.raw += charge
             reply = reply(self.repo) if callable(reply) else reply
+            if isinstance(reply, dict) and "status" in reply:
+                return self.submit_review(thread, prompt, label, reply)
             if isinstance(reply, dict):
                 error = work_limit_error(self.work_limits, self.raw)
                 if error:
@@ -75,7 +75,7 @@ class LoopWorkflowTests(unittest.TestCase):
         Backend.script = script
         options = {} if max_review_loops is None else {"max_review_loops": max_review_loops}
         result = run(self.benchmark, settings(factors or {}), self.root / name, 60, 10000000, 100,
-                     backend=Backend, skip_linearization=True, loop_options=policy, **options)
+                     backend=Backend, loop_options=policy, **options)
         return result, Backend.instances[-1]
 
     def assert_attention(self, result, reason):
@@ -124,12 +124,12 @@ class LoopWorkflowTests(unittest.TestCase):
             script[f"one-fix-{round_number}"] = [edit(round_number + 1, round_number), "Finished."]
         self.benchmark["features"].append({"id": "two", "request": "Set one.py to 5."})
         script["two-implement"] = [edit(5, 4), "Finished."]
-        script["two-review-1"] = ["NO_FINDINGS"]
+        script["two-review-1"] = [verdict()]
         result, backend = self.execute(script)
         self.assertEqual(result["loop_flags"], [])
         self.assertEqual([call[0] for call in backend.calls], [
             "one-implement", "one-review-1", "one-fix-1", "one-review-2", "one-fix-2",
-            "one-review-3", "one-fix-3", "two-implement", "two-review-1", "integration-plan", "integration-accept"])
+            "one-review-3", "one-fix-3", "two-implement", "two-review-1"])
         self.assertEqual(result["checkpoints"][0]["review_rounds"], 3)
         self.assertIsNone(result["checkpoints"][0]["review_approved"])
         self.assertIsNone(result["checkpoints"][0]["reviewed_head"])
@@ -141,7 +141,7 @@ class LoopWorkflowTests(unittest.TestCase):
         for round_number in range(1, 5):
             script[f"one-review-{round_number}"] = [finding(f"Distinct defect {round_number}")]
             script[f"one-fix-{round_number}"] = [edit(round_number + 1, round_number), "Finished."]
-        script["one-review-5"] = ["NO_FINDINGS"]
+        script["one-review-5"] = [verdict()]
         result, backend = self.execute(script, max_review_loops=5)
         self.assertEqual(result["status"], "passed", result)
         self.assertEqual(result["loop_flags"], [])
@@ -153,7 +153,7 @@ class LoopWorkflowTests(unittest.TestCase):
     def test_approval_on_last_allowed_review_finishes_without_another_repair(self):
         result, _ = self.execute({"one-implement": [edit(1), "Finished."],
                                   "one-review-1": [finding("Wrong value")],
-                                  "one-fix-1": [edit(2, 1), "Finished."], "one-review-2": ["NO_FINDINGS"]},
+                                  "one-fix-1": [edit(2, 1), "Finished."], "one-review-2": [verdict()]},
                                  max_review_loops=2)
         self.assertEqual(result["status"], "passed", result)
         self.assertEqual(result["loop_flags"], [])
@@ -162,7 +162,7 @@ class LoopWorkflowTests(unittest.TestCase):
         result, backend = self.execute({"one-implement": [edit(1), "Finished."]}, max_review_loops=0)
         self.assertEqual(result["reviews"], [])
         self.assertEqual(result["loop_flags"], [])
-        self.assertEqual([call[0] for call in backend.calls], ["one-implement", "integration-plan", "integration-accept"])
+        self.assertEqual([call[0] for call in backend.calls], ["one-implement"])
         self.assertEqual(result["checkpoints"][0]["review_rounds"], 0)
         self.assertIsNone(result["checkpoints"][0]["review_approved"])
         self.assertIsNone(result["checkpoints"][0]["reviewed_head"])
@@ -177,7 +177,7 @@ class LoopWorkflowTests(unittest.TestCase):
         self.assertEqual(result["checkpoints"][0]["review_rounds"], 1)
         self.assertIsNone(result["checkpoints"][0]["review_approved"])
         self.assertEqual([call[0] for call in backend.calls], [
-            "one-implement", "one-review-1", "one-fix-1", "integration-plan", "integration-accept"])
+            "one-implement", "one-review-1", "one-fix-1"])
         self.assertEqual((backend.repo / "one.py").read_text(), "value = 2\n")
 
     def test_default_review_and_repair_finish_after_old_stage_token_limits(self):
@@ -185,7 +185,7 @@ class LoopWorkflowTests(unittest.TestCase):
             "one-implement": [(edit(1), 2_600_000), "Finished."],
             "one-review-1": [(finding("Wrong value"), 600_000)],
             "one-fix-1": [edit(2, 1), "Finished."],
-            "one-review-2": [("NO_FINDINGS", 600_000)],
+            "one-review-2": [(verdict(), 600_000)],
         })
         self.assertEqual(result["status"], "passed", result)
         self.assertEqual(result["loop_flags"], [])
@@ -196,7 +196,7 @@ class LoopWorkflowTests(unittest.TestCase):
 
     def test_checkpoint_token_budget_stops_before_host_executes_over_budget_proposal(self):
         result, backend = self.execute({"one-implement": [(edit(1), 300), (edit(2, 1), 600)],
-                                        "one-review-1": [("NO_FINDINGS", 50)]},
+                                        "one-review-1": [(verdict(), 50)]},
                                        policy={"max_feature_raw": 1000, "max_review_raw": 200})
         self.assertEqual(result["status"], "passed", result)
         self.assertEqual(result["loop_flags"][0]["reason"], "feature_token_limit")
@@ -214,7 +214,7 @@ class LoopWorkflowTests(unittest.TestCase):
 
     def test_feature_budget_has_precedence_over_review_threshold(self):
         result, backend = self.execute({"one-implement": [edit(1), "Finished."],
-                                       "one-review-1": [("NO_FINDINGS", 1000)]},
+                                       "one-review-1": [(verdict(), 1000)]},
                                       policy={"max_feature_raw": 1000, "max_review_raw": 200})
         self.assert_attention(result, "feature_token_limit")
         self.assertNotIn("review_wrapups", result)
@@ -222,7 +222,7 @@ class LoopWorkflowTests(unittest.TestCase):
 
     def test_review_can_finish_using_feature_reserve_without_another_review(self):
         result, _ = self.execute({"one-implement": [(edit(1), 700), "Finished."],
-                                 "one-review-1": [("NO_FINDINGS", 190)]},
+                                 "one-review-1": [(verdict(), 190)]},
                                 policy={"max_feature_raw": 1000, "max_review_raw": 200})
         self.assertEqual(result["status"], "passed", result)
         self.assertEqual(result["usage"]["observed_raw_tokens"], 900)
@@ -251,7 +251,7 @@ class LoopWorkflowTests(unittest.TestCase):
         result, _ = self.execute({"one-implement": [edit(1), "Finished."],
                                  "one-review-1": [finding("Defect")],
                                  "one-fix-1": [(edit(2, 1), 200), ({"name": "host_read", "arguments": {"path": "one.py"}}, 650)],
-                                 "one-review-2": ["NO_FINDINGS"]},
+                                 "one-review-2": [verdict()]},
                                 policy={"max_feature_raw": 1000, "max_review_raw": 200})
         self.assertEqual(result["status"], "passed", result)
         self.assertTrue(result["loop_flags"][0]["review_approved"])
@@ -280,7 +280,7 @@ class LoopWorkflowTests(unittest.TestCase):
 
     def test_final_review_has_its_own_limit_and_is_not_retried(self):
         result, backend = self.execute({"one-implement": [edit(1)] + [{"name": "host_edit", "arguments": {"patch": "invalid"}}] * 3,
-                                        "one-review-1": [("NO_FINDINGS", 210)]},
+                                        "one-review-1": [(verdict(), 210)]},
                                        policy={"max_feature_raw": 1000, "max_review_raw": 200})
         self.assert_attention(result, "repeated_operations")
         self.assertEqual(result["attention"]["final_review"]["reason"], "review_token_limit")
@@ -309,7 +309,7 @@ class LoopWorkflowTests(unittest.TestCase):
         result, _ = self.execute({"one-implement": [edit(1), {"name": "host_read", "arguments": {"path": "one.py"}}, edit(2, 1),
                                                     {"name": "host_read", "arguments": {"path": "one.py"}}, edit(3, 2),
                                                     {"name": "host_read", "arguments": {"path": "one.py"}}, "Finished."],
-                                  "one-review-1": ["NO_FINDINGS"]})
+                                  "one-review-1": [verdict()]})
         self.assertEqual(result["status"], "passed", result)
         self.assertEqual(result["loop_flags"], [])
 
@@ -326,7 +326,7 @@ class LoopWorkflowTests(unittest.TestCase):
 
     def test_disabled_policy_changes_comparison_key(self):
         script = {"one-implement": [edit(1)] + [{"name": "host_read", "arguments": {"path": "one.py"}}] * 4 + ["Finished."],
-                  "one-review-1": ["NO_FINDINGS"]}
+                  "one-review-1": [verdict()]}
         disabled, backend = self.execute(script, policy={"enabled": False}, name="disabled")
         enabled, _ = self.execute(script, name="enabled")
         self.assertEqual(disabled["status"], "passed", disabled)

@@ -1,16 +1,14 @@
 # Code-quality measurements
 
 `scb-check` is an external, local source-code analyzer. Each command-line
-benchmark run records its results before work begins, after all feature
-implementation/review/repair cycles, and after final assembly. It requires no
-model, network request or API credit while measuring source.
+benchmark run records its results before work begins and after all configured
+implementation/review/repair cycles. It requires no model, network request or
+API credit while measuring source.
 
-The author/reviewer loop and final integration prompts stay unchanged. Scores
-are observations for the operator, not advice or extra tasks for the agents.
-The middle checkpoint is once for the whole feature set, not after every edit
-or individual feature. Final assembly includes integration's documentation and
-repairs. Its measurement runs before the runner's independent final checks, so
-a later failing test does not discard the quality report of that assembled code.
+Scores are observations for the operator, not advice or extra tasks for the
+agents. The final measurement runs before deterministic final checks. A later
+failing check does not discard that quality report. SlopCodeBench also records
+per-checkpoint measurements. There is no integration agent or assembly stage.
 
 ## Installation and command
 
@@ -75,7 +73,6 @@ The object records the tool identity and these named measurements:
 ```text
 scb_check.measurements.before_changes
 scb_check.measurements.after_implementation
-scb_check.measurements.after_assembly
 ```
 
 Each contains its status, timestamp, commit, source-tree ID, exact command,
@@ -86,7 +83,6 @@ live beside the agent records, outside the measured checkout:
 RUN/scb-check/tool/                         version command and identity
 RUN/scb-check/before_changes/               stdout.json, stderr.txt, result.json
 RUN/scb-check/after_implementation/         stdout.json, stderr.txt, result.json
-RUN/scb-check/after_assembly/               stdout.json, stderr.txt, result.json
 ```
 
 Exit codes 0 and 1 both represent a completed measurement: 1 means findings
@@ -106,10 +102,7 @@ generation and preserves usage already incurred.
 The checker settings and identity are part of the comparison key, so scored and
 unscored workflows cannot silently form a matched token comparison. Existing
 results without scores remain unchanged and show `scb_check: null` in `report`.
-Explicit saved-author continuation retains the original before-changes result
-and checks the tool identity; it never labels already-implemented source as the
-untouched starting point. It does not repeat the completed author.
-
-For Python callers, the backward-compatible `lab.workflow.run` function enables
-the same three measurements with `scb_check="/path/to/scb-check"`; omitting that
-keyword retains the older unscored library behavior. The CLI always supplies it.
+For Python callers, `lab.workflow.run` enables the same two measurements with
+`scb_check="/path/to/scb-check"`; omitting it disables quality measurements. The
+CLI always supplies it. Historical after-assembly measurements remain evidence
+of those older runs, but do not describe current workflow stages.

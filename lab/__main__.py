@@ -37,9 +37,7 @@ def review_loops(value):
 
 
 def factors_from(args):
-    result = {} if args.preset == "all" else {"C08": False}
-    if args.preset == "native":
-        result["C17"] = False
+    result = {} if args.preset == "all" else dict.fromkeys(FACTORS, False)
     on, off = set(filter(None, args.on.split(","))), set(filter(None, args.off.split(",")))
     if on & off:
         raise ValueError("a factor cannot be both --on and --off")
@@ -60,17 +58,15 @@ def main():
         p.add_argument("--off", default="", help="comma-separated C identifiers")
         p.add_argument("--model", default=None)
         p.add_argument("--effort", choices=("minimal", "low", "medium", "high", "xhigh"), default="xhigh")
-        p.add_argument("--skip-linearization", action="store_true",
-                       help="preserve existing commits; keep final documentation, repairs and checks")
         p.add_argument("--review-priorities", type=review_priorities, default=DEFAULT_PRIORITIES,
                        metavar="P0,P1,P2",
                        help="comma-separated review priorities that require repairs (P0 through P3; default: P0,P1,P2)")
-        p.add_argument("--max-review-loops", type=review_loops, default=DEFAULT_MAX_REVIEW_LOOPS,
-                       metavar="N", help="maximum reviews per feature; repair blocking findings after each review, then continue (default: 3; 0 disables review)")
+        p.add_argument("--max-review-loops", type=review_loops, default=None,
+                       metavar="N", help="maximum reviews per feature; repair blocking findings after each review, then continue (default: 3 for all, 0 for native; 0 disables review)")
         progress = p.add_mutually_exclusive_group()
         progress.add_argument("--loop-policy", type=Path, help="JSON overrides for external feature/review limits and loop detection")
         progress.add_argument("--no-loop-detection", action="store_true", help="disable feature stopping rules; retain review allowance and global run limits")
-        p.add_argument("--scb-check", default="scb-check", help="scb-check executable; required for the three quality measurements")
+        p.add_argument("--scb-check", default="scb-check", help="scb-check executable for source quality measurements")
         p.add_argument("--scb-seconds", type=float, default=300, help="maximum seconds per quality measurement, within the workflow deadline")
         if name == "plan":
             p.add_argument("--harness", choices=("codex", "pi"), default="codex", help="agent harness: codex or pi")
@@ -106,20 +102,21 @@ def main():
             value = {key: dict(zip(("description", "on", "off"), meaning)) for key, meaning in FACTORS.items()}
         elif args.command in ("run", "plan"):
             benchmark, factors = load_benchmark(args.benchmark), factors_from(args)
-            progress_policy = loop_policy({"enabled": False} if args.no_loop_detection else
-                                          json.loads(args.loop_policy.read_text()) if args.loop_policy else None)
+            if args.max_review_loops is None:
+                args.max_review_loops = 0 if args.preset == "native" else DEFAULT_MAX_REVIEW_LOOPS
+            progress_policy = loop_policy(json.loads(args.loop_policy.read_text()) if args.loop_policy else
+                                          {"enabled": False} if args.no_loop_detection or args.preset == "native" else None)
             if args.command == "plan":
                 harness = getattr(args, "harness", "codex")
                 model = args.model or "gpt-5.5"
-                value = {"benchmark": benchmark, "factors": factors, "model": model, "effort": args.effort,
-                         "skip_linearization": args.skip_linearization,
+                value = {"benchmark": benchmark, "factors": factors, "preset": args.preset, "model": model, "effort": args.effort,
                          "review_priorities": list(args.review_priorities),
                          "max_review_loops": args.max_review_loops,
                          "loop_policy": progress_policy,
                          "loop_policy_version": POLICY_VERSION, "workflow_version": WORKFLOW_VERSION,
                          "author_policy": author_policy(factors), "generation": "none",
                          "scb_check": {"executable": args.scb_check, "seconds_per_check": args.scb_seconds,
-                                       "phases": ["before_changes", "after_implementation", "after_assembly"]}}
+                                       "phases": ["before_changes", "after_implementation"]}}
             else:
                 if args.harness == "pi":
                     backend = Pi
@@ -135,15 +132,15 @@ def main():
                         seconds=args.seconds, max_raw=args.max_raw, max_turns=args.max_turns,
                         model=model, effort=args.effort, executable=executable, harness=args.harness,
                         scb_check=args.scb_check, scb_seconds=args.scb_seconds, child_codex=args.codex,
-                        skip_linearization=args.skip_linearization, review_priorities=args.review_priorities,
-                        max_review_loops=args.max_review_loops,
+                        review_priorities=args.review_priorities,
+                        max_review_loops=args.max_review_loops, preset=args.preset,
                         loop_options=progress_policy)
                 else:
                     value = run(benchmark, factors, args.out, args.seconds, args.max_raw, args.max_turns,
                                 model, args.effort, executable, backend=backend, harness=args.harness,
                                 scb_check=args.scb_check, scb_seconds=args.scb_seconds, child_codex=args.codex,
-                                skip_linearization=args.skip_linearization, review_priorities=args.review_priorities,
-                                max_review_loops=args.max_review_loops,
+                                review_priorities=args.review_priorities,
+                                max_review_loops=args.max_review_loops, preset=args.preset,
                                 loop_options=progress_policy)
         elif args.command == "doctor":
             harness = getattr(args, "harness", "codex")
@@ -169,9 +166,7 @@ def main():
             elif args.command == "interaction":
                 value = interaction(*(read(p) for p in args.results))
             else:
-                value = [{**r, "path": str(Path(r['output'])/'result.json') if r.get('output') else str(p),
-                          "scb_check": r.get("scb_check"), "error": r.get("error")}
-                         for p in args.results for r in records(read(p))]
+                value = [r for p in args.results for r in records(read(p))]
         print(json.dumps(value, indent=2))
         return 1 if isinstance(value, dict) and value.get("status") in ("failed", "needs_attention") else 0
     except (OSError, ValueError, RuntimeError, Fatal) as exc:

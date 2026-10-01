@@ -17,7 +17,7 @@ from test_workflow import FakeCodex
 
 
 class NoChangeTests(unittest.TestCase):
-    def test_existing_feature_is_reviewed_and_gets_verification_commit(self):
+    def test_existing_feature_is_reviewed_without_an_empty_commit(self):
         class Existing(FakeCodex):
             def turn(self, thread, prompt, label, **options):
                 self.calls.append((label, thread, prompt, options))
@@ -25,9 +25,7 @@ class NoChangeTests(unittest.TestCase):
                     return 'The requested behavior is already implemented.'
                 if '-review-' in label:
                     self.assertion = 'requested behavior is already satisfied' in prompt
-                    return 'NO_FINDINGS'
-                if label == 'integration-accept':
-                    git(self.repo, 'commit', '--allow-empty', '-qm', 'UPDATE Verify the existing feature meets its request')
+                    return self.submit_review(thread, prompt, label)
                 return 'Verified'
         with tempfile.TemporaryDirectory() as directory:
             root = Path(directory)
@@ -42,6 +40,7 @@ class NoChangeTests(unittest.TestCase):
                 self.assertTrue(Existing.instances[-1].assertion)
                 self.assertTrue(result['checkpoints'][0]['already_satisfied'])
                 self.assertEqual(result['checkpoints'][0]['review_rounds'], 1)
+                self.assertEqual(result['final_commits'], [])
 
     def test_empty_initial_diff_does_not_skip_findings_and_repair(self):
         class Rejected(FakeCodex):
@@ -226,24 +225,58 @@ class NestedTests(unittest.TestCase):
                 reply = HostTools(host).execute("host_run", {"command": "test -z \"$OPENAI_API_KEY$CODEX_API_KEY\""}, "credentials")
             self.assertTrue(reply['success'], reply)
 
-    def test_wrapper_pins_subscription_and_model_and_rejects_overrides(self):
-        from lab.nested import pinned_arguments
-        config = {'executable': '/usr/bin/codex', 'model': 'gpt-5.5', 'effort': 'xhigh', 'repo': '/tmp/owned'}
-        args = pinned_arguments(config, ['exec', 'resume', '--json', 'thread', '-'])
-        self.assertIn('forced_login_method="chatgpt"', args)
-        self.assertIn('model="gpt-5.5"', args)
-        self.assertIn('model_reasoning_effort="xhigh"', args)
-        self.assertEqual(args[-5:], ['exec', 'resume', '--json', 'thread', '-'])
-        for override in (['--model', 'wrong'], ['-c', 'model_provider="other"'],
-                         ['-cmodel_reasoning_effort="low"'], ['--profile', 'other'], ['--oss']):
-            with self.assertRaises(ValueError):
-                pinned_arguments(config, override+['exec', '-'])
+    def test_codex_and_pi_launchers_deny_before_running_any_model(self):
+        from lab.nested import CommandEnvironment
+        with tempfile.TemporaryDirectory() as directory:
+            root = Path(directory)
+            executable = root / '@openai/codex/bin/codex.js'
+            executable.parent.mkdir(parents=True)
+            (executable.parent.parent / 'package.json').write_text('{"name":"@openai/codex"}')
+            executable.write_text('#!/bin/sh\ntouch ' + str(root / 'started') + '\n')
+            executable.chmod(0o755)
+            guard = CommandEnvironment(root, root / 'commands', str(executable))
+            for harness in ('codex', 'pi'):
+                for arguments in ([], ['exec', '-'], ['review'], ['--version']):
+                    with self.subTest(harness=harness, arguments=arguments):
+                        result = subprocess.run([str(guard.bin / harness), *arguments],
+                            cwd=root, env=guard.env, input='request', text=True, capture_output=True, timeout=5)
+                        self.assertEqual(result.returncode, 126)
+                        self.assertIn('Agent-created model sessions are disabled', result.stderr)
+                        self.assertEqual(result.stdout, '')
+            self.assertFalse((root / 'started').exists())
+
+    def test_delegation_paths_protect_auth_and_real_cli_without_hiding_pi_sdk(self):
+        from lab.nested import delegation_paths
+        with tempfile.TemporaryDirectory() as directory:
+            root = Path(directory)
+            codex = root / '@openai/codex'
+            (codex / 'bin').mkdir(parents=True)
+            (codex / 'package.json').write_text('{"name":"@openai/codex"}')
+            (codex / 'bin/codex.js').write_text('#!/usr/bin/env node\n')
+            platform = root / '@openai/codex-linux-x64'
+            platform.mkdir()
+            pi = root / 'pi/dist/bundle/cli.js'
+            pi.parent.mkdir(parents=True)
+            pi.write_text('#!/usr/bin/env node\n')
+            (root / 'pi/package.json').write_text('{"name":"@earendil-works/pi-coding-agent","main":"dist/index.js"}')
+            for path in (codex / 'bin/codex.js', pi):
+                path.chmod(0o755)
+            link = root / 'codex'
+            link.symlink_to(codex / 'bin/codex.js')
+            with patch.dict(os.environ, {'CODEX_HOME': str(root / 'codex-state'),
+                                        'PI_CODING_AGENT_DIR': str(root / 'pi-state')}):
+                blocked = set(delegation_paths(str(link), str(pi)))
+            self.assertTrue({str(codex / 'bin'), str(pi.parent), str(root / 'codex-state'),
+                             str(root / 'pi-state')} <= blocked)
+            self.assertNotIn(str(codex), blocked)
+            self.assertNotIn(str(platform), blocked)
+            self.assertNotIn(str(pi.parent.parent), blocked)
 
     def test_login_shell_still_resolves_run_local_wrapper(self):
         from lab.nested import CommandEnvironment
         with tempfile.TemporaryDirectory() as directory:
             root = Path(directory)
-            guard = CommandEnvironment(root, root / 'commands', 'gpt-5.5', 'xhigh', '/bin/true')
+            guard = CommandEnvironment(root, root / 'commands', '/bin/true')
             reply = subprocess.check_output(['/bin/bash', '-lc', 'command -v codex'], env=guard.env, text=True)
             self.assertEqual(reply.strip(), str(guard.bin / 'codex'))
 
@@ -281,7 +314,7 @@ class NestedTests(unittest.TestCase):
             previous = root / 'prior-hook.sh'
             previous.write_text('export OPENAI_API_KEY=not-a-real-key\n')
             with patch.dict(os.environ, {'BASH_ENV': str(previous)}):
-                guard = CommandEnvironment(root, root / 'commands', 'gpt-5.5', 'xhigh', '/bin/true')
+                guard = CommandEnvironment(root, root / 'commands', '/bin/true')
             result = subprocess.run(['/bin/bash', '-c', 'test -z "$OPENAI_API_KEY$CODEX_API_KEY"'], env=guard.env)
             self.assertEqual(result.returncode, 0)
 

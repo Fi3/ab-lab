@@ -51,7 +51,7 @@ console.log(JSON.stringify(await execute(policy, request)));
     def test_read_only_native_read_works_but_write_edit_and_shell_write_fail(self):
         self.assertEqual(self.tool('read', {'path': 'source.txt'})['type'], 'result')
         for name, args in (('write', {'path': 'source.txt', 'content': 'bad'}),
-                           ('edit', {'path': 'source.txt', 'oldText': 'before', 'newText': 'bad'}),
+                           ('edit', {'path': 'source.txt', 'edits': [{'oldText': 'before', 'newText': 'bad'}]}),
                            ('bash', {'command': 'echo bad > source.txt'})):
             with self.subTest(name=name):
                 self.assertEqual(self.tool(name, args)['type'], 'error')
@@ -71,6 +71,25 @@ console.log(JSON.stringify(await execute(policy, request)));
             with self.subTest(writable=writable):
                 result = self.tool('bash', {'command': command}, writable)
                 self.assertEqual(result['type'], 'result', result)
+
+    def test_read_only_tools_can_build_in_scratch_without_editing_submission(self):
+        command = """python3 - <<'PY'
+from pathlib import Path
+import tempfile
+with tempfile.TemporaryDirectory() as directory:
+    output = Path(directory, 'build')
+    output.mkdir()
+    (output / 'result').write_text('ok')
+try:
+    Path('source.txt').write_text('bad')
+except OSError:
+    pass
+else:
+    raise AssertionError('submission changed')
+PY"""
+        event = self.bridge_tool('bash', {'command': command})
+        self.assertEqual(event['type'], 'result', event)
+        self.assertEqual((self.repo / 'source.txt').read_text(), 'before\n')
 
     def bridge_tool(self, name, args, writable=False, deadline=None):
         script = """import {readFileSync} from 'node:fs';

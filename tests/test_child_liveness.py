@@ -15,6 +15,9 @@ from lab.nested import CommandEnvironment
 
 class ChildLivenessTests(unittest.TestCase):
     def setUp(self):
+        paths = patch('lab.nested.delegation_paths', return_value=[])
+        paths.start()
+        self.addCleanup(paths.stop)
         directory = tempfile.TemporaryDirectory()
         self.addCleanup(directory.cleanup)
         self.root = Path(directory.name)
@@ -122,8 +125,8 @@ class ChildLivenessTests(unittest.TestCase):
             'print("partial child output", flush=True)\n'
             'os.kill(os.getppid(), signal.SIGKILL)\n')
         executable.chmod(0o755)
-        commands = CommandEnvironment(self.root, self.root / 'commands', 'test', 'test',
-            str(executable), deadline=time.monotonic()+21600)
+        commands = CommandEnvironment(self.root, self.root / 'commands', str(executable),
+            allow_delegation=True, deadline=time.monotonic()+21600)
         self.addCleanup(commands.close)
         result = subprocess.run([str(commands.bin / 'codex'), 'exec', '-'],
             cwd=self.root, env=commands.env, input='', capture_output=True, text=True, timeout=5)

@@ -5,6 +5,8 @@ import math
 from pathlib import Path
 import re
 
+from .exclude_integration import comparison_view
+
 
 def records(value):
     if isinstance(value, dict) and 'results' in value:
@@ -104,7 +106,7 @@ def slopcodebench_tables(names, rows):
         boundaries = {item.get('feature'): item for item in row.get('checkpoints', [])}
         measurements = [(item.get('feature'), item) for item in checkpoints] if isinstance(checkpoints, list) else []
         if isinstance(final, dict):
-            measurements.append(('Final assembly', final))
+            measurements.append(('Final evaluation', final))
         for checkpoint, item in measurements:
             boundary = boundaries.get(checkpoint, {})
             review = item if 'review_approved' in item else boundary
@@ -171,6 +173,9 @@ def render(rows):
             if identity in seen:
                 raise ValueError('duplicate run: '+identity+'; supply the batch OR its individual results, not both')
             seen.add(identity)
+    originals = rows
+    rows = [comparison_view(row) for row in originals]
+    corrected = any(row is not original for row, original in zip(rows, originals))
     names = [label(row, index) for index, row in enumerate(rows)]
     duplicates = Counter(names)
     names = [str(row.get('output') or row.get('path') or name) if duplicates[name] > 1 else name
@@ -197,10 +202,33 @@ def render(rows):
             values.insert(2, row.get('execution_status', '—'))
         main_rows.append(values)
     headers = ['Run', 'Result', 'Raw tokens', 'Cached input', 'Usage', 'Time', 'Reviewed features', 'Checks']
+    if corrected:
+        headers[2] = 'Comparison raw tokens'
     if execution_present:
         headers.insert(2, 'Execution')
     lines += [table(headers, main_rows), '',
               'Reviewed features counts reviewer approvals, not independent feature acceptance tests.', '']
+    if corrected:
+        audit_rows = []
+        for name, original in zip(names, originals):
+            audit = original.get('integration_exclusion') or {}
+            if audit.get('status') in (None, 'not_applicable'):
+                continue
+            audit_rows.append([name, original['status'], number(original['usage'].get('observed_raw_tokens')),
+                number((audit.get('excluded_usage') or {}).get('observed_raw_tokens')),
+                duration(original.get('duration_seconds')), audit.get('status')])
+        lines += ['Historical integration exclusion:', '',
+                  table(['Run', 'Original result', 'Actually consumed raw tokens', 'Integration excluded',
+                         'Original time', 'Correction'], audit_rows), '',
+                  'Comparison figures exclude integration where the saved evidence permits it; actual consumption is unchanged.',
+                  'Pre-integration time and final runner checks are unavailable. Final evaluation reuses the verified last checkpoint.',
+                  'This correction does not turn historical runs into a native-harness baseline.', '']
+        for name, original in zip(names, originals):
+            audit = original.get('integration_exclusion') or {}
+            for key in ('usage_reason', 'outcome_reason'):
+                if audit.get(key):
+                    lines.append(f'- {cell(name)}: {cell(audit[key])}')
+        lines.append('')
     configurations = [enabled(row) for row in rows]
     if len(set(configurations)) == 1:
         lines += ['Enabled switches: '+cell(configurations[0])+'.', '']
@@ -209,7 +237,8 @@ def render(rows):
 
     known = [value for row in rows if (value := count(row['usage'].get('observed_raw_tokens'))) is not None]
     if known:
-        lines.append(f'Observed raw tokens: {sum(known):,} ({len(known)}/{len(rows)} runs reported a number).')
+        prefix = 'Comparison raw tokens' if corrected else 'Observed raw tokens'
+        lines.append(f'{prefix}: {sum(known):,} ({len(known)}/{len(rows)} runs reported a number).')
     eligible = [row for row in rows if row['status'] == 'passed' and
                 row['usage'].get('measurement_complete') is True and count(row['usage'].get('observed_raw_tokens')) is not None]
     keys = {(row.get('comparison_key'), json.dumps(row.get('factors'), sort_keys=True)) for row in eligible}
@@ -238,6 +267,8 @@ def render(rows):
             measurements = (row.get('scb_check') or {}).get('measurements', {})
             for phase, title in (('before_changes', 'Before edits'), ('after_implementation', 'After implementation'),
                                  ('after_assembly', 'After assembly')):
+                if phase == 'after_assembly' and phase not in measurements:
+                    continue
                 measurement = measurements.get(phase, {})
                 report = measurement.get('report') or {}
                 values = []

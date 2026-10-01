@@ -10,7 +10,7 @@ import time
 from .environment import clean_env
 from .host import Fatal, execute_child, git, save_json, snapshot
 
-PHASES = ("before_changes", "after_implementation", "after_assembly")
+PHASES = ("before_changes", "after_implementation")
 
 
 def pending():

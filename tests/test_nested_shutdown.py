@@ -17,6 +17,11 @@ from tests import test_provider as stream
 
 
 class NestedShutdownTests(unittest.TestCase):
+    def setUp(self):
+        paths = patch('lab.nested.delegation_paths', return_value=[])
+        paths.start()
+        self.addCleanup(paths.stop)
+
     def test_next_parent_response_waits_for_the_nested_completion(self):
         helper = stream.StreamTests()
         self.addCleanup(helper.doCleanups)
@@ -51,8 +56,8 @@ class NestedShutdownTests(unittest.TestCase):
         executable = root / 'fake-codex'
         executable.write_text('#!'+sys.executable+'\n'+body)
         executable.chmod(0o755)
-        guard = CommandEnvironment(root, root / 'commands', 'gpt-5.5', 'xhigh', str(executable),
-                                   deadline=time.monotonic()+seconds)
+        guard = CommandEnvironment(root, root / 'commands', str(executable),
+                                   allow_delegation=True, deadline=time.monotonic()+seconds)
         self.addCleanup(guard.close)
         return root, guard
 
@@ -70,8 +75,8 @@ class NestedShutdownTests(unittest.TestCase):
         self.assertEqual(reply['stdin'], 'original prompt\n')
         self.assertEqual(reply['cwd'], str(root))
         self.assertIsNone(reply['key'])
-        self.assertIn('model="gpt-5.5"', reply['argv'])
-        self.assertIn('forced_login_method="chatgpt"', reply['argv'])
+        self.assertNotIn('model="gpt-5.5"', reply['argv'])
+        self.assertNotIn('forced_login_method="chatgpt"', reply['argv'])
         self.assertEqual(len(guard.children.report()['completed']), 1)
 
     def test_deadline_stops_child_and_is_not_reported_complete(self):
@@ -82,6 +87,45 @@ class NestedShutdownTests(unittest.TestCase):
         report = guard.children.report()
         self.assertFalse(report['measurement_complete'])
         self.assertTrue(next(iter(report['completed'].values()))['timed_out'])
+
+    def test_pi_child_keeps_arguments_and_records_owned_session_directory(self):
+        root, guard = self.guard('import json, sys\nprint(json.dumps(sys.argv[1:]))\n')
+        config = root / 'commands/codex-settings.json'
+        settings = json.loads(config.read_text())
+        settings['harness'] = 'pi'
+        config.write_text(json.dumps(settings))
+        result = subprocess.run([str(guard.bin/'codex'), '--no-session',
+            '--session-dir', str(root/'unowned'), '--model', 'child-model',
+            '--', '--no-session'], cwd=root, env=guard.env, input='',
+            text=True, capture_output=True, timeout=5)
+        self.assertEqual(result.returncode, 0, result.stderr)
+        folder = next(p for p in guard.children.folder.iterdir() if p.is_dir())
+        self.assertEqual(json.loads(result.stdout), ['--session-dir', str(folder/'sessions'),
+            '--model', 'child-model', '--', '--no-session'])
+        request = json.loads((folder/'request.json').read_text())
+        self.assertEqual(request['harness'], 'pi')
+        self.assertEqual(request['session_dir'], str(folder/'sessions'))
+        self.assertTrue((folder/'sessions').is_dir())
+
+    def test_codex_cli_receipts_have_private_per_call_state(self):
+        root, guard = self.guard('import json, os, sys\n'
+            'print(json.dumps({"home": os.environ["CODEX_HOME"], "argv": sys.argv[1:]}))\n')
+        homes = []
+        for _ in range(2):
+            result = subprocess.run([str(guard.bin/'codex'), 'exec', '--ephemeral',
+                '--model', 'child-model', '--', '--ephemeral'], cwd=root, env=guard.env,
+                input='', text=True, capture_output=True, timeout=5)
+            self.assertEqual(result.returncode, 0, result.stderr)
+            reply = json.loads(result.stdout)
+            homes.append(reply['home'])
+            self.assertEqual(reply['argv'], ['exec', '--model', 'child-model', '--', '--ephemeral'])
+        self.assertEqual(len(set(homes)), 2)
+        requests = [json.loads((p/'request.json').read_text())
+                    for p in guard.children.folder.iterdir() if p.is_dir()]
+        self.assertEqual({p['environment']['CODEX_HOME'] for p in requests}, set(homes))
+        for request in requests:
+            self.assertEqual((Path(request['environment']['CODEX_HOME'])/'sessions').resolve(),
+                             Path(request['session_dir']))
 
     def test_closed_output_pipe_does_not_discard_saved_usage(self):
         root, guard = self.guard('import time\nprint("started", flush=True)\ntime.sleep(0.2)\n'
@@ -144,7 +188,7 @@ class NestedShutdownTests(unittest.TestCase):
         folder = guard.children.folder/'call-delayed'
         folder.mkdir()
         (folder/'request.json').write_text(json.dumps({'argv': ['/bin/true'], 'cwd': str(root),
-            'owner_pid': os.getpid(), 'deadline': time.monotonic()+10}))
+            'owner_lock': str(guard.children.folder/'owner.lock'), 'deadline': time.monotonic()+10}))
         (guard.children.folder/'cancel').touch()
         with patch('lab.child_process.subprocess.Popen', side_effect=AssertionError('late launch')) as spawn:
             supervise(folder)
@@ -163,7 +207,8 @@ class NestedShutdownTests(unittest.TestCase):
                 'Path("completed").write_text("priced")\n'
                 'print(\'{"type":"turn.completed","usage":{"input_tokens":10,"output_tokens":2}}\', flush=True)\n')
             executable.chmod(0o755)
-            guard = CommandEnvironment(root, root / 'commands', 'gpt-5.5', 'xhigh', str(executable))
+            guard = CommandEnvironment(root, root / 'commands', str(executable),
+                                       allow_delegation=True, deadline=time.monotonic()+10)
             caller = subprocess.Popen([str(guard.bin / 'codex'), 'exec', '--json', '-'],
                 cwd=root, env=guard.env, stdin=subprocess.DEVNULL,
                 stdout=subprocess.PIPE, stderr=subprocess.PIPE, start_new_session=True)

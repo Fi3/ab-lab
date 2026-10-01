@@ -1,5 +1,4 @@
 """Every test route uses the provider's command sandbox, including final checks."""
-from contextlib import ExitStack
 import json
 import os
 from pathlib import Path
@@ -10,13 +9,11 @@ import sys
 import tempfile
 import time
 import unittest
-from unittest.mock import patch
 
 from lab.config import settings
 from lab.workflow import run
 from lab.host import Host, git
 from lab.host_tools import HostTools
-from lab.nested import CommandEnvironment
 from test_core import repo_at
 from test_workflow import FakeCodex
 
@@ -54,71 +51,134 @@ class ExecutionPermissionTests(unittest.TestCase):
             self.assertFalse((repo / 'forbidden').exists())
 
     @unittest.skipUnless(shutil.which('codex'), 'local Codex sandbox required')
-    def test_child_supervisor_can_observe_owner_across_sandbox_pid_namespace(self):
+    def test_host_commands_write_source_and_build_but_cannot_modify_git(self):
         from lab.sandbox import CommandSandbox
-        with tempfile.TemporaryDirectory() as directory, ExitStack() as cleanup:
+        with tempfile.TemporaryDirectory(dir=Path(__file__).resolve().parents[1]) as directory:
             root = Path(directory)
             repo = repo_at(root / 'checkout')
-            fake = root / 'fake-codex'
-            fake.write_text('#!' + sys.executable + '\nprint("CHILD_OK")\n')
-            fake.chmod(0o755)
-            commands = CommandEnvironment(repo, root / 'commands', 'test', 'test', str(fake))
-            cleanup.callback(commands.close)
-            sandbox = CommandSandbox(repo, shutil.which('codex'), [commands.children.folder])
-            result = subprocess.run(sandbox.command(True, [str(commands.bin / 'codex'), 'exec', '-']),
-                cwd=repo, env=commands.env, input='', text=True, capture_output=True, timeout=10)
-            self.assertEqual(result.returncode, 0, commands.children.report())
-            self.assertEqual(result.stdout.strip(), 'CHILD_OK')
-            self.assertTrue(commands.children.settle()['measurement_complete'])
-            # Simulate loss of the runner without a graceful cancel file.
-            commands.children.owner_lock.close()
-            stopped = subprocess.run(sandbox.command(True, [str(commands.bin / 'codex'), 'exec', '-']),
-                cwd=repo, env=commands.env, input='', text=True, capture_output=True, timeout=10)
-            self.assertNotEqual(stopped.returncode, 0)
-            self.assertNotIn('CHILD_OK', stopped.stdout)
-            self.assertTrue(any(r.get('cancelled') for r in commands.children.report()['completed'].values()))
-
-    @unittest.skipUnless(shutil.which('codex'), 'local Codex sandbox required')
-    def test_host_checks_allow_network_build_and_child_state_but_not_sibling_writes(self):
-        # Outside /tmp, which is an intentional writable scratch root.
-        with tempfile.TemporaryDirectory(dir=Path(__file__).resolve().parents[1]) as directory, ExitStack() as cleanup:
-            root = Path(directory)
-            repo = repo_at(root / 'checkout')
-            (repo / '.gitignore').write_text('build/\n')
-            git(repo, 'add', '.gitignore')
-            git(repo, 'commit', '-qm', 'ignore build output')
-            state = root / 'codex-state'
-            state.mkdir()
-            with patch.dict(os.environ, {'CODEX_HOME': str(state)}):
-                commands = CommandEnvironment(repo, root / 'commands', 'test', 'test', 'codex')
-            cleanup.callback(commands.close)
+            sandbox = CommandSandbox(repo, shutil.which('codex'))
             probe = '\n'.join([
-                'import errno,pathlib,socket',
-                's=socket.socket(); s.bind(("127.0.0.1",0)); s.listen()',
-                'c=socket.create_connection(s.getsockname()); a,_=s.accept()',
-                'a.sendall(b"ok"); assert c.recv(2)==b"ok"',
-                'pathlib.Path("build").mkdir(exist_ok=True)',
+                'import errno,pathlib,subprocess,tempfile',
+                'index_before = pathlib.Path(".git/index").read_bytes()',
+                'config_before = pathlib.Path(".git/config").read_bytes()',
+                'pathlib.Path("source.py").write_text("changed\\n")',
+                'pathlib.Path("build").mkdir()',
                 'pathlib.Path("build/result").write_text("ok")',
-                f'pathlib.Path({str(state / "runtime")!r}).write_text("ok")',
-                f'pathlib.Path({str(commands.children.folder / "probe")!r}).write_text("ok")',
-                'try: pathlib.Path("../outside").write_text("bad")',
-                'except OSError as e: assert e.errno in (errno.EACCES, errno.EPERM, errno.EROFS)',
-                'else: raise AssertionError("sibling write allowed")',
+                'assert subprocess.run(["git", "diff", "--quiet"]).returncode == 1',
+                'for command in (["git","add","source.py"],',
+                '                ["git","config","user.name","unauthorized"],',
+                '                ["git","update-ref","refs/heads/unauthorized","HEAD"]):',
+                '    assert subprocess.run(command, capture_output=True).returncode != 0, command',
+                'for path in (".git/config", "../outside"):',
+                '    try: pathlib.Path(path).write_text("bad")',
+                '    except OSError as e: assert e.errno in (errno.EACCES, errno.EPERM, errno.EROFS)',
+                '    else: raise AssertionError("forbidden write allowed: "+path)',
+                'for action in (lambda: pathlib.Path(".git/config").unlink(),',
+                '               lambda: pathlib.Path(".git/config").rename(".git/config.backup"),',
+                '               lambda: pathlib.Path(".git").rename("moved-git")):',
+                '    try: action()',
+                '    except OSError: pass',
+                '    else: raise AssertionError("Git unlink or rename allowed")',
+                'assert pathlib.Path(".git/index").read_bytes() == index_before',
+                'assert pathlib.Path(".git/config").read_bytes() == config_before',
+                'with tempfile.TemporaryDirectory() as scratch:',
+                '    pathlib.Path(scratch, "result").write_text("ok")',
             ])
+            config = (repo / '.git/config').read_bytes()
             host = Host(repo, root / 'host', 'probe', 'author', time.monotonic()+20, settings({}),
-                command_env=commands.env, command_argv=lambda argv: commands.sandbox.command(True, argv))
+                command_argv=lambda argv: sandbox.command(True, argv, protect_git=True))
             reply = HostTools(host).execute('host_run', {'command': shlex.join([sys.executable, '-c', probe])}, 'sandbox-check')
             self.assertTrue(reply['success'], reply)
             folder = next((root / 'host/tools').glob('call-*'))
             receipt = json.loads((folder / 'receipt.json').read_text())
             self.assertEqual(receipt['exit_code'], 0, (folder / 'stderr.txt').read_text())
+            # The command cannot stage, but the trusted host subsequently
+            # publishes its actual source changes through its own commit.
+            self.assertEqual(receipt['commit'], git(repo, 'rev-parse', 'HEAD').decode().strip())
+            self.assertEqual(git(repo, 'show', 'HEAD:source.py'), b'changed\n')
+            self.assertEqual((repo / '.git/config').read_bytes(), config)
+            self.assertFalse((repo / '.git/refs/heads/unauthorized').exists())
             self.assertEqual((repo / 'build/result').read_text(), 'ok')
             self.assertFalse((root / 'outside').exists())
-            denied = subprocess.run(commands.sandbox.command(False, [sys.executable, '-c',
-                f'from pathlib import Path; Path({str(state / "runtime")!r}).write_text("bad")']),
-                cwd=repo, env=commands.env, capture_output=True, timeout=10)
-            self.assertNotEqual(denied.returncode, 0)
-            self.assertEqual((state / 'runtime').read_text(), 'ok')
+
+    @unittest.skipUnless(shutil.which('codex'), 'local Codex sandbox required')
+    def test_read_only_checkout_inside_tmp_cannot_be_edited_but_scratch_copy_can_build(self):
+        from lab.sandbox import CommandSandbox
+        with tempfile.TemporaryDirectory() as directory:
+            repo = repo_at(Path(directory) / 'checkout')
+            (repo / 'program.py').write_text('answer = 42\n')
+            sandbox = CommandSandbox(repo, shutil.which('codex'))
+            probe = '\n'.join([
+                'import pathlib,py_compile,shutil,subprocess,tempfile',
+                'for path in ("source.py", "new-source.py", ".git/config"):',
+                '    try: pathlib.Path(path).write_text("bad")',
+                '    except OSError: pass',
+                '    else: raise AssertionError("submission write allowed: "+path)',
+                'assert subprocess.run(["git","add","source.py"], capture_output=True).returncode != 0',
+                'with tempfile.TemporaryDirectory() as scratch:',
+                '    copy = pathlib.Path(scratch, "copy")',
+                '    shutil.copytree(pathlib.Path.cwd(), copy, ignore=shutil.ignore_patterns(".git"))',
+                '    py_compile.compile(str(copy / "program.py"), doraise=True)',
+                '    (copy / "build").mkdir()',
+                '    (copy / "build/result").write_text("ok")',
+            ])
+            result = subprocess.run(sandbox.command(False, [sys.executable, '-c', probe]),
+                cwd=repo, text=True, capture_output=True, timeout=10)
+            self.assertEqual(result.returncode, 0, result.stderr)
+            self.assertEqual((repo / 'source.py').read_text(), 'first\nmiddle\nlast\n')
+            self.assertFalse((repo / 'new-source.py').exists())
+            self.assertFalse((repo / '__pycache__').exists())
+
+    @unittest.skipUnless(shutil.which('codex'), 'local Codex sandbox required')
+    def test_denied_paths_are_unreadable_in_every_role_and_through_symlinks(self):
+        from lab.sandbox import CommandSandbox
+        with tempfile.TemporaryDirectory(dir=Path(__file__).resolve().parents[1]) as directory:
+            root = Path(directory)
+            repo = repo_at(root / 'checkout')
+            private = root / 'agent-state'
+            private.mkdir()
+            (private / 'auth.json').write_text('test secret')
+            (repo / 'linked-state').symlink_to(private, target_is_directory=True)
+            sandbox = CommandSandbox(repo, shutil.which('codex'), blocked_paths=[private])
+            probe = '\n'.join([
+                'import pathlib',
+                f'for path in ({str(private / "auth.json")!r}, "linked-state/auth.json"):',
+                '    try: pathlib.Path(path).read_text()',
+                '    except OSError: pass',
+                '    else: raise AssertionError("agent credential read allowed")',
+            ])
+            for writable, protect_git in ((False, False), (True, True), (True, False)):
+                with self.subTest(writable=writable, protect_git=protect_git):
+                    result = subprocess.run(sandbox.command(writable, [sys.executable, '-c', probe],
+                        protect_git=protect_git), cwd=repo, text=True, capture_output=True, timeout=10)
+                    self.assertEqual(result.returncode, 0, result.stderr)
+
+    @unittest.skipUnless(shutil.which('codex'), 'local Codex sandbox required')
+    def test_review_copy_can_build_without_writing_original_under_tmp(self):
+        from lab.sandbox import CommandSandbox
+        with tempfile.TemporaryDirectory() as directory:
+            root = Path(directory)
+            original = repo_at(root / 'original')
+            copy = repo_at(root / 'copy')
+            sandbox = CommandSandbox(copy, shutil.which('codex'), read_only_paths=[original])
+            probe = '\n'.join([
+                'import pathlib,subprocess',
+                'pathlib.Path("build").mkdir()',
+                'pathlib.Path("build/result").write_text("ok")',
+                f'original = pathlib.Path({str(original)!r})',
+                'for path in (original / "source.py", original / "new.py", original / ".git/config"):',
+                '    try: path.write_text("bad")',
+                '    except OSError: pass',
+                '    else: raise AssertionError("original submission write allowed")',
+                'assert subprocess.run(["git","-C",str(original),"config","user.name","bad"], capture_output=True).returncode != 0',
+                'assert subprocess.run(["git","config","user.name","bad"], capture_output=True).returncode != 0',
+            ])
+            result = subprocess.run(sandbox.command(True, [sys.executable, '-c', probe], protect_git=True),
+                cwd=copy, text=True, capture_output=True, timeout=10)
+            self.assertEqual(result.returncode, 0, result.stderr)
+            self.assertEqual((copy / 'build/result').read_text(), 'ok')
+            self.assertEqual((original / 'source.py').read_text(), 'first\nmiddle\nlast\n')
+            self.assertFalse((original / 'new.py').exists())
 
     def test_host_and_final_checks_use_the_same_provider_wrapper(self):
         class Wrapped(FakeCodex):

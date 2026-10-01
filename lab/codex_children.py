@@ -66,7 +66,7 @@ class NativeChildren:
             if turn["status"] != "completed" or params["turn"].get("error"):
                 self.errors.append(thread + ": native child turn did not complete successfully")
 
-    def report(self, readers, model, effort):
+    def report(self, readers, model, effort, *, allow_model_variation=False):
         errors, pending = list(self.errors), []
         active = False
         for thread, state in self.threads.items():
@@ -88,7 +88,7 @@ class NativeChildren:
                     pending.append(thread + ": " + turn_id + " is waiting for lifecycle notifications")
                 errors.extend(thread + ": child model/effort differs from admission"
                     for ctx in reader.turn_contexts.values()
-                    if (ctx.get("model"), ctx.get("effort")) != (model, effort))
+                    if not allow_model_variation and (ctx.get("model"), ctx.get("effort")) != (model, effort))
                 if reader.plans & {"api", "unknown"}:
                     errors.append(thread + ": child does not report a recognized subscription plan")
                 if not reader.plans:

@@ -20,6 +20,30 @@ CALL_PREFIX = 'call-'
 SUPERVISOR_STARTUP_SECONDS = 5
 
 
+def codex_requires_usage(arguments):
+    """Inspection commands need no model receipt; generation and unknown calls do."""
+    inspection = {'agents', 'login', 'logout', 'mcp', 'plugin', 'remote-control',
+                  'completion', 'update', 'doctor', 'sandbox', 'debug', 'apply', 'a',
+                  'archive', 'delete', 'migrate-rollouts', 'unarchive', 'exec-server',
+                  'features', 'help'}
+    values = {'-c', '--config', '--enable', '--disable', '--remote', '--remote-auth-token-env',
+              '-m', '--model', '--local-provider', '-p', '--profile', '-s', '--sandbox',
+              '-C', '--cd', '--add-dir', '-a', '--ask-for-approval', '-i', '--image'}
+    args = iter(arguments)
+    command = None
+    for arg in args:
+        if arg == '--':
+            break
+        if arg in ('--help', '-h', '--version', '-V'):
+            return False
+        if command is None:
+            if arg in values:
+                next(args, None)
+            elif not arg.startswith('-'):
+                command = arg
+    return command not in inspection
+
+
 def supervisor_alive(folder):
     """A filesystem lease works even when the caller has a private PID namespace."""
     try:
@@ -57,34 +81,29 @@ def supervise(folder, lock_fd=None):
     folder = Path(folder)
     lease = os.fdopen(lock_fd, 'rb') if lock_fd is not None else None
     process = None
+    request = {}
     result = {'exit_code': None, 'timed_out': False, 'cancelled': False}
     try:
         request = json.loads((folder / 'request.json').read_text())
         def should_stop():
             result['timed_out'] = time.monotonic() >= request['deadline']
             result['cancelled'] = (folder.parent / 'cancel').exists()
-            if request.get('owner_lock'):
-                # A sandbox can hide the runner's PID. A lock on the shared
-                # filesystem survives PID namespaces and is released on death.
-                with open(request['owner_lock'], 'rb') as owner:
-                    try:
-                        fcntl.flock(owner, fcntl.LOCK_SH | fcntl.LOCK_NB)
-                    except BlockingIOError:
-                        pass
-                    else:
-                        result['cancelled'] = True
-            else:
-                # Retain compatibility with previously saved launch requests.
+            # A shared filesystem lease survives private PID namespaces and
+            # releases on runner death, even when its PID is invisible here.
+            with open(request['owner_lock'], 'rb') as owner:
                 try:
-                    os.kill(request['owner_pid'], 0)
-                except ProcessLookupError:
+                    fcntl.flock(owner, fcntl.LOCK_SH | fcntl.LOCK_NB)
+                except BlockingIOError:
+                    pass
+                else:
                     result['cancelled'] = True
             return result['timed_out'] or result['cancelled']
         if should_stop():
             return
         with (folder / 'stdout').open('ab', buffering=0) as out, (folder / 'stderr').open('ab', buffering=0) as err:
             process = subprocess.Popen(request['argv'], cwd=request['cwd'],
-                stdin=sys.stdin.buffer, stdout=out, stderr=err, start_new_session=True)
+                stdin=sys.stdin.buffer, stdout=out, stderr=err, start_new_session=True,
+                env={**clean_env(), **request.get('environment', {})})
             while process.poll() is None:
                 if should_stop():
                     stop(process)
@@ -97,6 +116,12 @@ def supervise(folder, lock_fd=None):
         try:
             if process is not None:
                 stop(process)
+            if request.get('session_dir'):
+                try:
+                    from .nested import capture_call_receipts
+                    capture_call_receipts(folder, request['harness'])
+                except Exception as exc:
+                    result['error'] = 'could not record final child usage boundary: ' + str(exc)
             result['finished_at_unix'] = time.time()
             write_result(folder, result)
         finally:
@@ -108,12 +133,33 @@ def launch(config, argv):
     """Relay saved output; killing this relay cannot close the real CLI's pipes."""
     root = Path(config['calls'])
     if (root / 'cancel').exists() or time.monotonic() >= config['deadline']:
-        raise ValueError('nested Codex launch rejected after benchmark shutdown/deadline')
+        raise ValueError('nested harness launch rejected after benchmark shutdown/deadline')
     folder = Path(tempfile.mkdtemp(prefix=CALL_PREFIX, dir=root))
     request = {'argv': argv, 'cwd': str(Path.cwd()), 'deadline': config['deadline'],
-               'owner_pid': config['owner_pid'], 'started_at_unix': time.time()}
-    if config.get('owner_lock'):
-        request['owner_lock'] = config['owner_lock']
+               'owner_lock': config['owner_lock'], 'harness': config['harness'],
+               'started_at_unix': time.time()}
+    if config['harness'] == 'codex':
+        from .nested import prepare_codex_call_state
+        request['requires_usage'] = codex_requires_usage(argv[1:])
+        home = prepare_codex_call_state(config, folder, argv[1:])
+        request['environment'] = {'CODEX_HOME': str(home)}
+        request['session_dir'] = str(folder / 'sessions')
+        # Persistence supplies measurement receipts without changing the CLI's
+        # stdout format or its choice of model, role, or requested work.
+        args = iter(argv[1:])
+        kept = []
+        for arg in args:
+            if arg == '--':
+                kept.extend([arg, *args])
+                break
+            if arg != '--ephemeral':
+                kept.append(arg)
+        request['argv'] = [argv[0], *kept]
+    if config['harness'] == 'pi':
+        from .pi_sessions import prepare_pi_call
+        arguments, sessions = prepare_pi_call(config, folder, argv[1:])
+        request['argv'] = [argv[0], *arguments]
+        request['session_dir'] = str(sessions)
     (folder / 'request.json').write_text(json.dumps(request))
     for name in ('stdout', 'stderr'):
         (folder / name).touch()

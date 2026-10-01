@@ -11,20 +11,20 @@ from unittest.mock import patch
 from lab.__main__ import main
 from lab.batch import failure, run_batch, worker
 from lab.config import settings
-from lab.review import DEFAULT_PRIORITIES, normalize_priorities, parse_review
+from lab.review import DEFAULT_PRIORITIES, normalize_priorities, validate_review
 from lab.workflow import run
 from test_batch import worker_at
 from test_core import repo_at
-from test_workflow import FakeCodex
+from test_workflow import FakeCodex, verdict
 
 
 class PriorityReviewer(FakeCodex):
-    initial_review = "NO_FINDINGS"
+    initial_review = verdict()
 
     def turn(self, thread, prompt, label, **kwargs):
         if "-review-" in label:
             self.calls.append((label, thread, prompt, kwargs))
-            return self.initial_review if label == "one-review-1" else "NO_FINDINGS"
+            return self.submit_review(thread, prompt, label, self.initial_review if label == "one-review-1" else verdict())
         if label.startswith("integration-"):
             self.calls.append((label, thread, prompt, kwargs))
             return "Reviewed commits preserved; final checks remain with the host."
@@ -47,7 +47,7 @@ class ReviewPriorityTests(unittest.TestCase):
             initial_review = reply
 
         result = run(self.benchmark, settings({}), self.root / name, 30, 10000, 30,
-                     backend=Reviewer, skip_linearization=True, **options)
+                     backend=Reviewer,  **options)
         return result, Reviewer.instances[-1]
 
     def test_each_default_blocking_priority_requires_a_repair_and_independent_rereview(self):
@@ -55,11 +55,11 @@ class ReviewPriorityTests(unittest.TestCase):
         for priority in DEFAULT_PRIORITIES:
             with self.subTest(priority=priority):
                 result, backend = self.execute(
-                    f"FINDINGS\n- [{priority}] one.py must return the requested value 2.", name=priority)
+                    verdict("one.py must return the requested value 2.", priority), name=priority)
                 self.assertEqual(result["status"], "passed", result)
                 labels = list(dict.fromkeys(call[0] for call in backend.calls))
                 self.assertEqual(labels, ["one-implement", "one-review-1", "one-fix-1",
-                                          "one-review-2", "integration-plan", "integration-accept"])
+                                          "one-review-2"])
                 threads = {label: thread for label, thread, _, _ in backend.calls}
                 self.assertNotEqual(threads["one-review-1"], threads["one-implement"])
                 self.assertEqual(threads["one-review-1"], threads["one-review-2"])
@@ -68,7 +68,7 @@ class ReviewPriorityTests(unittest.TestCase):
                 self.assertEqual(result["checks"][0]["exit_code"], 0)
 
     def test_advisory_only_review_allows_completion_without_repair(self):
-        result, backend = self.execute("FINDINGS\n- [P3] ADVISORY_ONLY: prefer a shorter local name.")
+        result, backend = self.execute(verdict("ADVISORY_ONLY: prefer a shorter local name.", "P3"))
         self.assertEqual(result["status"], "passed", result)
         self.assertFalse(any("-fix-" in label for label, *_ in backend.calls))
         self.assertEqual(result["checkpoints"][0]["review_rounds"], 1)
@@ -86,16 +86,15 @@ class ReviewPriorityTests(unittest.TestCase):
         cases = [(("P0", "P1"), "P2", False), (("P0", "P1", "P2", "P3"), "P3", True)]
         for index, (priorities, finding, repaired) in enumerate(cases):
             with self.subTest(priorities=priorities):
-                result, backend = self.execute(f"FINDINGS\n- [{finding}] Change the value to 2.",
+                result, backend = self.execute(verdict("Change the value to 2.", finding),
                                                name=f"selection-{index}", review_priorities=priorities)
                 self.assertEqual(result["status"], "passed", result)
                 self.assertEqual(any("-fix-" in label for label, *_ in backend.calls), repaired)
 
     def test_mixed_review_sends_only_blocking_findings_and_their_continuations_to_author(self):
-        reply = ("FINDINGS\n- [P1] REQUIRED_FIX: one.py returns the wrong value.\n"
-                 "  Reproduce by reading value; it must be 2, not 1.\n"
-                 "- [P3] ADVISORY_ONLY: rename the value variable.\n"
-                 "  ADVISORY_DETAIL: this is only a style preference.")
+        reply = {"status": "complete", "incomplete_reason": None, "findings": [
+            {"priority": "P1", "text": "REQUIRED_FIX: one.py returns the wrong value.\nReproduce by reading value; it must be 2, not 1."},
+            {"priority": "P3", "text": "ADVISORY_ONLY: rename the value variable.\nADVISORY_DETAIL: this is only a style preference."}]}
         result, backend = self.execute(reply)
         self.assertEqual(result["status"], "passed", result)
         repair_prompt = next(prompt for label, _, prompt, _ in backend.calls if label == "one-fix-1")
@@ -108,14 +107,12 @@ class ReviewPriorityTests(unittest.TestCase):
 
     def test_unlabelled_or_malformed_findings_never_approve_or_trigger_repairs(self):
         malformed = [
-            "FINDINGS\n- Unlabelled regression.",
-            "FINDINGS\n- [P4] Unknown priority.",
-            "FINDINGS\n- [P3] Valid advisory.\n- Missing priority on a real defect.",
-            "FINDINGS\n- [P3] Valid advisory.\n  - [P9] Indentation must not conceal invalid priority.",
-            "FINDINGS\n- [P1]",
-            "FINDINGS",
-            "NO_FINDINGS\nFINDINGS\n- [P1] Contradictory review.",
-            "NO_FINDINGS\n- [P1] This is actually a blocking finding.",
+            {**verdict(), "status": "approved"},
+            verdict("Unknown priority", "P4"),
+            {**verdict(), "findings": [{"text": "Unlabelled regression"}]},
+            {**verdict(), "findings": [{"priority": "P1", "text": ""}]},
+            {**verdict(), "findings": "not an array"},
+            {**verdict(), "incomplete_reason": "contradicts complete"},
         ]
         for index, reply in enumerate(malformed):
             with self.subTest(reply=reply):
@@ -125,18 +122,10 @@ class ReviewPriorityTests(unittest.TestCase):
                 self.assertFalse(any("-fix-" in label for label, *_ in backend.calls))
                 self.assertFalse(any(label.startswith("integration-") for label, *_ in backend.calls))
 
-    def test_indented_blocking_finding_is_not_downgraded_to_advisory_continuation(self):
-        result, backend = self.execute("FINDINGS\n- [P3] A cosmetic nit.\n"
-                                       "  - [P1] REQUIRED_FIX: change the incorrect value to 2.")
-        self.assertEqual(result["status"], "passed", result)
-        self.assertTrue(any(label == "one-fix-1" for label, *_ in backend.calls))
-        self.assertEqual(result["reviews"][0]["blocking_findings"],
-                         [{"priority": "P1", "text": "REQUIRED_FIX: change the incorrect value to 2."}])
-
     def test_settings_are_recorded_and_canonicalized_in_comparison_keys(self):
-        default, _ = self.execute("NO_FINDINGS", name="default")
-        selected, _ = self.execute("NO_FINDINGS", name="selected", review_priorities=("P0", "P1"))
-        reordered, _ = self.execute("NO_FINDINGS", name="reordered", review_priorities=("P1", "P0", "P1"))
+        default, _ = self.execute(verdict(), name="default")
+        selected, _ = self.execute(verdict(), name="selected", review_priorities=("P0", "P1"))
+        reordered, _ = self.execute(verdict(), name="reordered", review_priorities=("P1", "P0", "P1"))
         for name, result, priorities in (("default", default, ["P0", "P1", "P2"]),
                                           ("selected", selected, ["P0", "P1"]),
                                           ("reordered", reordered, ["P0", "P1"])):
@@ -177,8 +166,8 @@ class ReviewPriorityConfigurationTests(unittest.TestCase):
             with self.subTest(supplied=supplied), self.assertRaises(ValueError):
                 normalize_priorities(supplied)
 
-    def test_no_findings_with_explanation_approves(self):
-        decision = parse_review("NO_FINDINGS\nLooks good.")
+    def test_complete_empty_findings_approves(self):
+        decision = validate_review({"review_id": "target", **verdict()}, "target")
         self.assertEqual(decision, {"approved": True, "blocking_findings": [], "advisory_findings": []})
 
     def test_plan_exposes_default_and_explicit_priorities_without_generation(self):

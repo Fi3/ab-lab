@@ -16,13 +16,14 @@ from lab.host import Fatal
 from lab.provider import Pi, Usage
 from lab.workflow import run
 from test_scb import benchmark_at
+from test_workflow import review_arguments, verdict
 
 
 class FakePi:
     instances = []
     transport = "pi-rpc-stdio"
 
-    def __init__(self, repo, folder, model, effort, deadline, max_raw, max_turns, executable="pi", *, require_git_write=False):
+    def __init__(self, repo, folder, model, effort, deadline, max_raw, max_turns, executable="pi", *, require_git_write=False, allow_delegation=False):
         FakePi.instances.append(self)
         self.repo = Path(repo)
         self.artifacts = Path(folder)
@@ -80,7 +81,9 @@ class FakePi:
             assert result["success"], result
             reply = "Implemented."
         elif "-review-" in label:
-            reply = "FINDINGS\n- [P2] Change one.py value to 2" if label == "one-review-1" else "NO_FINDINGS"
+            value = verdict("Change one.py value to 2") if label == "one-review-1" else verdict()
+            self.handlers[thread]("submit_review", review_arguments(prompt, value), f"{thread}:{label}:verdict")
+            reply = "Review submitted."
         elif "-fix-" in label:
             result = self.handlers[thread]("host_edit", {
                 "reason": "resolve review",
@@ -88,17 +91,6 @@ class FakePi:
             }, f"{thread}:{label}:edit")
             assert result["success"], result
             reply = "Fixed."
-        elif label == "integration-plan":
-            reply = "One final commit for each feature, with its tests and repairs."
-        elif label == "integration-accept":
-            import subprocess
-            base = subprocess.check_output(["git", "-C", str(self.repo), "rev-list", "--max-parents=0", "HEAD"], text=True).strip()
-            subprocess.run(["git", "-C", str(self.repo), "reset", "--soft", base], check=True)
-            subprocess.run(["git", "-C", str(self.repo), "reset"], check=True, capture_output=True)
-            for name in ("one", "two"):
-                subprocess.run(["git", "-C", str(self.repo), "add", name+".py"], check=True)
-                subprocess.run(["git", "-C", str(self.repo), "commit", "-qm", "ADD "+name], check=True)
-            reply = "Finished"
         else:
             reply = "OK"
         (folder / "reply.txt").write_text(reply)
