@@ -14,7 +14,7 @@ FACTORS = {
     "C38": ("Completion guidance", "explicitly hand over when required work is ready", "no extra finishing reminder"),
 }
 
-WORKFLOW_VERSION = "host-tools-review-approval-v2"
+WORKFLOW_VERSION = "host-tools-bounded-reviews-v3"
 def settings(overrides):
     if not isinstance(overrides, dict):
         raise ValueError("factors must be an object of C identifiers and booleans")

@@ -10,7 +10,7 @@ import time
 
 from .environment import clean_env
 from .host import git, save_json
-from .review import DEFAULT_PRIORITIES, normalize_priorities
+from .review import DEFAULT_MAX_REVIEW_LOOPS, DEFAULT_PRIORITIES, normalize_priorities, normalize_review_loops
 from .loops import loop_policy
 from .workflow import run, source_hashes
 
@@ -24,6 +24,7 @@ def failure(config, output, error, *, status='failed', duration=None):
         'benchmark': benchmark['name'], 'factors': config['factors'],
         'skip_linearization': config['options'].get('skip_linearization', False),
         'review_priorities': list(config['options'].get('review_priorities', DEFAULT_PRIORITIES)),
+        'max_review_loops': config['options'].get('max_review_loops', DEFAULT_MAX_REVIEW_LOOPS),
         'loop_policy': loop_policy(config['options'].get('loop_options')),
         'feature_count': len(benchmark['features']), 'check_count': len(benchmark['checks']),
         'checkpoints': [], 'checks': [], 'duration_seconds': duration, 'error': error,
@@ -51,9 +52,11 @@ def collect(config, output, exit_code, duration):
 def run_batch(benchmark, factors, output, repeat, parallel, *, seconds, max_raw, max_turns,
               model='gpt-5.5', effort='xhigh', executable='codex', harness=None,
               scb_check=None, scb_seconds=300, child_codex='codex', skip_linearization=False,
-              review_priorities=DEFAULT_PRIORITIES, loop_options=None,
+              review_priorities=DEFAULT_PRIORITIES, max_review_loops=DEFAULT_MAX_REVIEW_LOOPS,
+              loop_options=None,
               _worker_command=None):
     review_priorities = normalize_priorities(review_priorities)
+    max_review_loops = normalize_review_loops(max_review_loops)
     progress_policy = loop_policy(loop_options)
     for name, value in (('repeat', repeat), ('parallel', parallel), ('seconds', seconds),
                         ('max_raw', max_raw), ('max_turns', max_turns)):
@@ -75,6 +78,7 @@ def run_batch(benchmark, factors, output, repeat, parallel, *, seconds, max_raw,
             'model': model, 'effort': effort, 'executable': executable, 'harness': harness, 'child_codex': child_codex,
             'scb_check': str(scb_check) if scb_check is not None else None, 'scb_seconds': scb_seconds,
             'skip_linearization': skip_linearization, 'review_priorities': list(review_priorities),
+            'max_review_loops': max_review_loops,
             'loop_options': progress_policy}}
     config_path = output/'batch-input.json'
     save_json(config_path, config)
@@ -162,6 +166,7 @@ def run_batch(benchmark, factors, output, repeat, parallel, *, seconds, max_raw,
                 'factors': factors, 'repeat': repeat, 'parallel': parallel,
                 'skip_linearization': skip_linearization,
                 'review_priorities': list(review_priorities),
+                'max_review_loops': max_review_loops,
                 'loop_policy': progress_policy,
                 'interrupted': bool(interrupted), 'cancelled_signal': interrupted,
                 'duration_seconds': time.monotonic()-started, 'results': results}

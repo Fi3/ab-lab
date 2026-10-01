@@ -186,7 +186,7 @@ def main():
     policy = loop_policy({"max_feature_raw": MAX_RAW, "max_review_raw": 150000,
                           "max_review_seconds": REVIEW_SECONDS,
                           "max_review_settle_seconds": SETTLE_SECONDS})
-    assert POLICY_VERSION == "global-budget-defaults-v5", "fixture requires the versioned settlement policy"
+    assert POLICY_VERSION == "bounded-review-loops-v6", "fixture requires the versioned settlement policy"
     admission = {"purpose": "one expired review settles its first in-flight response with exact usage",
                  "model": MODEL, "effort": EFFORT, "seconds": SECONDS,
                  "max_raw": MAX_RAW, "max_turns": MAX_TURNS,

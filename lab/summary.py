@@ -110,7 +110,10 @@ def slopcodebench_tables(names, rows):
             review = item if 'review_approved' in item else boundary
             review_present |= 'review_approved' in review or 'status' in boundary
             approval = review.get('review_approved')
+            attempt_status = item.get('attempt_status', boundary.get('status'))
             review_status = ('approved' if approval is True else 'rejected' if approval is False else
+                             'skipped' if attempt_status == 'review_skipped' else
+                             'limit reached (unreviewed)' if attempt_status == 'review_limit_reached' else
                              'incomplete' if 'review_approved' in review else
                              boundary.get('status', 'approved' if boundary else '—'))
             tests = item.get('tests') or {}

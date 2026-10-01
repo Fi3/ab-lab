@@ -4,7 +4,14 @@ import re
 
 PRIORITIES = ("P0", "P1", "P2", "P3")
 DEFAULT_PRIORITIES = PRIORITIES[:3]
+DEFAULT_MAX_REVIEW_LOOPS = 3
 _FINDING = re.compile(r"^(?:[-*+]|\d+[.)])\s+\[(P[0-3])\]\s+(\S.*)$")
+
+
+def normalize_review_loops(value):
+    if type(value) is not int or value < 0:
+        raise ValueError("max_review_loops must be a non-negative integer")
+    return value
 
 
 def normalize_priorities(value):

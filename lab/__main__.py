@@ -8,7 +8,7 @@ import time
 from .config import FACTORS, WORKFLOW_VERSION, author_policy, load_benchmark, settings
 from .provider import Codex, Pi
 from .host import Fatal
-from .review import DEFAULT_PRIORITIES, normalize_priorities
+from .review import DEFAULT_MAX_REVIEW_LOOPS, DEFAULT_PRIORITIES, normalize_priorities, normalize_review_loops
 from .loops import POLICY_VERSION, loop_policy
 from .workflow import compare, interaction, run
 from .batch import run_batch
@@ -27,6 +27,13 @@ def review_priorities(value):
         return normalize_priorities(value)
     except ValueError as exc:
         raise argparse.ArgumentTypeError(str(exc)) from exc
+
+
+def review_loops(value):
+    try:
+        return normalize_review_loops(int(value))
+    except (TypeError, ValueError) as exc:
+        raise argparse.ArgumentTypeError('max review loops must be a nonnegative integer') from exc
 
 
 def factors_from(args):
@@ -54,13 +61,15 @@ def main():
         p.add_argument("--model", default=None)
         p.add_argument("--effort", choices=("minimal", "low", "medium", "high", "xhigh"), default="xhigh")
         p.add_argument("--skip-linearization", action="store_true",
-                       help="preserve reviewed commits; keep final documentation, repairs and checks")
+                       help="preserve existing commits; keep final documentation, repairs and checks")
         p.add_argument("--review-priorities", type=review_priorities, default=DEFAULT_PRIORITIES,
                        metavar="P0,P1,P2",
                        help="comma-separated review priorities that require repairs (P0 through P3; default: P0,P1,P2)")
+        p.add_argument("--max-review-loops", type=review_loops, default=DEFAULT_MAX_REVIEW_LOOPS,
+                       metavar="N", help="maximum reviews per feature; repair blocking findings after each review, then continue (default: 3; 0 disables review)")
         progress = p.add_mutually_exclusive_group()
         progress.add_argument("--loop-policy", type=Path, help="JSON overrides for external feature/review limits and loop detection")
-        progress.add_argument("--no-loop-detection", action="store_true", help="disable feature stopping rules; retain global run limits")
+        progress.add_argument("--no-loop-detection", action="store_true", help="disable feature stopping rules; retain review allowance and global run limits")
         p.add_argument("--scb-check", default="scb-check", help="scb-check executable; required for the three quality measurements")
         p.add_argument("--scb-seconds", type=float, default=300, help="maximum seconds per quality measurement, within the workflow deadline")
         if name == "plan":
@@ -105,6 +114,7 @@ def main():
                 value = {"benchmark": benchmark, "factors": factors, "model": model, "effort": args.effort,
                          "skip_linearization": args.skip_linearization,
                          "review_priorities": list(args.review_priorities),
+                         "max_review_loops": args.max_review_loops,
                          "loop_policy": progress_policy,
                          "loop_policy_version": POLICY_VERSION, "workflow_version": WORKFLOW_VERSION,
                          "author_policy": author_policy(factors), "generation": "none",
@@ -126,12 +136,14 @@ def main():
                         model=model, effort=args.effort, executable=executable, harness=args.harness,
                         scb_check=args.scb_check, scb_seconds=args.scb_seconds, child_codex=args.codex,
                         skip_linearization=args.skip_linearization, review_priorities=args.review_priorities,
+                        max_review_loops=args.max_review_loops,
                         loop_options=progress_policy)
                 else:
                     value = run(benchmark, factors, args.out, args.seconds, args.max_raw, args.max_turns,
                                 model, args.effort, executable, backend=backend, harness=args.harness,
                                 scb_check=args.scb_check, scb_seconds=args.scb_seconds, child_codex=args.codex,
                                 skip_linearization=args.skip_linearization, review_priorities=args.review_priorities,
+                                max_review_loops=args.max_review_loops,
                                 loop_options=progress_policy)
         elif args.command == "doctor":
             harness = getattr(args, "harness", "codex")

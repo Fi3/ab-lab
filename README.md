@@ -9,7 +9,7 @@ an enabled condition improves quality or reduces work.
 with the existing runner. The adapter adds independent grading and per-milestone
 code-quality measurements after a run.
 
-The current workflow is `host-tools-review-approval-v2`. There are **eight
+The current workflow is `host-tools-bounded-reviews-v3`. There are **eight
 active factors**. C25 and the old printed-command protocol have been removed;
 there is no legacy execution mode. Historical run artifacts remain historical
 evidence and are not directly interchangeable with current runs.
@@ -62,15 +62,24 @@ experimental conditions, independent of whether evaluation uses Docker.
 
 ## Workflow and failure handling
 
-Each feature gets a fresh author and independent reviewer conversation. Review
-findings at configured priorities go back to the author for repair. The default
-blocking priorities are P0, P1, and P2; P3 findings remain advisory. An empty
-diff is reviewed against the requested behavior and does not imply approval.
+Each feature gets a fresh author conversation and, when enabled, an independent
+reviewer conversation. `--max-review-loops N` sets the maximum number of reviews
+per feature and defaults to **3**. After the initial implementation,
+each review with blocking findings is followed by an author repair. After the
+Nth repair, the workflow continues to the next feature without another review.
+An approving review ends the loop sooner. `--max-review-loops 0` skips feature
+review and proceeds after implementation.
+
+The default blocking priorities are P0, P1, and P2; P3 findings remain advisory.
+An empty diff is reviewed against the requested behavior and does not imply
+approval. Reaching the review allowance is normal workflow completion, but the
+final repair remains unreviewed and is not recorded as approved. Independent
+benchmark evaluation determines correctness.
 
 After feature attempts, an integration agent proposes a plan. The runner accepts
 it, then the agent completes integration and validation. By default the final
 history has one commit per feature. `--skip-linearization` preserves existing
-reviewed commits and permits new integration commits without rewriting history.
+commits and permits new integration commits without rewriting history.
 The runner also executes the configured final checks.
 
 Limits are enforced outside agent prompts. By default, author and reviewer
@@ -80,15 +89,15 @@ feature policy:
 
 | Setting | Default |
 | --- | ---: |
+| Reviews per feature (`--max-review-loops`) | 3 |
 | Feature observed raw tokens | No separate cap |
 | Per-review observed raw tokens | No separate cap |
 | Per-review wall time | No separate cap |
 | Review receipt settlement allowance | 600 seconds |
-| Repair attempts | No separate cap |
 | Repeated failed-operation cycle threshold | 3 |
 
-A configured review limit stops the workflow; it does not start another
-generation asking for a conclusion or advance to the next feature. The
+A configured review token or time cap stops the workflow; it does not start
+another generation asking for a conclusion or advance to the next feature. The
 settlement allowance lets an already in-flight response
 supply its accounting receipt. It does not grant approval to a late verdict,
 and global or token limits can end settlement sooner. Observed-token limits can
@@ -97,14 +106,14 @@ hard billing caps.
 
 Repeated reads and successful polling are not treated as failed-operation
 loops. Repeated failing operations with unchanged state, repeated rejected
-source trees, repeated blocking findings, and exhausted explicit repair or
-feature limits can produce `needs_attention`. A stopped author may receive one
-final review when configured and when the remaining limits permit it.
+source trees, repeated blocking findings, and exhausted explicit feature limits
+can produce `needs_attention`. A stopped author may receive one final review
+when configured and when both the review allowance and remaining limits permit it.
 
-Every feature needs a completed approving review before the next feature or
-integration can start. Blocking findings trigger author repairs and another
-review within the run's limits and repair/loop guardrails. An unfinished or
-unresolved review stops the workflow as incomplete. For a local review/loop
+Completed features proceed after approval, the configured review/repair rounds,
+or implementation when reviews are disabled. An unfinished review, failed repair,
+or safety guard still stops the workflow as incomplete; exhausting the review
+allowance does not bypass these failures. For a local review/loop
 stop, SlopCodeBench retains and independently grades the stopped snapshot;
 later checkpoints and final assembly remain unrun. Whole-run or provider stops
 retain the checkout and grade already captured snapshots; an uncaptured active
@@ -126,15 +135,16 @@ defaults; optional stage caps accept a positive integer instead of `null`:
   "max_review_raw": null,
   "max_review_seconds": null,
   "max_review_settle_seconds": 600,
-  "max_repair_attempts": null,
   "repeat_limit": 3,
   "final_review": true
 }
 ```
 
-`--no-loop-detection` disables the feature stopping policy while retaining the
-global wall-time, token, and turn limits. Policy version
-`global-budget-defaults-v5` is recorded in results. If both feature and review
+`--max-review-loops` is a separate CLI option and is recorded in plans, run
+manifests, batch configurations, and results. `--no-loop-detection` disables the
+feature stopping policy while retaining the review allowance and global
+wall-time, token, and turn limits. Policy version
+`bounded-review-loops-v6` is recorded in results. If both feature and review
 token caps are explicitly configured, a final review reserve is taken from
 the feature budget when `final_review` is enabled.
 
@@ -147,6 +157,13 @@ harness and its SDK. API-key authentication is rejected; there is no API-credit
 fallback. Child Codex processes use the selected model, effort, and subscription
 policy.
 
+Codex native subagents are tracked from their spawn events. They can continue
+working during a parent host command; before the parent stage is accepted, the
+adapter waits for their completion and validates their own usage receipts.
+Inherited parent history is excluded from child accounting. The adapter records
+`codex-owned-native-children-v3` in provider metadata. Existing run artifacts and
+comparison keys remain unchanged; new runs retain their new source provenance.
+
 Install the quality checker in an environment with Python 3.12 or newer:
 
 ```sh
@@ -156,13 +173,6 @@ python3 -m unittest discover -s tests -v
 python3 -m lab factors
 python3 -m lab doctor --out runs/login-check
 ```
-
-Codex native subagents are tracked from their spawn events. They can continue
-working during a parent host command; before the parent stage is accepted, the
-adapter waits for their completion and validates their own usage receipts.
-Inherited parent history is excluded from child accounting. The adapter records
-`codex-owned-native-children-v3` in provider metadata. Existing run artifacts and
-comparison keys remain unchanged; new runs retain their new source provenance.
 
 `doctor` checks configuration and authentication without model generation.
 Every output directory shown here must be new.
@@ -289,8 +299,11 @@ For SlopCodeBench, read execution and correctness separately:
 
 | Field | Meaning |
 | --- | --- |
-| `execution_status` | Whether all checkpoints received review approval and final assembly completed. |
+| `execution_status` | Whether all checkpoints completed their configured review/repair sequence and final assembly completed. |
 | `status` | Overall workflow outcome, including reviews and evaluation. |
+| `max_review_loops` | Maximum reviews per feature; zero disables feature review. |
+| `checkpoints[].status` | `approved`, `review_limit_reached`, or `review_skipped` for completed feature attempts; stopped attempts retain their failure status. |
+| `checkpoints[].review_approved` | Approval of the recorded final feature state; `null` when that state was not reviewed. |
 | `slopcodebench.checkpoints` | Independent grade for each recorded checkpoint snapshot. |
 | `slopcodebench.final` | Independent grade for the assembled final snapshot. |
 | `slopcodebench.solved` | Benchmark success from its evaluation, not a completion inference. |
@@ -316,8 +329,8 @@ python3 -m lab compare runs/reference/result.json runs/changed/result.json
 
 `compare` requires successful, completely measured workflows with matching
 non-factor settings. Source version, prompt provenance, model, harness,
-benchmark revision, policies, limits, and integration settings can change the
-experiment. Rerun comparison cells under the same current runner instead of
+benchmark revision, policies, review allowance, limits, and integration settings
+can change the experiment. Rerun comparison cells under the same current runner instead of
 claiming a model or factor effect from old and new runner versions.
 
 `--repeat N --parallel P` runs N independent repetitions with at most P active
@@ -338,5 +351,6 @@ the previous stop-and-continue policy; their completed execution status does
 not establish completed review/repair for every checkpoint.
 
 The [review-completion verification report](docs/REVIEW_COMPLETION_VERIFICATION.md)
-records the current limit and approval-gate regressions, end-to-end smoke runs,
-and full-benchmark attempts, including their unresolved outcomes.
+records the earlier approval-gate contract's limit regressions, end-to-end smoke
+runs, and full-benchmark attempts, including their unresolved outcomes. Those
+historical outcomes do not verify the current bounded-review contract.

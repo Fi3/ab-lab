@@ -10,7 +10,8 @@ from .config import WORKFLOW_VERSION, author_policy
 from .host import Fatal, Host, execute_child, git, save_json, snapshot, relative_path
 from .host_tools import HOST_TOOLS, HostTools
 from .provider import Codex, Pi, clean_env
-from .review import DEFAULT_PRIORITIES, format_findings, normalize_priorities, parse_review, review_clean, review_instructions
+from .review import (DEFAULT_PRIORITIES, DEFAULT_MAX_REVIEW_LOOPS, format_findings,
+                     normalize_priorities, normalize_review_loops, parse_review, review_clean, review_instructions)
 from .loops import FeatureProgress, NeedsAttention, POLICY_VERSION, WorkLimitReached, loop_policy, work_limit_error
 from . import scb, slopcodebench
 
@@ -45,13 +46,15 @@ def review_prompt(benchmark, feature, base, evidence, no_changes=False, *, revie
 
 def integration_prompts(benchmark, base, checkpoints, *, skip_linearization=False):
     count = len(benchmark["features"])
-    contract = f"Produce exactly {count} final commits rooted at {base}, one per feature. Fold implementation, tests, review repairs, validation fixes and required documentation into the corresponding feature commit. No separate support or documentation-only commits. Preserve all reviewed behavior and follow repository commit-message rules. Do not push or modify other checkouts."
+    contract = f"Produce exactly {count} final commits rooted at {base}, one per feature. Fold implementation, tests, review repairs, validation fixes and required documentation into the corresponding feature commit. No separate support or documentation-only commits. Preserve implemented behavior and follow repository commit-message rules. Do not push or modify other checkouts."
     if skip_linearization:
-        contract = "Preserve all reviewed commits exactly as generated. Do not reorder, squash, amend, rebase or replace existing commits. Complete required documentation and repair genuine final-validation failures using new commits only. There is no required commit count; already-satisfied features need no empty commits. Preserve all reviewed behavior and follow repository commit-message rules. Do not push or modify other checkouts."
+        contract = "Preserve all feature commits exactly as generated. Do not reorder, squash, amend, rebase or replace existing commits. Complete required documentation and repair genuine final-validation failures using new commits only. There is no required commit count; already-satisfied features need no empty commits. Preserve implemented behavior and follow repository commit-message rules. Do not push or modify other checkouts."
     elif any(item.get("already_satisfied") for item in checkpoints):
         contract += " A boundary marked already_satisfied was independently verified without source changes. Use an explicitly described verification-only empty commit for that feature; do not invent edits."
     detail = json.dumps(checkpoints, indent=2)
-    plan = f"You are the final integration agent for {count} sequentially reviewed features.\n{contract}\nReviewed feature boundaries:\n{detail}\nInspect history and source, identify required documentation, and propose a plan. Do not edit, commit, rewrite history or run the check suite yet. End with your plan and wait for acceptance."
+    if any(item.get("review_approved") is not True for item in checkpoints):
+        contract += " Some features have no approving review. Their recorded status is not approval. Do not restart their review/repair cycles; repair genuine final-validation failures."
+    plan = f"You are the final integration agent for {count} sequential features.\n{contract}\nFeature boundaries and review outcomes:\n{detail}\nInspect history and source, identify required documentation, and propose a plan. Do not edit, commit, rewrite history or run the check suite yet. End with your plan and wait for acceptance."
     accept = f"Accept the proposed plan and execute it.\n{contract}\nRun these final checks and all additional repository-required checks; repair genuine failures:\n"+"\n".join(benchmark["checks"])+"\nLeave the checkout clean and summarize final commits and actual verification results."
     return plan, accept
 
@@ -105,12 +108,14 @@ def capture_native_work(checkout, stage, output):
 def run(benchmark, factors, output, seconds, max_raw, max_turns,
         model="gpt-5.5", effort="xhigh", executable="codex", backend=Codex, *,
         harness=None, scb_check=None, scb_seconds=300, child_codex="codex", skip_linearization=False,
-        review_priorities=DEFAULT_PRIORITIES, loop_options=None, _base_commit=None):
+        review_priorities=DEFAULT_PRIORITIES, max_review_loops=DEFAULT_MAX_REVIEW_LOOPS,
+        loop_options=None, _base_commit=None):
     if seconds <= 0 or max_raw <= 0 or max_turns <= 0:
         raise ValueError("positive wall-time, observed-token and turn limits are required")
     if not math.isfinite(scb_seconds) or scb_seconds <= 0:
         raise ValueError("scb-check needs a positive finite time limit")
     review_priorities = normalize_priorities(review_priorities)
+    max_review_loops = normalize_review_loops(max_review_loops)
     progress_policy = loop_policy(loop_options)
     if harness == "pi":
         if backend is Codex:
@@ -130,6 +135,7 @@ def run(benchmark, factors, output, seconds, max_raw, max_turns,
     result = {"schema": "agent-behavior-lab/v1", "status": "failed", "factors": factors,
               "output": str(output), "benchmark": benchmark["name"],
               "skip_linearization": skip_linearization,
+              "max_review_loops": max_review_loops,
               "review_priorities": list(review_priorities), "reviews": [],
               "loop_policy": progress_policy, "loop_policy_version": POLICY_VERSION, "loop_flags": [], "workflow_version": WORKFLOW_VERSION,
               "feature_count": len(benchmark["features"]), "check_count": len(benchmark["checks"]),
@@ -157,6 +163,7 @@ def run(benchmark, factors, output, seconds, max_raw, max_turns,
         manifest["workflow_version"] = WORKFLOW_VERSION
         manifest["skip_linearization"] = skip_linearization
         manifest["review_priorities"] = list(review_priorities)
+        manifest["max_review_loops"] = max_review_loops
         manifest["loop_policy"] = progress_policy
         manifest["loop_policy_version"] = POLICY_VERSION
         if skip_linearization:
@@ -319,14 +326,20 @@ def run(benchmark, factors, output, seconds, max_raw, max_turns,
 
             stopped_flag = None
             round_number = 0
+            approved = False
             try:
                 author_stop = implement(author_prompt(benchmark, feature, factors), name+"-implement")
                 # Checks need build-output writes just as author/integration checks
                 # do. The snapshot guard below still rejects reviewer source edits.
                 reviewer = None
-                round_number, evidence = 1, ""
+                evidence = ""
 
                 while True:
+                    if round_number >= max_review_loops:
+                        if author_stop:
+                            author_stop["final_review"] = {"status": "skipped", "reason": "max_review_loops"}
+                            escalate(author_stop)
+                        break
                     if author_stop:
                         skipped = ("disabled" if not progress_policy["final_review"] else
                                    "dirty_working_tree" if author_stop["working_tree_status"] else
@@ -347,6 +360,7 @@ def run(benchmark, factors, output, seconds, max_raw, max_turns,
                                      "This is the single final review of the current code. Apply the unchanged "
                                      "requirements and priorities; stopping is not evidence of correctness. "
                                      "No further automatic repairs will follow a rejection.")
+                    round_number += 1
                     provider.work_limits = progress.limits(observed_raw(), reviewing=True)
                     if reviewer is None:
                         reviewer = start_agent(f"{name}-review-{round_number}", writable=True)
@@ -395,6 +409,7 @@ def run(benchmark, factors, output, seconds, max_raw, max_turns,
                         if not decision["approved"]:
                             escalate(author_stop)
                     if decision["approved"]:
+                        approved = True
                         break
                     if signal is None:
                         raw = observed_raw()
@@ -417,35 +432,31 @@ def run(benchmark, factors, output, seconds, max_raw, max_turns,
                             evidence = "Author repair and real operation evidence:\n"+stream.read().decode()
                     else:
                         evidence = "Author reports completed repairs. Inspect the actual new commits and test results."
-                    round_number += 1
             except NeedsAttention as exc:
                 if "slopcodebench" not in benchmark:
                     raise
-                # Retain the stopped attempt for independent grading, then end
-                # the workflow. Later features require this review's approval.
+                # Safety stops still end the workflow; reaching the configured
+                # review allowance after a completed repair does not.
                 stopped_flag = exc.flag
                 retention = slopcodebench.retain_attempt(checkout, name)
                 stopped_flag["retention"] = retention
                 progress.save_flag(stopped_flag)
-                no_changes = git(checkout, "rev-parse", "HEAD").decode().strip() == feature_base
 
             provider.work_limits = []
+            head = git(checkout, "rev-parse", "HEAD").decode().strip()
+            no_changes = head == feature_base
             checkpoint = {"feature": name, "request": feature["request"], "base": feature_base,
-                          "reviewed_head": git(checkout, "rev-parse", "HEAD").decode().strip(), "review_rounds": round_number,
-                          "already_satisfied": no_changes, "observed_raw_tokens": observed_raw() - progress.raw_start,
+                          "head": head, "reviewed_head": head if approved else None, "review_rounds": round_number,
+                          "repair_attempts": progress.repairs,
+                          "status": "approved" if approved else "review_skipped" if max_review_loops == 0 else "review_limit_reached",
+                          "review_approved": True if approved else None,
+                          "already_satisfied": no_changes and approved, "observed_raw_tokens": observed_raw() - progress.raw_start,
                           "loop_flags": [f["artifact"] for f in progress.flags]}
-            if "slopcodebench" in benchmark:
-                checkpoint.update(status="needs_attention" if stopped_flag else "approved",
-                                  head=checkpoint["reviewed_head"],
-                                  review_approved=stopped_flag["review_approved"] if stopped_flag else True)
-                if stopped_flag:
-                    checkpoint["reviewed_head"] = None
-                    checkpoint["already_satisfied"] = False
-                    checkpoint["stop_reason"] = stopped_flag["reason"]
-                    checkpoint["incomplete_reason"] = (progress.reviews[-1].get("incomplete_reason")
-                                                       if progress.reviews else None)
-                    checkpoint["blocking_findings"] = (progress.reviews[-1]["blocking_findings"]
-                                                       if progress.reviews else [])
+            if stopped_flag:
+                checkpoint.update(status="needs_attention", review_approved=stopped_flag["review_approved"],
+                                  reviewed_head=None, already_satisfied=False, stop_reason=stopped_flag["reason"],
+                                  incomplete_reason=progress.reviews[-1].get("incomplete_reason") if progress.reviews else None,
+                                  blocking_findings=progress.reviews[-1]["blocking_findings"] if progress.reviews else [])
             result["checkpoints"].append(checkpoint)
             if host:
                 for key, count in host.activations.items():

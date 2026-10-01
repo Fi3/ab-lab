@@ -154,7 +154,7 @@ class ReviewSettlementTests(unittest.TestCase):
 
     def test_policy_versions_elapsed_review_settlement_explicitly(self):
         policy = loop_policy()
-        self.assertEqual(POLICY_VERSION, "global-budget-defaults-v5")
+        self.assertEqual(POLICY_VERSION, "bounded-review-loops-v6")
         self.assertEqual(policy["max_review_settle_seconds"], 600)
         progress = FeatureProgress({"id": "checkpoint_5"}, policy, 0)
         self.assertEqual(progress.limits(0, reviewing=True), [])

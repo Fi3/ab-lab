@@ -179,6 +179,30 @@ class SummaryTests(unittest.TestCase):
             self.assertEqual([value.strip() for value in checkpoint.split('|')[1:-1]][2:4],
                              ['passed', expected])
 
+    def test_skipped_and_exhausted_reviews_do_not_count_as_approvals(self):
+        row = result()
+        row['execution_status'] = 'completed'
+        row['checkpoints'] = [
+            {'feature': 'one', 'status': 'review_skipped', 'review_approved': None},
+            {'feature': 'two', 'status': 'review_limit_reached', 'review_approved': None}]
+        row['slopcodebench'] = {
+            'problem': 'code_search', 'status': 'completed', 'solved': True,
+            'all_tests_passed': True,
+            'checkpoints': [
+                {'feature': 'one', 'status': 'passed', 'strict_pass': True},
+                {'feature': 'two', 'status': 'passed', 'strict_pass': True,
+                 'attempt_status': 'review_limit_reached', 'review_approved': None}],
+            'final': {'status': 'passed', 'strict_pass': True}}
+        rendered = self.render(row)
+        main = next(line for line in rendered.splitlines() if line.startswith('| run-001'))
+        self.assertEqual([value.strip() for value in main.split('|')[1:-1]][-2], '0/2')
+        section = rendered.split('SlopCodeBench correctness:', 1)[1]
+        for feature, expected in [('one', 'skipped'), ('two', 'limit reached (unreviewed)')]:
+            checkpoint = next(line for line in section.splitlines()
+                              if feature in [value.strip() for value in line.split('|')])
+            self.assertEqual([value.strip() for value in checkpoint.split('|')[1:-1]][2:4],
+                             ['passed', expected])
+
     def test_mixed_legacy_and_attention_reports_keep_unknown_execution_and_review(self):
         legacy = result('legacy')
         row = result(status='needs_attention')

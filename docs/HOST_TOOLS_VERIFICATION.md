@@ -2,8 +2,10 @@
 
 This report describes the earlier stop-and-continue policy. Its completed
 executions included unfinished reviews and do not verify approval of all five
-features. The current runner requires review approval before advancing and
-uses whole-run safety limits by default; see README.md for current behavior.
+features. The current runner uses a bounded review allowance and advances after
+the final permitted repair without claiming approval; safety limits still stop
+incomplete work. This historical report does not verify the current contract;
+see README.md for current behavior.
 
 Workflow: `host-tools-upstream-prompts-v1`. This replaces the printed command
 protocol; there is no alternate legacy execution path. Eight factors remain;

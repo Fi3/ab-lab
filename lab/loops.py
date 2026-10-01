@@ -11,14 +11,13 @@ from .host import Fatal, git, snapshot, state_summary
 DEFAULT_LOOP_POLICY = {
     "enabled": True,
     "max_feature_raw": None,
-    "max_repair_attempts": None,
     "repeat_limit": 3,
     "max_review_raw": None,
     "max_review_seconds": None,
     "max_review_settle_seconds": 600,
     "final_review": True,
 }
-POLICY_VERSION = "global-budget-defaults-v5"
+POLICY_VERSION = "bounded-review-loops-v6"
 
 
 def loop_policy(value=None):
@@ -28,9 +27,9 @@ def loop_policy(value=None):
     for key in ("enabled", "final_review"):
         if type(policy[key]) is not bool:
             raise ValueError(f"loop policy {key} must be boolean")
-    for key in ("max_feature_raw", "max_repair_attempts", "repeat_limit", "max_review_raw", "max_review_seconds",
+    for key in ("max_feature_raw", "repeat_limit", "max_review_raw", "max_review_seconds",
                 "max_review_settle_seconds"):
-        if key in ("max_feature_raw", "max_review_raw", "max_review_seconds", "max_repair_attempts") and policy[key] is None:
+        if key in ("max_feature_raw", "max_review_raw", "max_review_seconds") and policy[key] is None:
             continue
         if type(policy[key]) is not int or policy[key] <= 0:
             raise ValueError(f"loop policy {key} must be a positive integer")
@@ -120,9 +119,6 @@ class FeatureProgress:
             if repeated:
                 return {"reason": "repeated_blocking_findings", "kind": "loop_detected",
                         "rounds": [r["round"] for r in window], "findings": sorted(repeated)}
-        if self.policy["max_repair_attempts"] is not None and self.repairs >= self.policy["max_repair_attempts"]:
-            return {"reason": "repair_limit_reached", "kind": "attempt_limit",
-                    "limit": self.policy["max_repair_attempts"], "observed": self.repairs}
         return None
 
     def observe_operation(self, request, response, repo):

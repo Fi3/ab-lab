@@ -14,10 +14,12 @@ printed-command transport have been removed; there is no legacy execution mode.
 
 ## Outcomes are independent
 
-- **Execution:** did every feature receive review approval and final assembly
-  finish, or did the workflow stop incomplete?
+- **Execution:** did every feature complete its configured implementation and
+  review/repair sequence and final assembly finish, or did the workflow stop
+  incomplete?
 - **Benchmark correctness:** did authoritative evaluation pass, fail, or not run?
-- **Review:** approved, findings, or incomplete; completion alone is not approval.
+- **Review:** approved, findings, incomplete, skipped, or an unreviewed final
+  repair; completion alone is not approval.
 - **Accounting:** complete or incomplete; missing usage is never estimated as zero.
 - **Failure owner:** agent, runner, provider, evaluator, or external interruption.
 
@@ -42,12 +44,13 @@ final result aggregation.
 | Upstream policy rejection, including `Invalid prompt` | Save the provider's original error, rejected request identity, and any accounting receipt without classifying from a missing final response. | Do not repeatedly resubmit or rewrite the benchmark to evade the rejection. Retain work and stop the workflow; later checkpoints remain unrun. | Provider rejection, not an agent benchmark failure and not evidence that a local protocol repair failed. |
 | Provider response/output limit or context overflow | Record the actual provider limit error, partial output, operation acceptance state, and usage. | Native compaction or supported recovery may continue the same task. Already executed native/host tools must not be replayed. | Recoverable provider limit only with established state and accounting; otherwise incomplete. |
 | Missing, late, malformed, or duplicated usage | Reconcile request identities and authoritative receipts; retain unmatched records and raw provider events. | Accept late receipts for their original request; deduplicate by identity. Do not infer usage from a token estimate or count a duplicate twice. | Accounting incomplete until reconciled; never a fully measured run while coverage is missing. |
+| Codex spawns a native subagent before its first usage receipt | Track the child through its owned parent spawn, turn events, and validated fork history. Preserve pending lifecycle and receipt state separately from token totals. | Allow parent host commands while the child runs. Wait for child completion before accepting the parent stage, within the existing budgets. Exclude inherited parent history and merge duplicate transport/native counters once. | Pending usage during execution is normal; an aborted child or missing terminal usage cannot certify a completed stage. |
 | Agent turn ends with no source changes | Observe normal harness completion and capture the actual workspace state. | Send the assigned requirements and existing result to independent review if review is enabled. No synthetic completion marker or empty commit is required to establish that the turn ended. | Completed author attempt; review/evaluation establish whether the task was already satisfied. |
 | Review returns malformed or incomplete verdict | Preserve reviewer response and source identity. Validate verdict separately from review transport completion. | Incomplete evidence is not approval. Format correction, if configured, must not start a new code-changing repair loop or invent findings. | Review incomplete; any continuation must retain that fact. |
-| Codex spawns a native subagent before its first usage receipt | Track the child through its owned parent spawn, turn events, and validated fork history. Preserve pending lifecycle and receipt state separately from token totals. | Allow parent host commands while the child runs. Wait for child completion before accepting the parent stage, within the existing budgets. Exclude inherited parent history and merge duplicate transport/native counters once. | Pending usage during execution is normal; an aborted child or missing terminal usage cannot certify a completed stage. |
-| Reviewer finds a real issue | Preserve the exact finding, affected requirement, reviewed tree, and priority. | Supply findings for an explicitly configured repair round. Do not add unrelated coding advice or unspecified requirements. | Review findings; subsequent repaired trees require their own review result. |
+| Reviewer finds a real issue | Preserve the exact finding, affected requirement, reviewed tree, and priority. | Supply blocking findings for the author repair following that review. Do not add unrelated coding advice or unspecified requirements. Re-review only while the configured review allowance remains. | Review findings; approval of a repaired tree requires its own review result. |
+| Configured review allowance is reached | Record `max_review_loops`, completed reviews, repairs, and the final source identity. The default allowance is three reviews per feature; zero skips review. | After the Nth blocking review, complete its author repair and continue without an extra review. Early approval ends the sequence sooner. Safety guards, provider failures, and whole-run budgets still apply. | Normal feature completion with `review_limit_reached` or `review_skipped`; the final unreviewed state has no review approval. Benchmark correctness remains independently evaluated. |
 | Reviewer or evaluator unexpectedly writes source | Compare the protected submission snapshot or workspace before and after. Save the mutation as evidence rather than silently accepting it. | Grade a disposable copy. Do not treat an altered submission as the author's original solution. | Runner/evaluator custody failure if protected source changed. |
-| Explicit feature/review cap, repair limit, or whole-run limit | Enforce against recorded counters and elapsed time outside the prompt; record threshold, observed value, and stop scope. By default only whole-run time/token/turn limits apply; stage time/token and repair-count caps are opt-in. | Retain actual source and stop the workflow. Local review/loop stops capture the stopped checkpoint for grading; whole-run stops grade already captured snapshots and leave the active uncaptured checkpoint ungraded. Do not start later checkpoints or integration, prompt the agent to hurry, or ask the reviewer for an unsupported conclusion. | Execution incomplete; unresolved checkpoint is not approved. |
+| Explicit feature/review token or time cap, or whole-run limit | Enforce against recorded counters and elapsed time outside the prompt; record threshold, observed value, and stop scope. By default only whole-run time/token/turn limits apply; stage time/token caps are opt-in. | Retain actual source and stop the workflow. Local review/loop stops capture the stopped checkpoint for grading; whole-run stops grade already captured snapshots and leave the active uncaptured checkpoint ungraded. Do not start later checkpoints or integration, prompt the agent to hurry, or ask the reviewer for an unsupported conclusion. | Execution incomplete; unresolved checkpoint is not approved. |
 | Apparent operation loop | Compare completed operation inputs, outputs, and relevant state, not just repeated command text. Polling and rerunning a test after edits can be legitimate progress. | Bound demonstrably unchanged repetition according to the recorded policy. Preserve the operations that established the decision. | Loop stop with evidence; distinguish it from a task failure or an ordinary polling operation. |
 | Battery loss, process crash, or external signal | On restart, reconcile the durable run manifest, operation journal, provider sessions, owned child processes, source tree, and accounting receipts. | Resume only from an established boundary. An uncertain in-flight operation blocks automatic replay; completed operations return saved results. Never reset retained work merely to obtain a clean tree. | External interruption until reconciliation completes; resumption must not invent prior completion. |
 | Evaluator unavailable, timeout, invalid JSON, or zero collected tests | Preserve preflight identity, command/exit result, logs, test inventory, and cleanup receipt. | Run preflight before model work; grading retries use an immutable snapshot and separately owned disposable environment. Reap only this run's evaluator resources. | Evaluator infrastructure error; no pass rate inferred from absent tests. |
@@ -102,9 +105,6 @@ incomplete; no token count is inferred from missing output.
   unresolved operation.
 - Provider refusal, disconnect, context/output limits, and missing usage cannot
   produce approval, an invented zero-token response, or duplicate execution.
-- Identical polling with changing output and checks repeated after source edits
-  do not trigger a loop solely because command text repeats.
-- A hard reviewer limit produces an incomplete review without another
 - Native child startup before the first token receipt does not block a parent
   host command. Child usage remains subject to the global budget; parent
   completion waits for successful child completion and its own receipts. Forked
@@ -112,7 +112,13 @@ incomplete; no token count is inferred from missing output.
   replayed without generation using `tests/replay_native_children.py`; output
   must be outside the original run directories. Runs without native children
   retain their previous totals and completion decisions.
+- Identical polling with changing output and checks repeated after source edits
+  do not trigger a loop solely because command text repeats.
+- A hard reviewer limit produces an incomplete review without another
   conclusion/coaching prompt.
+- A three-review allowance permits three blocking reviews and their three author
+  repairs, then advances without a fourth review or an invented approval. Zero
+  skips reviews, early approval stops sooner, and safety failures still stop.
 - Evaluator assertion failures, infrastructure failures, timeout, and empty
   collection retain distinct outcomes and do not mutate the graded snapshot.
 - Official upstream SCB prompts are rendered byte-for-byte by the pinned

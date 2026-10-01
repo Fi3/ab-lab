@@ -36,6 +36,7 @@ failed = config['benchmark']['name'] == 'fail-middle' and index == 2
 result = {'status': 'failed' if failed else 'passed', 'output': str(out),
           'factors': config['factors'], 'usage': {'observed_raw_tokens': index*100,
           'measurement_complete': True}, 'start': start, 'finish': time.time(),
+          'max_review_loops': config['options']['max_review_loops'],
           'base_commit': config['base_commit']}
 (out/'result.json').write_text(json.dumps(result))
 sys.exit(1 if failed else 0)
@@ -50,11 +51,11 @@ class BatchTests(unittest.TestCase):
         root = Path(directory.name)
         return root, benchmark_at(root), worker_at(root)
 
-    def execute(self, benchmark, output, command, repeat=5, parallel=2):
+    def execute(self, benchmark, output, command, repeat=5, parallel=2, **options):
         from lab.batch import run_batch
         return run_batch(benchmark, settings({}), output, repeat, parallel,
             seconds=30, max_raw=10000, max_turns=30, model='test', harness='codex',
-            _worker_command=command)
+            _worker_command=command, **options)
 
     def test_repetitions_obey_parallel_limit_and_keep_ordered_separate_results(self):
         root, bench, command = self.setup_batch()
@@ -74,6 +75,28 @@ class BatchTests(unittest.TestCase):
             self.assertEqual(row['base_commit'], result['base_commit'])
             self.assertTrue((Path(row['output'])/'result.json').exists())
         self.assertEqual(json.loads((root/'batch/result.json').read_text()), result)
+        self.assertEqual(result['max_review_loops'], 3)
+        self.assertTrue(all(row['max_review_loops'] == 3 for row in result['results']))
+
+    def test_review_allowance_is_recorded_and_forwarded_to_workers(self):
+        from lab.batch import failure, worker
+        root, bench, command = self.setup_batch()
+        for allowance in (0, 5):
+            with self.subTest(allowance=allowance):
+                destination = root/f'batch-{allowance}'
+                result = self.execute(bench, destination, command, repeat=1, parallel=1,
+                                      max_review_loops=allowance)
+                config_path = destination/'batch-input.json'
+                config = json.loads(config_path.read_text())
+                self.assertEqual(config['options']['max_review_loops'], allowance)
+                self.assertEqual(result['max_review_loops'], allowance)
+                self.assertEqual(result['results'][0]['max_review_loops'], allowance)
+                self.assertEqual(failure(config, destination/'failed', 'injected failure')['max_review_loops'], allowance)
+                with patch('lab.batch.source_hashes', return_value=config['source_sha256']), \
+                        patch('lab.batch.run', return_value={'status': 'passed'}) as launch, \
+                        contextlib.redirect_stdout(io.StringIO()):
+                    self.assertEqual(worker(config_path, destination/'forwarded'), 0)
+                self.assertEqual(launch.call_args.kwargs['max_review_loops'], allowance)
 
     def test_failed_workflows_are_retained_without_replacement_or_lost_siblings(self):
         root, bench, command = self.setup_batch()
@@ -92,6 +115,7 @@ class BatchTests(unittest.TestCase):
         self.assertEqual(row['status'], 'failed')
         self.assertIsNone(row['usage']['observed_raw_tokens'])
         self.assertFalse(row['usage']['measurement_complete'])
+        self.assertEqual(row['max_review_loops'], 3)
         self.assertIn('7', row['error'])
         self.assertEqual(result['results'][2]['status'], 'passed')
 
@@ -103,7 +127,11 @@ class BatchTests(unittest.TestCase):
             for repeat, parallel in ((0, 1), (2, 0), (-1, 1)):
                 with self.assertRaises(ValueError):
                     self.execute(bench, root/'invalid', command, repeat, parallel)
+            for allowance in (-1, 1.5, True, '2', None):
+                with self.subTest(allowance=allowance), self.assertRaises(ValueError):
+                    self.execute(bench, root/'invalid', command, max_review_loops=allowance)
             spawn.assert_not_called()
+        self.assertFalse((root/'invalid').exists())
 
     def test_three_actual_workflow_loops_keep_clones_checks_and_start_commit_isolated(self):
         root, bench, _ = self.setup_batch()
@@ -130,6 +158,8 @@ class BatchTests(unittest.TestCase):
             out = Path(row['output'])
             manifest = json.loads((out/'manifest.json').read_text())
             self.assertEqual(manifest['base_commit'], before)
+            self.assertEqual(manifest['max_review_loops'], 3)
+            self.assertEqual(row['max_review_loops'], 3)
             self.assertEqual(manifest['benchmark']['revision'], 'HEAD')
             self.assertEqual(len(row['checkpoints']), 2)
             self.assertEqual(row['feature_count'], 2)
@@ -177,13 +207,16 @@ class BatchCliTests(unittest.TestCase):
             path.write_text(json.dumps(benchmark_at(root)))
             command = [sys.executable, '-m', 'lab', 'run', str(path), '--out', str(root/'batch'),
                 '--seconds', '30', '--max-raw', '10000', '--max-turns', '20',
-                '--parallel', '3', '--harness', 'codex', '--scb-check', str(root/'missing-checker')]
+                '--parallel', '3', '--harness', 'codex', '--max-review-loops', '0',
+                '--scb-check', str(root/'missing-checker')]
             process = subprocess.run(command, cwd=ROOT, text=True, capture_output=True, timeout=10)
             self.assertEqual(process.returncode, 1, process.stderr)
             result = json.loads(process.stdout)
             self.assertEqual(len(result['results']), 3)
+            self.assertEqual(result['max_review_loops'], 0)
             for row in result['results']:
                 self.assertEqual(row['status'], 'failed')
+                self.assertEqual(row['max_review_loops'], 0)
                 self.assertIn('scb-check executable not found', row['error'])
                 self.assertIsNone(row['usage']['observed_raw_tokens'])
                 self.assertFalse((Path(row['output'])/'provider').exists())
@@ -215,7 +248,7 @@ class BatchCliTests(unittest.TestCase):
                 '--seconds', '100', '--max-raw', '10000', '--max-turns', '20',
                 '--parallel', '3', '--harness', 'pi', '--pi', 'custom-pi',
                 '--model', 'unchanged-model', '--effort', 'high', '--off', 'C08,C20',
-                '--scb-check', '/checker', '--scb-seconds', '10']
+                '--scb-check', '/checker', '--scb-seconds', '10', '--max-review-loops', '5']
             with patch('lab.__main__.run_batch', return_value={'status': 'passed'}) as batch:
                 with patch.object(sys, 'argv', arguments), contextlib.redirect_stdout(io.StringIO()):
                     self.assertEqual(main(), 0)
@@ -225,11 +258,66 @@ class BatchCliTests(unittest.TestCase):
                 self.assertEqual(call.kwargs['harness'], 'pi')
                 self.assertEqual(call.kwargs['executable'], 'custom-pi')
                 self.assertEqual(call.kwargs['scb_check'], '/checker')
+                self.assertEqual(call.kwargs['max_review_loops'], 5)
                 self.assertFalse(call.args[1]['C08'])
                 self.assertFalse(call.args[1]['C20'])
                 with patch.object(sys, 'argv', arguments+['--repeat', '9']), contextlib.redirect_stdout(io.StringIO()):
                     self.assertEqual(main(), 0)
                 self.assertEqual(batch.call_args.args[3:5], (9, 3))
+
+
+class ReviewLoopsCliTests(unittest.TestCase):
+    def setUp(self):
+        directory = tempfile.TemporaryDirectory()
+        self.addCleanup(directory.cleanup)
+        self.root = Path(directory.name)
+        self.path = self.root/'benchmark.json'
+        self.path.write_text(json.dumps(benchmark_at(self.root)))
+
+    def run_arguments(self, harness='codex', parallel=1):
+        return ['lab', 'run', str(self.path), '--out', str(self.root/'run'),
+                '--seconds', '30', '--max-raw', '10000', '--max-turns', '20',
+                '--harness', harness, '--parallel', str(parallel)]
+
+    def test_plan_records_default_explicit_and_disabled_review_allowances(self):
+        for options, expected in (([], 3), (['--max-review-loops', '0'], 0),
+                                  (['--max-review-loops', '1'], 1),
+                                  (['--max-review-loops', '5', '--no-loop-detection'], 5)):
+            with self.subTest(options=options):
+                output = io.StringIO()
+                with patch.object(sys, 'argv', ['lab', 'plan', str(self.path), *options]), \
+                        contextlib.redirect_stdout(output):
+                    self.assertEqual(main(), 0)
+                plan = json.loads(output.getvalue())
+                self.assertEqual(plan['max_review_loops'], expected)
+                self.assertEqual(plan['generation'], 'none')
+                self.assertNotIn('max_repair_attempts', plan['loop_policy'])
+
+    def test_single_and_batch_forward_allowance_for_both_harnesses(self):
+        for harness in ('codex', 'pi'):
+            for parallel in (1, 2):
+                for allowance in (None, 0, 5):
+                    with self.subTest(harness=harness, parallel=parallel, allowance=allowance):
+                        arguments = self.run_arguments(harness, parallel)
+                        if allowance is not None:
+                            arguments += ['--max-review-loops', str(allowance)]
+                        target = 'run_batch' if parallel > 1 else 'run'
+                        with patch('lab.__main__.'+target, return_value={'status': 'passed'}) as launch, \
+                                patch.object(sys, 'argv', arguments), contextlib.redirect_stdout(io.StringIO()):
+                            self.assertEqual(main(), 0)
+                        self.assertEqual(launch.call_args.kwargs['max_review_loops'],
+                                         3 if allowance is None else allowance)
+
+    def test_invalid_allowances_are_rejected_before_plan_or_run(self):
+        for arguments in (['lab', 'plan', str(self.path)], self.run_arguments()):
+            for value in ('-1', '1.5', 'true', 'null', ''):
+                with self.subTest(command=arguments[1], value=value):
+                    with patch('lab.__main__.load_benchmark') as load, \
+                            patch.object(sys, 'argv', arguments+['--max-review-loops', value]), \
+                            contextlib.redirect_stderr(io.StringIO()), self.assertRaises(SystemExit) as raised:
+                        main()
+                    self.assertEqual(raised.exception.code, 2)
+                    load.assert_not_called()
 
 
 if __name__ == '__main__':
