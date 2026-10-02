@@ -78,5 +78,9 @@
   ],
   "checks": [
     "yarn build"
-  ]
+  ],
+  "swe_milestone": {
+    "project": "element-web",
+    "seconds": 3600
+  }
 }

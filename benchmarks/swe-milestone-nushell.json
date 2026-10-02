@@ -58,5 +58,9 @@
   ],
   "checks": [
     "cargo build --profile ci --workspace --exclude 'nu_plugin_*'"
-  ]
+  ],
+  "swe_milestone": {
+    "project": "nushell",
+    "seconds": 3600
+  }
 }

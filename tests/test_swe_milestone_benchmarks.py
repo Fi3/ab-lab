@@ -29,6 +29,7 @@ class CommittedMilestoneBenchmarksTests(unittest.TestCase):
                     config = folder / "benchmark.json"
                     config.write_text(json.dumps(benchmark))
                     loaded = load_benchmark(config)
+                    self.assertEqual(loaded["swe_milestone"], {"project": project, "seconds": 3600})
                     self.assertEqual(loaded["name"], f"swe-milestone-{project}-{sm.VERSION}")
                     self.assertEqual(len(loaded["features"]), count)
                     self.assertEqual(loaded["checks"], sm.PROJECTS[project]["checks"])

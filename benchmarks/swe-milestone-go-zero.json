@@ -98,5 +98,9 @@
   ],
   "checks": [
     "go build -v ./..."
-  ]
+  ],
+  "swe_milestone": {
+    "project": "go-zero",
+    "seconds": 3600
+  }
 }

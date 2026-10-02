@@ -3,7 +3,8 @@
 `benchmarks/swe_milestone.py` imports [SWE-Milestone](https://github.com/DeepCommit-ai/SWE-Milestone)
 into the existing benchmark JSON format. All seven projects' benchmark definitions are
 committed under `benchmarks/`; each project is prepared and run separately.
-**No runner changes are required.**
+Each definition selects its benchmark-owned evaluator. `lab run` automatically
+grades the saved submissions after the model sessions close.
 
 Use these files as the first argument to `python3 -m lab run`:
 
@@ -34,8 +35,8 @@ are not committed. On a fresh checkout, prepare the project before running it.
 
 This is a **lab adaptation**, not an official leaderboard run. Upstream lets an
 agent choose available tasks in a continuous session inside its prepared
-container. Here, the lab controls author sessions, reviews, factors and final
-integration. Tasks follow a fixed, deterministic topological order: strong
+container. Here, the lab controls author sessions, reviews and factors.
+Tasks follow a fixed, deterministic topological order: strong
 dependencies first, including `additional_dependencies.csv`, with milestone ID
 as the tie-breaker. Weak edges do not constrain execution, matching upstream's
 default unlocking policy. Code carries forward between tasks.
@@ -55,7 +56,8 @@ reachable Git history, excluding future refs. It writes:
 
 ```text
 .benchmarks/swe-milestone-projects/ripgrep/
-  benchmark.json       # ordinary lab benchmark, with verbatim upstream SRS text
+  benchmark.json       # frozen task import, with verbatim upstream SRS text
+  run-benchmark.json   # runnable definition including automatic evaluation
   import.json          # task mapping, grading eligibility, pins and input hashes
   repo/                # starting repository
   repo_config.yaml     # frozen official grading configuration
@@ -70,7 +72,7 @@ underscores in lab feature IDs; grading retains the original IDs.
 Preparation does not launch a model, modify runner code, or install project
 toolchains on the host. Docker images can be large. Dataset downloads, exported
 repositories and preparation receipts are under the already ignored
-`.benchmarks/` directory. Preparation also retains a local benchmark copy there;
+`.benchmarks/` directory. Preparation prints the local `run-benchmark.json` path;
 the committed definitions above refer to the same source and tasks.
 
 For scikit-learn, setup is `python3 benchmarks/swe_milestone.py prepare scikit-learn`.
@@ -84,6 +86,17 @@ test totals exclude the remaining nine milestones.
 Reduced definitions must contain a nonempty, unchanged prefix of the full
 definition's `features`. Evaluation uses the definition saved in the run's
 manifest, so regrading preserves its scope. The full benchmark is unchanged.
+
+Install the evaluator environment once, before running any project:
+
+```bash
+python3 -m venv .benchmarks/swe-milestone-venv
+.benchmarks/swe-milestone-venv/bin/python -m pip install \
+  -r benchmarks/swe-milestone-requirements.txt
+```
+
+The adapter checks pinned inputs, evaluator dependencies and Docker readiness
+before the coding harness starts.
 
 ## Run with the existing runner
 
@@ -115,27 +128,16 @@ apply upstream's network quarantine to the author.
 
 The committed definitions use the catalog's public final build checks. To choose
 a different public check, pass `--check 'COMMAND'` during preparation (repeatable)
-and run the generated `.benchmarks/swe-milestone-projects/PROJECT/benchmark.json`;
+and run the generated `.benchmarks/swe-milestone-projects/PROJECT/run-benchmark.json`;
 preparation does not change the committed definitions. The runner's existing
 300-second per-command ceiling still applies. Changing checks
 changes the experimental configuration. Successful public builds and reviewer
 approval **do not establish SWE-Milestone correctness**.
 
-## Grade saved commits and measure code evolution
+## Automatic grading and code evolution measurements
 
-Set up a separate environment for the official evaluator:
-
-```bash
-python3 -m venv .benchmarks/swe-milestone-venv
-.benchmarks/swe-milestone-venv/bin/python -m pip install \
-  -r benchmarks/swe-milestone-requirements.txt
-
-.benchmarks/swe-milestone-venv/bin/python benchmarks/swe_milestone.py evaluate \
-  ripgrep runs/milestone-ripgrep-1 --scb-check .venv/bin/scb-check
-```
-
-This command runs **after** the lab finishes. It does not call a model or send
-grader findings back to an author. It:
+`lab run` launches the adapter automatically after closing all model sessions.
+It does not send grader findings back to an author. The adapter:
 
 1. Verifies the imported inputs and each saved checkpoint's request and commit.
 2. Measures each milestone's committed tree with `scb-check` in a disposable
@@ -150,21 +152,36 @@ grader findings back to an author. It:
 
 The normal runner already records before/after implementation
 quality. The adapter adds the missing per-milestone measurements. Final grading
-uses the commit in `scb-check/after_implementation/result.json`, never whatever happens
-to be checked out when grading is requested.
+uses `final_submission` in the saved run result, never whatever happens to be
+checked out when grading is requested. Historical runs can still use the commit
+in `scb-check/after_implementation/result.json`.
 
 Results go to `RUN/swe-milestone/result.json`, with detailed logs, source
-snapshots and grader reports beside it. This is separate from `RUN/result.json`:
-the existing `summarize.py` describes the lab workflow and does not read the new
-correctness report. Consult both. No existing result is rewritten.
+snapshots and grader reports beside it. `RUN/result.json` includes the full
+`swe_milestone` report and a normalized `evaluation` outcome; `summarize.py`
+displays correctness and per-milestone quality. Failed tests fail the overall
+run; grader failures are recorded as evaluation errors. Earlier workflow
+failures remain visible even when independent tests pass.
 
 `solved` requires every graded checkpoint and final evaluation to pass,
-with all milestone quality measurements complete. Missing checkpoints, missing
-final measurement or grader errors leave the report incomplete. Failed tests are
+with all requested milestone quality measurements complete. Missing checkpoints,
+a missing final submission or grader errors leave the report incomplete. Failed tests are
 preserved as failures. Exit codes are 0 for solved, 1 for completed but unsolved,
 and 2 for incomplete or an adapter/grader error.
 
-For a small grading check, use `--milestone ORIGINAL_ID` (repeatable). The full
+The JSON evaluator declaration is `"swe_milestone": {"project": "ripgrep", "seconds": 3600}`.
+`seconds` limits each grading invocation; grading uses no model tokens.
+
+For an existing run, the evaluator is also available directly:
+
+```bash
+.benchmarks/swe-milestone-venv/bin/python benchmarks/swe_milestone.py evaluate \
+  ripgrep runs/milestone-ripgrep-1 --out runs/milestone-ripgrep-1/regrade \
+  --scb-check .venv/bin/scb-check
+```
+
+Use `--no-quality` for correctness-only regrading. For a small grading check,
+use `--milestone ORIGINAL_ID` (repeatable). The full
 denominator remains visible, and a partial selection cannot claim completion.
 `--seconds N` limits each evaluator invocation (default 3600); image download
 time is separate. A rerun requires a new `--out DIRECTORY`, preserving earlier

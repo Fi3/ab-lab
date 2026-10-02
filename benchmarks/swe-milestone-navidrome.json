@@ -42,5 +42,9 @@
   ],
   "checks": [
     "(cd ui && npm ci && npm run build) && go build -tags=netgo ."
-  ]
+  ],
+  "swe_milestone": {
+    "project": "navidrome",
+    "seconds": 3600
+  }
 }

@@ -265,6 +265,21 @@ separate local instruction block. Removed configuration fields `instructions`
 and `defer_documentation` are rejected rather than silently ignored. A configured `after_read` fixture can apply a
 declared intervening source change for C08 experiments; it requires C17.
 
+Benchmarks own their evaluation. The registrations in
+`benchmarks/evaluators.py` connect a benchmark's JSON section to its adapter;
+the runner uses the same lifecycle for each adapter. Existing Work Leaf and
+other plain definitions keep their declared final checks. SlopCodeBench's
+`slopcodebench` section and SWE-Milestone's `swe_milestone` section additionally
+select independent grading, which runs automatically after every model session
+has closed. The `lab run` command, harness interfaces, prompts and review
+allowances are unchanged. See [the evaluator contract](docs/BENCHMARK_EVALUATION.md).
+
+The seven [SWE-Milestone projects](docs/SWE_MILESTONE.md) run separately using
+`benchmarks/swe-milestone-PROJECT.json`. A single `lab run` invocation implements
+the tasks, executes public checks, grades saved submissions, and records
+per-milestone quality. Set up the project's source and evaluator environment
+before the first run. Evaluator readiness is checked before model execution.
+
 Set up the pinned SlopCodeBench evaluator with Docker and `uv` available:
 
 ```sh
@@ -303,6 +318,9 @@ Run artifacts live under the supplied output directory:
   permissions, workflow version, and limits.
 - `result.json`: stage outcomes, reviews, checks, checkpoint grades, failures,
   token accounting, and final summary.
+- `before-evaluation.json`: immutable workflow result before independent grading.
+  `result.json` adds the normalized `evaluation` verdict and the adapter's full report;
+  `summarize.py` displays these with the existing workflow and quality results.
 - `checkout/`: retained source and commits.
 - `provider/`: prompts, transport events, responses, and accounting evidence.
 - Feature host directories: tool journals and actual execution receipts.

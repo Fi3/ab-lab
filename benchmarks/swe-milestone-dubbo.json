@@ -58,5 +58,9 @@
   ],
   "checks": [
     "./mvnw -B -ntp -DskipTests package"
-  ]
+  ],
+  "swe_milestone": {
+    "project": "dubbo",
+    "seconds": 3600
+  }
 }
