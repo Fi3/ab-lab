@@ -216,6 +216,18 @@ Replace `--harness codex` with `--harness pi` to use Pi. Both default to model
 `gpt-5.5` and effort `xhigh`; choose explicitly with `--model` and `--effort`.
 The limits above are example settings, not a guarantee that a task will finish.
 
+`plan` and `run` accept `--compaction-tokens N`, a positive integer defaulting to
+`131072` for both harnesses and every preset, including `native`. For example,
+`--compaction-tokens 200000` requests a 200,000-token compaction threshold.
+The runner applies the requested threshold to the harness and stops if it cannot
+enforce it. Native mode retains harness context handling without runner-triggered
+compaction or synthetic recovery prompts. The threshold is recorded in plans,
+run manifests, results, and batch configurations, and is part of comparison
+identity; use the same value for matched runs.
+For Pi, this uses its native `reserveTokens` setting: model context window minus
+the requested threshold. The threshold must be below that window. Settings are
+changed only in a private run copy; conflicting project settings cause an error.
+
 ## Choosing conditions
 
 | Factor | Enabled behavior | Disabled behavior |

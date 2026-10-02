@@ -8,6 +8,7 @@ import time
 from contextlib import ExitStack
 
 from .config import WORKFLOW_VERSION, author_policy
+from .context import AUTO_COMPACT_TOKENS, validate_compaction_tokens
 from .exclude_integration import comparison_view
 from .host import Fatal, Host, execute_child, git, git_execution, save_json, snapshot, relative_path
 from .host_tools import HOST_TOOLS, HostTools
@@ -99,19 +100,23 @@ def run(benchmark, factors, output, seconds, max_raw, max_turns,
         model="gpt-5.5", effort="xhigh", executable="codex", backend=Codex, *,
         harness=None, scb_check=None, scb_seconds=300, child_codex="codex",
         review_priorities=DEFAULT_PRIORITIES, max_review_loops=DEFAULT_MAX_REVIEW_LOOPS,
-        loop_options=None, preset=None, _base_commit=None):
+        loop_options=None, preset=None, compaction_tokens=AUTO_COMPACT_TOKENS, _base_commit=None):
     if seconds <= 0 or max_raw <= 0 or max_turns <= 0:
         raise ValueError("positive wall-time, observed-token and turn limits are required")
     if not math.isfinite(scb_seconds) or scb_seconds <= 0:
         raise ValueError("scb-check needs a positive finite time limit")
     review_priorities = normalize_priorities(review_priorities)
     max_review_loops = normalize_review_loops(max_review_loops)
+    compaction_tokens = validate_compaction_tokens(compaction_tokens)
     progress_policy = loop_policy(loop_options)
     if harness == "pi":
         if backend is Codex:
             backend = Pi
         if executable == "codex":
             executable = "pi"
+    if getattr(backend, "supports_compaction_tokens", False) is not True:
+        name = harness or getattr(backend, "__name__", type(backend).__name__)
+        raise ValueError(f"harness {name!r} does not support setting compaction tokens")
     fixture = benchmark.get("after_read")
     if fixture and not factors["C17"]:
         raise ValueError("after_read fixture requires mediated host reads (C17=on)")
@@ -126,6 +131,7 @@ def run(benchmark, factors, output, seconds, max_raw, max_turns,
     result = {"schema": "agent-behavior-lab/v1", "status": "failed", "factors": factors,
               "output": str(output), "benchmark": benchmark["name"], "preset": preset,
               "max_review_loops": max_review_loops,
+              "compaction_tokens": compaction_tokens,
               "review_priorities": list(review_priorities), "reviews": [],
               "loop_policy": progress_policy, "loop_policy_version": POLICY_VERSION, "loop_flags": [], "workflow_version": WORKFLOW_VERSION,
               "feature_count": len(benchmark["features"]), "check_count": len(benchmark["checks"]),
@@ -153,6 +159,7 @@ def run(benchmark, factors, output, seconds, max_raw, max_turns,
         manifest["workflow_version"] = WORKFLOW_VERSION
         manifest["review_priorities"] = list(review_priorities)
         manifest["max_review_loops"] = max_review_loops
+        manifest["compaction_tokens"] = compaction_tokens
         manifest["loop_policy"] = progress_policy
         manifest["loop_policy_version"] = POLICY_VERSION
         if scb_check is not None:
@@ -198,7 +205,8 @@ def run(benchmark, factors, output, seconds, max_raw, max_turns,
         score("before_changes")
         failure_origin = "provider"
         provider = backend(checkout, output / "provider", model, effort, deadline, max_raw, max_turns, executable,
-                           require_git_write=True, allow_delegation=not factors["C17"], **({"codex_executable": child_codex} if backend is Pi else {}))
+                           require_git_write=True, allow_delegation=not factors["C17"], compaction_tokens=compaction_tokens,
+                           **({"codex_executable": child_codex} if backend is Pi else {}))
         git_context.enter_context(git_execution(checkout, getattr(provider, "git_argv", lambda argv: argv),
                                                getattr(provider, "command_env", clean_env()), deadline))
         failure_origin = "runner"

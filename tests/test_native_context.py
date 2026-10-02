@@ -39,14 +39,15 @@ class NativeContextTests(unittest.TestCase):
             self.assertEqual(provider.turn('t', 'request', 'author', writable=True), output)
         self.assertFalse(provider.sent)
 
-    def test_native_thread_preserves_configured_context_limit_and_collaboration(self):
+    def test_native_thread_applies_requested_context_limit_and_preserves_collaboration(self):
         provider = self.context_provider([])
+        provider.auto_compact_limit = 300000
         provider.parent_threads = set()
         provider.register_native_thread = Mock()
         provider.rpc = Mock(return_value={'thread': {'id': 'native'}})
         provider.start_thread(writable=True)
         params = provider.rpc.call_args.args[1]
-        self.assertNotIn('model_auto_compact_token_limit', params['config'])
+        self.assertEqual(params['config']['model_auto_compact_token_limit'], 300000)
         self.assertNotIn('features.multi_agent', params['config'])
         self.assertNotIn('features.multi_agent_v2', params['config'])
 

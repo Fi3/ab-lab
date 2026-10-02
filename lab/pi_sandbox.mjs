@@ -75,6 +75,29 @@ export async function execute(policy, request, signal, onUpdate) {
   });
 }
 
+export function compactionPolicy(sdk, ctx, requested) {
+  if (typeof sdk.SettingsManager?.create !== 'function') {
+    throw new Error('installed Pi SDK cannot inspect native compaction settings');
+  }
+  const window = ctx.model?.contextWindow;
+  if (!Number.isSafeInteger(requested) || requested <= 0 || !Number.isSafeInteger(window) || requested >= window) {
+    throw new Error('compaction_tokens must be a positive integer below the model context window');
+  }
+  const manager = sdk.SettingsManager.create(ctx.cwd, process.env.PI_CODING_AGENT_DIR,
+    { projectTrusted: ctx.isProjectTrusted() });
+  if (typeof manager.getCompactionSettings !== 'function') {
+    throw new Error('installed Pi SDK cannot inspect native compaction settings');
+  }
+  const settings = manager.getCompactionSettings(ctx.model);
+  const effective = window - settings.reserveTokens;
+  if (settings.enabled !== true || effective !== requested) {
+    throw new Error('effective Pi compaction settings conflict with compaction_tokens (including project/model overrides)');
+  }
+  return { mode: 'harness-native', control: 'pi-native-settings-v1', enabled: true,
+    requested_tokens: requested, auto_compact_tokens: effective,
+    model_context_window: window, reserve_tokens: settings.reserveTokens };
+}
+
 export default async function (pi) {
   const sdk = await import(process.env.AGENT_LAB_PI_MODULE);
   const native = JSON.parse(readFileSync(process.env.AGENT_LAB_PI_POLICY, 'utf8')).native_process === true;
@@ -107,8 +130,17 @@ export default async function (pi) {
     selectTools();
     installRequestGuard(ctx.modelRegistry.runtime, process.env.AGENT_LAB_PI_POLICY,
       process.env.AGENT_LAB_PI_REQUEST_JOURNAL, process.env.AGENT_LAB_PI_THREAD_ID);
+    const context = {};
+    if (process.env.AGENT_LAB_PI_COMPACTION_TOKENS !== undefined) {
+      try {
+        context.context_policy = compactionPolicy(sdk, ctx, Number(process.env.AGENT_LAB_PI_COMPACTION_TOKENS));
+      } catch (error) {
+        context.context_error = error.message;
+      }
+    }
     writeFileSync(process.env.AGENT_LAB_PI_POLICY + '.ready', JSON.stringify({
       pid: process.pid, nonce: process.env.AGENT_LAB_PI_NONCE, request_guard: 'pre-dispatch-v1',
+      ...context,
       tools: pi.getAllTools().map(tool => ({name: tool.name, description: tool.description})),
     }));
   });

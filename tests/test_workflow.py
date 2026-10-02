@@ -24,6 +24,7 @@ def review_arguments(prompt, value):
 
 class FakeCodex:
     instances = []
+    supports_compaction_tokens = True
 
     def __init__(self, repo, artifacts, *args, **kwargs):
         self.repo = Path(repo)

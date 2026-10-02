@@ -18,6 +18,7 @@ class DelegationTests(unittest.TestCase):
             with self.subTest(model=model), tempfile.TemporaryDirectory() as directory:
                 root = Path(directory)
                 config = {'forced_login_method': 'chatgpt', 'model_provider': 'openai',
+                          'model_auto_compact_token_limit': 131072,
                           'features': {'multi_agent': False, 'multi_agent_v2': False}}
                 with patch('lab.provider.subprocess.Popen') as launch, \
                      patch('lab.provider.subprocess.check_output', return_value='codex test'), \

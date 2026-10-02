@@ -37,8 +37,12 @@ checkout. Missing response receipts cannot establish zero-cost work or complete
 accounting.
 
 Filesystem permissions, global budgets, subscription-only authentication and
-usage reconciliation remain. Native mode uses normal harness context handling;
-the runner does not force early compaction or add a synthetic recovery prompt.
+usage reconciliation remain. `--compaction-tokens N` applies the requested
+positive integer threshold to both harnesses in every preset, including native;
+the default is `131072`. The runner verifies that the harness enforces the
+setting and records it in comparison identity. Native mode uses harness context
+handling at that threshold without runner-triggered compaction or synthetic
+recovery prompts.
 The runner's Git snapshot operations also execute inside the sandbox so hooks,
 filters and fsmonitor commands cannot escape source permissions.
 

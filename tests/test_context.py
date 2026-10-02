@@ -1,30 +1,26 @@
 import json
 import unittest
 
-from lab.context import AUTO_COMPACT_TOKENS, CONTEXT_POLICY, OutputGuard, compaction_threshold
+from lab.context import AUTO_COMPACT_TOKENS, CONTEXT_POLICY, OutputGuard, validate_compaction_tokens
 from lab.host import MAX_FINAL_BYTES
 
 
 class CompactionTests(unittest.TestCase):
-    def test_advertised_window_is_capped_by_configured_limit(self):
+    def test_positive_compaction_threshold_is_preserved(self):
         self.assertEqual(AUTO_COMPACT_TOKENS, 131072)
-        self.assertEqual(compaction_threshold(128000), 76800)
-        self.assertEqual(compaction_threshold(256000), AUTO_COMPACT_TOKENS)
-        self.assertEqual(compaction_threshold(100001), 60000)
-        self.assertEqual(compaction_threshold(128000, 32000), 32000)
-        self.assertEqual(compaction_threshold(10000, 32000), 6000)
+        for value in (32000, 131072, 200000):
+            self.assertEqual(validate_compaction_tokens(value), value)
 
-    def test_invalid_or_missing_windows_keep_configured_limit(self):
+    def test_invalid_compaction_thresholds_are_rejected(self):
         for value in (None, 0, -1, True, False, "128000", 128000.0, {}, []):
-            with self.subTest(value=value):
-                self.assertEqual(compaction_threshold(value), AUTO_COMPACT_TOKENS)
-                self.assertEqual(compaction_threshold(value, 64000), 64000)
+            with self.subTest(value=value), self.assertRaises(ValueError):
+                validate_compaction_tokens(value)
 
     def test_policy_is_serializable_and_message_limit_matches_host(self):
         self.assertEqual(json.loads(json.dumps(CONTEXT_POLICY)), CONTEXT_POLICY)
         self.assertEqual(CONTEXT_POLICY["max_agent_message_bytes"], MAX_FINAL_BYTES)
         self.assertEqual(CONTEXT_POLICY["auto_compact_tokens"], AUTO_COMPACT_TOKENS)
-        self.assertEqual(CONTEXT_POLICY["version"], 5)
+        self.assertEqual(CONTEXT_POLICY["version"], 6)
         self.assertEqual(CONTEXT_POLICY["max_repeated_character_chars"], 1024)
 
 

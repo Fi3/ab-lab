@@ -30,11 +30,12 @@ class NativeDelegationTests(unittest.TestCase):
                  patch.object(Codex, '_reader'), \
                  patch.object(Codex, 'rpc', side_effect=[{}, {'account': {'type': 'chatgpt'}}, {'config': config}]):
                 provider = Codex(root, root / 'provider', 'parent-model', 'high', time.monotonic()+10,
-                    1000, 10, executable='/bin/true', allow_delegation=True)
+                    1000, 10, executable='/bin/true', allow_delegation=True, compaction_tokens=300000)
                 try:
                     argv = launch.call_args.args[0]
                     self.assertNotIn('--disable', argv)
-                    self.assertEqual(provider.identity['context_policy'], {'mode': 'harness-native'})
+                    self.assertEqual(provider.identity['context_policy']['mode'], 'harness-native')
+                    self.assertEqual(provider.identity['context_policy']['auto_compact_tokens'], 300000)
                     self.assertFalse(provider.delegation_disabled)
                 finally:
                     provider.close()
@@ -44,6 +45,7 @@ class NativeDelegationTests(unittest.TestCase):
             p = object.__new__(Codex)
             p.repo = p.artifacts = Path(directory)
             p.model, p.effort, p.delegation_disabled = 'parent-model', 'high', False
+            p.auto_compact_limit = 300000
             p.sandbox = CommandSandbox(p.repo, '/bin/true')
             p.parent_threads = set()
             p.register_native_thread = Mock()
@@ -52,11 +54,12 @@ class NativeDelegationTests(unittest.TestCase):
             config = p.rpc.call_args.args[1]['config']
             self.assertNotIn('features.multi_agent', config)
             self.assertNotIn('features.multi_agent_v2', config)
-            self.assertNotIn('model_auto_compact_token_limit', config)
+            self.assertEqual(config['model_auto_compact_token_limit'], 300000)
             p.start_thread(writable=False)
             config = p.rpc.call_args.args[1]['config']
             self.assertIs(config['features.multi_agent'], False)
             self.assertIs(config['features.multi_agent_v2'], False)
+            self.assertEqual(config['model_auto_compact_token_limit'], 300000)
 
     def test_private_native_state_preserves_configuration_without_shared_writes(self):
         with tempfile.TemporaryDirectory() as directory:

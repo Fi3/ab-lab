@@ -218,6 +218,7 @@ class PiHostToolTests(unittest.TestCase):
         from unittest.mock import patch
         p = self.provider([])
         p.executable, p.model, p.effort = "pi", "model", "xhigh"
+        p.compaction_tokens = 131072
         p.stderr = None
         p.repo, p.command_env = p.artifacts, {}
         p.sessions_dir = p.artifacts / "sessions"

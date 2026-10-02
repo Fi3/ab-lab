@@ -20,7 +20,7 @@ from .native_usage import NativeUsage
 from .codex_children import NativeChildren
 from .pi_sandbox import PiSandbox
 from .sandbox import CommandSandbox, EXECUTION_POLICY
-from .context import AUTO_COMPACT_TOKENS, CONTEXT_POLICY, OUTPUT_SETTLE_SECONDS, OutputGuard, compaction_threshold
+from .context import AUTO_COMPACT_TOKENS, CONTEXT_POLICY, OUTPUT_SETTLE_SECONDS, OutputGuard, validate_compaction_tokens
 from .loops import work_limit_error, WorkLimitReached
 
 
@@ -284,7 +284,10 @@ class ChildAccounting:
 
 
 class Codex(ChildAccounting):
-    def __init__(self, repo, artifacts, model, effort, deadline, max_raw, max_turns, executable="codex", *, require_git_write=False, allow_delegation=False):
+    supports_compaction_tokens = True
+
+    def __init__(self, repo, artifacts, model, effort, deadline, max_raw, max_turns, executable="codex", *, require_git_write=False, allow_delegation=False, compaction_tokens=AUTO_COMPACT_TOKENS):
+        self.auto_compact_limit = validate_compaction_tokens(compaction_tokens)
         self.repo, self.artifacts = Path(repo), Path(artifacts)
         self.artifacts.mkdir(parents=True, exist_ok=False)
         self.deadline, self.max_raw, self.max_turns = deadline, max_raw, max_turns
@@ -294,7 +297,6 @@ class Codex(ChildAccounting):
         self.native_children = NativeChildren()
         self.delegation_disabled = not allow_delegation
         self.context_usage = {}
-        self.auto_compact_limit = AUTO_COMPACT_TOKENS
         self.counter, self.events, self.pending = 0, queue.Queue(), deque()
         self.active = None
         self.log = (self.artifacts / "transport.jsonl").open("x")
@@ -318,6 +320,7 @@ class Codex(ChildAccounting):
         argv = [self.commands.executable, *restrictions, "-c", 'forced_login_method="chatgpt"',
                 "-c", 'model_provider="openai"', "-c", 'model='+json.dumps(model),
                 "-c", 'model_reasoning_effort='+json.dumps(effort),
+                "-c", f'model_auto_compact_token_limit={self.auto_compact_limit}',
                 *self.commands.config_arguments(),
                 "app-server", "--listen", "stdio://"]
         env = self.command_env
@@ -336,8 +339,8 @@ class Codex(ChildAccounting):
             if self.delegation_disabled:
                 self.verify_delegation_disabled(config)
             configured_limit = config.get("model_auto_compact_token_limit")
-            if self.delegation_disabled and type(configured_limit) is int and configured_limit > 0:
-                self.auto_compact_limit = min(configured_limit, AUTO_COMPACT_TOKENS)
+            if type(configured_limit) is not int or configured_limit != self.auto_compact_limit:
+                raise Fatal("Codex does not support or did not apply the requested compaction token threshold")
             if config.get("model_provider", "openai") != "openai" or config.get("forced_login_method") != "chatgpt":
                 raise Fatal("effective provider/login configuration does not match subscription-only policy")
             provider = config.get("model_providers", {}).get("openai", {})
@@ -353,7 +356,8 @@ class Codex(ChildAccounting):
                 "host_tool_transport": "native-tools-v1",
                 "context_policy": ({**CONTEXT_POLICY, "auto_compact_tokens": self.auto_compact_limit,
                                    "message_seconds": MESSAGE_SECONDS, "recovery_attempts": 1}
-                                   if self.delegation_disabled else {"mode": "harness-native"}),
+                                   if self.delegation_disabled else {"mode": "harness-native",
+                                       "auto_compact_tokens": self.auto_compact_limit}),
                 "delegation_policy": DELEGATION_POLICY if self.delegation_disabled else NATIVE_DELEGATION_POLICY,
                 "native_configuration": self.commands.native_state.fingerprints if self.commands.native_state else None}
             save_json(self.artifacts / "provider.json", self.identity)
@@ -518,8 +522,7 @@ class Codex(ChildAccounting):
         if getattr(self, 'delegation_disabled', True) or not writable:
             options['config'].update({'features.multi_agent': False, 'features.multi_agent_v2': False})
         options['config']['model_reasoning_effort'] = self.effort
-        if getattr(self, 'delegation_disabled', True):
-            options['config']['model_auto_compact_token_limit'] = getattr(self, "auto_compact_limit", AUTO_COMPACT_TOKENS)
+        options['config']['model_auto_compact_token_limit'] = getattr(self, "auto_compact_limit", AUTO_COMPACT_TOKENS)
         params = {"cwd": str(self.repo), "model": self.model,
             "modelProvider": "openai", "approvalPolicy": "never",
             **options,
@@ -600,8 +603,7 @@ class Codex(ChildAccounting):
             return self._turn_once(thread, prompt, label, writable)
         context = getattr(self, "context_usage", {}).get(thread)
         if context:
-            threshold = compaction_threshold(context["window"],
-                getattr(self, "auto_compact_limit", AUTO_COMPACT_TOKENS))
+            threshold = getattr(self, "auto_compact_limit", AUTO_COMPACT_TOKENS)
             # UTF-8 bytes are a conservative upper bound for incoming text tokens.
             if context["tokens"] + len(prompt.encode("utf-8")) >= threshold:
                 self.compact(thread, label)
@@ -1239,8 +1241,10 @@ class PiCancellationReceipts:
 
 class Pi(ChildAccounting):
     transport = "pi-rpc-stdio"
+    supports_compaction_tokens = True
 
-    def __init__(self, repo, artifacts, model, effort, deadline, max_raw, max_turns, executable="pi", *, require_git_write=False, codex_executable="codex", allow_delegation=False):
+    def __init__(self, repo, artifacts, model, effort, deadline, max_raw, max_turns, executable="pi", *, require_git_write=False, codex_executable="codex", allow_delegation=False, compaction_tokens=AUTO_COMPACT_TOKENS):
+        self.compaction_tokens = validate_compaction_tokens(compaction_tokens)
         self.repo, self.artifacts = Path(repo).resolve(), Path(artifacts).resolve()
         self.artifacts.mkdir(parents=True, exist_ok=False)
         self.deadline, self.max_raw, self.max_turns = deadline, max_raw, max_turns
@@ -1264,6 +1268,7 @@ class Pi(ChildAccounting):
                                                pi_executable=self.executable, allow_delegation=allow_delegation,
                                                deadline=deadline)
             self.command_env = self.commands.env
+            self._private_pi_home()
             if self.commands.children is not None:
                 self.pi_nested = PiNestedUsage(self.repo, self.commands.children.folder)
             self.nested = NestedUsage(self.repo, self.model, effort,
@@ -1282,6 +1287,13 @@ class Pi(ChildAccounting):
 
     def _probe(self):
         version = subprocess.check_output([self.executable, "--version"], text=True, env=self.command_env, timeout=10).strip()
+        bootstrap = self.new_thread("context-probe", writable=not self.delegation_disabled,
+                                    no_session=True, bootstrap=True)
+        try:
+            state = self.prepare_turn(bootstrap, not self.delegation_disabled)
+            self._configure_compaction(state["data"]["model"].get("contextWindow"))
+        finally:
+            bootstrap.close()
         probe = self.new_thread("probe", writable=not self.delegation_disabled, no_session=True)
         try:
             self.prepare_turn(probe, not self.delegation_disabled)
@@ -1291,6 +1303,7 @@ class Pi(ChildAccounting):
         controls = {"native_tools": ready.get("tools", []), "pi_version": version, "model": self.model, "effort": self.effort,
                     "auth": "openai-codex", "sandbox": "codex-native-tools-v1",
                     "host_tool_transport": "native-tools-v1", "request_guard": "pre-dispatch-v1",
+                    "context_policy": ready["context_policy"],
                     "execution_policy": EXECUTION_POLICY,
                     "delegation_policy": DELEGATION_POLICY if self.delegation_disabled else NATIVE_DELEGATION_POLICY,
                 "native_configuration": self.commands.native_state.fingerprints if self.commands.native_state else None}
@@ -1302,6 +1315,82 @@ class Pi(ChildAccounting):
             "effective_config_sha256": hashlib.sha256(json.dumps(controls, sort_keys=True).encode()).hexdigest(),
         }
         save_json(self.artifacts / "provider.json", self.identity)
+
+    def _private_pi_home(self):
+        source = Path(os.environ.get("PI_CODING_AGENT_DIR", Path.home() / ".pi" / "agent")).expanduser().resolve()
+        if self.commands.native_state is not None:
+            self.pi_home = Path(self.command_env["PI_CODING_AGENT_DIR"])
+        else:
+            import tempfile
+            self.pi_temporary = tempfile.TemporaryDirectory(prefix="agent-lab-pi-state-")
+            self.pi_home = Path(self.pi_temporary.name)
+            source = Path(self.command_env.get("PI_CODING_AGENT_DIR", source)).expanduser().resolve()
+            # Keep configuration and authentication private; retain installed resources
+            # and global prompt discovery without changing the user's files.
+            for filename in ("settings.json", "auth.json", "models.json", "models-store.json",
+                             "AGENTS.override.md", "AGENTS.md", "AGENTS.MD", "CLAUDE.md", "CLAUDE.MD",
+                             "SYSTEM.md", "APPEND_SYSTEM.md"):
+                original = source / filename
+                if original.is_file():
+                    shutil.copyfile(original, self.pi_home / filename)
+                    (self.pi_home / filename).chmod(0o600)
+            self.command_env["PI_CODING_AGENT_DIR"] = str(self.pi_home)
+            self.commands.sandbox.blocked_paths.append(str(self.pi_home))
+        for name in ("extensions", "skills", "prompts", "themes", "npm", "git"):
+            original = source / name
+            if original.exists() and not (self.pi_home / name).exists():
+                (self.pi_home / name).symlink_to(original.resolve(), target_is_directory=original.is_dir())
+        settings_path = self.pi_home / "settings.json"
+        if settings_path.is_file():
+            settings = json.loads(settings_path.read_text())
+
+            def rebase(path):
+                path = path.strip()
+                if path.startswith(("/", "~", "file://")):
+                    return path
+                return os.path.normpath(str(source / path))
+
+            for kind in ("extensions", "skills", "prompts", "themes"):
+                if kind not in settings:
+                    continue
+                entries = []
+                for entry in settings[kind]:
+                    prefix = entry[:1] if entry.startswith(("!", "+", "-")) else ""
+                    moved = prefix + rebase(entry[len(prefix):])
+                    # Existing patterns also match auto-discovered resources under
+                    # the private home's symlinks; rebased ones match explicit paths.
+                    if prefix or "*" in entry or "?" in entry:
+                        entries.append(entry)
+                    if moved not in entries:
+                        entries.append(moved)
+                settings[kind] = entries
+            for index, package in enumerate(settings.get("packages", [])):
+                location = package if isinstance(package, str) else package["source"]
+                # Pi treats bare host paths and git@host:path as local; Git
+                # sources require a git: prefix or an explicit URL protocol.
+                if not (location.startswith("npm:") or location.strip().startswith(("git:", "http://", "https://", "ssh://"))):
+                    if isinstance(package, str):
+                        settings["packages"][index] = rebase(location)
+                    else:
+                        package["source"] = rebase(location)
+            settings_path.write_text(json.dumps(settings))
+
+    def _configure_compaction(self, window):
+        if type(window) is not int or window <= self.compaction_tokens:
+            raise Fatal("Pi compaction_tokens must be below the selected model's advertised context window; no generation")
+        reserve = window - self.compaction_tokens
+        path = self.pi_home / "settings.json"
+        settings = json.loads(path.read_text()) if path.is_file() else {}
+        compaction = settings.setdefault("compaction", {})
+        compaction.update(enabled=True, reserveTokens=reserve)
+        compaction.setdefault("modelOverrides", {}).setdefault("openai-codex/" + self.model, {}).update(reserveTokens=reserve)
+        path.write_text(json.dumps(settings))
+        path.chmod(0o600)
+        self.context_policy = {
+            "mode": "harness-native", "control": "pi-native-settings-v1", "enabled": True,
+            "requested_tokens": self.compaction_tokens, "auto_compact_tokens": self.compaction_tokens,
+            "model_context_window": window, "reserve_tokens": reserve,
+        }
 
     def launch_arguments(self, *, native=False):
         argv = [self.executable, "--mode", "rpc", "--approve", "--provider", "openai-codex",
@@ -1317,7 +1406,7 @@ class Pi(ChildAccounting):
                 or model.get("id") != self.model or data.get("thinkingLevel") != self.effort):
             raise Fatal("Pi effective provider/model/effort differs from the benchmark; no generation")
 
-    def new_thread(self, thread_id, writable=False, no_session=False, tools=None):
+    def new_thread(self, thread_id, writable=False, no_session=False, tools=None, bootstrap=False):
         native = not getattr(self, 'delegation_disabled', True) and writable
         runtime = self.artifacts / (thread_id + "-runtime")
         runtime.mkdir()
@@ -1338,6 +1427,10 @@ class Pi(ChildAccounting):
                "AGENT_LAB_PI_POLICY": str(policy), "AGENT_LAB_PI_THREAD_ID": thread_id,
                "AGENT_LAB_PI_NONCE": nonce,
                "AGENT_LAB_PI_REQUEST_JOURNAL": str(runtime / "requests.jsonl")}
+        if not bootstrap:
+            env["AGENT_LAB_PI_COMPACTION_TOKENS"] = str(self.compaction_tokens)
+        else:
+            env.pop("AGENT_LAB_PI_COMPACTION_TOKENS", None)
         if tools:
             definitions = self.artifacts / (thread_id + "-host-tools.json")
             env["AGENT_LAB_PI_HOST_TOOLS"] = str(definitions)
@@ -1351,6 +1444,7 @@ class Pi(ChildAccounting):
             argv = process_sandbox.command(True, argv)
         th = PiThread(thread_id, argv, self.repo, env, self.stderr, self.record, host_tools=tools)
         th.policy, th.native_process, th.nonce = policy, native, nonce
+        th.bootstrap = bootstrap
         th.request_journal = Path(env["AGENT_LAB_PI_REQUEST_JOURNAL"])
         return th
 
@@ -1361,7 +1455,15 @@ class Pi(ChildAccounting):
         receipt = json.loads(ready.read_text()) if ready.is_file() else {}
         if receipt.get("nonce") != thread.nonce or receipt.get("request_guard") != "pre-dispatch-v1":
             raise Fatal("Pi sandbox extension did not load; refusing unsandboxed generation")
+        if not thread.bootstrap:
+            if receipt.get("context_error"):
+                raise Fatal("Pi compaction control unavailable: " + receipt["context_error"] + "; no generation")
+            if (receipt.get("context_policy") != self.context_policy
+                    or state["data"].get("autoCompactionEnabled") is not True
+                    or state["data"]["model"].get("contextWindow") != self.context_policy["model_context_window"]):
+                raise Fatal("Pi effective compaction threshold differs from the benchmark; no generation")
         self.sandbox.configure(thread.policy, writable, self.deadline, native_process=thread.native_process)
+        return state
 
     def record(self, direction, event):
         self.log.write(json.dumps({"time": time.time(), "direction": direction, "event": event}) + "\n")
@@ -1591,6 +1693,8 @@ class Pi(ChildAccounting):
             th.close()
         if hasattr(self, "commands"):
             self.commands.close()
+        if hasattr(self, "pi_temporary"):
+            self.pi_temporary.cleanup()
         if hasattr(self, "log") and not self.log.closed:
             self.log.close()
         if hasattr(self, "stderr") and not self.stderr.closed:

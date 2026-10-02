@@ -90,6 +90,7 @@ class ScbWorkflowTests(unittest.TestCase):
             root = Path(d)
             b = benchmark_at(root)
             with patch("lab.workflow.Codex") as provider:
+                provider.supports_compaction_tokens = True
                 result = run(b, settings({}), root / "run", 30, 10000, 30,
                              backend=provider, scb_check=str(root / "missing"))
             provider.assert_not_called()
@@ -111,6 +112,7 @@ class ScbWorkflowTests(unittest.TestCase):
                 root = Path(d)
                 b = benchmark_at(root)
                 with patch("lab.workflow.Codex") as provider:
+                    provider.supports_compaction_tokens = True
                     result = run(b, settings({}), root / "run", 30, 10000, 30,
                                  backend=provider, scb_check=checker_at(root, body))
                 provider.assert_not_called()

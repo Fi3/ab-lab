@@ -6,6 +6,7 @@ import sys
 import time
 
 from .config import FACTORS, WORKFLOW_VERSION, author_policy, load_benchmark, settings
+from .context import AUTO_COMPACT_TOKENS
 from .provider import Codex, Pi
 from .host import Fatal
 from .review import DEFAULT_MAX_REVIEW_LOOPS, DEFAULT_PRIORITIES, normalize_priorities, normalize_review_loops
@@ -58,6 +59,8 @@ def main():
         p.add_argument("--off", default="", help="comma-separated C identifiers")
         p.add_argument("--model", default=None)
         p.add_argument("--effort", choices=("minimal", "low", "medium", "high", "xhigh"), default="xhigh")
+        p.add_argument("--compaction-tokens", type=positive_integer, default=AUTO_COMPACT_TOKENS,
+                       metavar="N", help="context tokens at which the harness compacts (default: 131072 for every preset; unsupported harnesses fail)")
         p.add_argument("--review-priorities", type=review_priorities, default=DEFAULT_PRIORITIES,
                        metavar="P0,P1,P2",
                        help="comma-separated review priorities that require repairs (P0 through P3; default: P0,P1,P2)")
@@ -112,6 +115,7 @@ def main():
                 value = {"benchmark": benchmark, "factors": factors, "preset": args.preset, "model": model, "effort": args.effort,
                          "review_priorities": list(args.review_priorities),
                          "max_review_loops": args.max_review_loops,
+                         "compaction_tokens": args.compaction_tokens,
                          "loop_policy": progress_policy,
                          "loop_policy_version": POLICY_VERSION, "workflow_version": WORKFLOW_VERSION,
                          "author_policy": author_policy(factors), "generation": "none",
@@ -134,6 +138,7 @@ def main():
                         scb_check=args.scb_check, scb_seconds=args.scb_seconds, child_codex=args.codex,
                         review_priorities=args.review_priorities,
                         max_review_loops=args.max_review_loops, preset=args.preset,
+                        compaction_tokens=args.compaction_tokens,
                         loop_options=progress_policy)
                 else:
                     value = run(benchmark, factors, args.out, args.seconds, args.max_raw, args.max_turns,
@@ -141,6 +146,7 @@ def main():
                                 scb_check=args.scb_check, scb_seconds=args.scb_seconds, child_codex=args.codex,
                                 review_priorities=args.review_priorities,
                                 max_review_loops=args.max_review_loops, preset=args.preset,
+                                compaction_tokens=args.compaction_tokens,
                                 loop_options=progress_policy)
         elif args.command == "doctor":
             harness = getattr(args, "harness", "codex")

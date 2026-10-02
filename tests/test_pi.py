@@ -22,8 +22,9 @@ from test_workflow import review_arguments, verdict
 class FakePi:
     instances = []
     transport = "pi-rpc-stdio"
+    supports_compaction_tokens = True
 
-    def __init__(self, repo, folder, model, effort, deadline, max_raw, max_turns, executable="pi", *, require_git_write=False, allow_delegation=False):
+    def __init__(self, repo, folder, model, effort, deadline, max_raw, max_turns, executable="pi", *, require_git_write=False, allow_delegation=False, compaction_tokens=131072):
         FakePi.instances.append(self)
         self.repo = Path(repo)
         self.artifacts = Path(folder)
@@ -43,6 +44,7 @@ class FakePi:
         self.max_raw = max_raw
         self.max_turns = max_turns
         self.require_git_write = require_git_write
+        self.compaction_tokens = compaction_tokens
         self.threads = 0
         self.handlers = {}
 

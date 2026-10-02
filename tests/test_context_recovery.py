@@ -184,12 +184,20 @@ class ContextRecoveryTests(unittest.TestCase):
 
     def test_proactive_compaction_accounts_for_upcoming_utf8_prompt(self):
         provider = self.provider([compaction(), success("initial")])
+        provider.auto_compact_limit = 600
         provider.context_usage["thread"] = {"tokens": 580, "window": 1000}
         prompt = "é" * 10  # 20 UTF-8 bytes reach the 600-token threshold.
         provider.turn("thread", prompt, "author")
         self.assertEqual(self.methods(provider), ["thread/compact/start", "turn/start"])
         self.assertEqual(provider.requests[1][1]["input"][0]["text"], prompt)
         self.assertEqual(provider.usage.raw, 310)
+
+    def test_configured_threshold_is_not_reduced_to_sixty_percent_of_window(self):
+        provider = self.provider([success("initial")])
+        provider.auto_compact_limit = 900
+        provider.context_usage["thread"] = {"tokens": 800, "window": 1000}
+        provider.turn("thread", "next request", "author")
+        self.assertEqual(self.methods(provider), ["turn/start"])
 
     def test_large_cumulative_cost_does_not_trigger_proactive_compaction(self):
         provider = self.provider([success("initial", 100000)])

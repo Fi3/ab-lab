@@ -14,7 +14,11 @@ python3 -m lab run benchmarks/scb-code-search.json \
 ```
 
 Use `--harness pi` for Pi. Choose fresh output paths and identical explicit
-limits/model settings for matched comparisons. The old `--skip-linearization`
+limits/model settings for matched comparisons. `--compaction-tokens N` sets the
+harness compaction threshold for every preset, including native; it must be a
+positive integer and defaults to `131072`. The requested threshold is recorded
+and must match for comparisons. A harness that cannot enforce it stops before
+generation. The old `--skip-linearization`
 option is removed, not retained as a no-op.
 
 ## Audit findings and changes
@@ -27,7 +31,7 @@ option is removed, not retained as a no-op.
 | Pi extensions disabled and tools restricted to a fixed list | Native preserves extension discovery and normal tools inside a process sandbox. Read-only roles keep their restrictions. |
 | Child model/effort forced to match the parent | Native records child identities; configured specialist models are allowed. |
 | Native stopped by the runner repetition heuristic | Disabled by default for this preset; whole-run limits remain. |
-| Runner forced early compaction and output recovery in native | Native uses harness context behavior; no runner compaction threshold or synthetic retry prompt. |
+| Runner forced early compaction and output recovery in native | The harness uses the requested `--compaction-tokens` threshold; native adds no runner-triggered compaction or synthetic retry prompt. |
 
 Pi has no built-in subagent tool. Installed extensions or delegated CLI commands
 provide that capability. Preserving extension discovery allows it; the runner
@@ -37,6 +41,8 @@ does not install a new agent implementation into Pi.
 
 - The runner selects the requested model and effort and requires the configured
   subscription login. It removes API-key fallback credentials.
+- The runner applies and verifies the requested compaction threshold, including
+  the default `131072`, instead of inheriting a different installed setting.
 - Work occurs in an isolated checkout with explicit filesystem permissions and
   network access. Global time/token/turn limits and process cleanup apply.
 - Harnesses run through their programmatic transports. Session and child usage

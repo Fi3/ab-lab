@@ -4,7 +4,6 @@ from collections import deque
 
 AUTO_COMPACT_TOKENS = 131072
 OUTPUT_SETTLE_SECONDS = 600
-_CONTEXT_WINDOW_FRACTION = 0.60
 _REPLACEMENT_WINDOW_CHARS = 2048
 _REPLACEMENT_MIN_CHARS = 128
 _MAX_TRAILING_WHITESPACE_CHARS = 8192
@@ -14,10 +13,9 @@ _MAX_AGENT_MESSAGE_BYTES = 4 * 1024 * 1024
 # Persist this JSON-compatible policy alongside the provider identity so that
 # compaction and cancellation thresholds remain visible in benchmark artifacts.
 CONTEXT_POLICY = {
-    "version": 5,
+    "version": 6,
     "compaction_accounting": "owned-native-response-receipts-v1",
     "auto_compact_tokens": AUTO_COMPACT_TOKENS,
-    "context_window_fraction": _CONTEXT_WINDOW_FRACTION,
     "replacement_window_chars": _REPLACEMENT_WINDOW_CHARS,
     "replacement_min_chars": _REPLACEMENT_MIN_CHARS,
     "replacement_whitespace_fraction": 0.90,
@@ -29,11 +27,10 @@ CONTEXT_POLICY = {
 }
 
 
-def compaction_threshold(window, configured_limit=AUTO_COMPACT_TOKENS):
-    """Use at most 60% of an advertised positive integer context window."""
-    if type(window) is int and window > 0:
-        return min(configured_limit, int(window * _CONTEXT_WINDOW_FRACTION))
-    return configured_limit
+def validate_compaction_tokens(value):
+    if type(value) is not int or value <= 0:
+        raise ValueError("compaction tokens must be a positive integer")
+    return value
 
 
 class _MessageState:
