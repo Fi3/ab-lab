@@ -2,7 +2,8 @@
 """Import SWE-Milestone projects into the lab's existing benchmark format.
 
 This is a dataset adapter, not a runner. Model execution still uses `lab run`.
-Independent grading is deliberately a separate, post-run command.
+Independent grading runs after model execution; the evaluate command can also
+grade previously saved runs.
 """
 import argparse
 import csv
@@ -201,7 +202,7 @@ def prepare(project, checks=None):
         if git(prepared / "repo", "rev-parse", "HEAD").decode().strip() != imported["revision"] or git(
                 prepared / "repo", "status", "--porcelain"):
             raise ValueError(f"prepared starting repository has changed: {prepared / 'repo'}")
-        print(prepared / "benchmark.json")
+        print(runnable_benchmark(prepared, project, benchmark))
         return
     destination.parent.mkdir(parents=True, exist_ok=True)
     image, image_id = pull_image(spec["workspace"], "base-offline")
@@ -227,7 +228,14 @@ def prepare(project, checks=None):
             "adaptation": "fixed strong-dependency order; lab author sessions and review policy; native host execution",
         })
         folder.rename(destination)
-    print(destination / "benchmark.json")
+    print(runnable_benchmark(destination, project, benchmark))
+
+
+def runnable_benchmark(prepared, project, benchmark):
+    """Add automatic evaluation without changing frozen import receipts."""
+    path = prepared / "run-benchmark.json"
+    write_json(path, {**benchmark, "swe_milestone": {"project": project}})
+    return path
 
 
 def upstream_imports():
@@ -303,6 +311,17 @@ def load_prepared(project):
     return prepared, imported, json.loads((prepared / "benchmark.json").read_text())
 
 
+def benchmark_scope(imported, expected, benchmark):
+    """Select an unchanged task prefix without modifying the prepared project."""
+    if benchmark.get("revision") != expected["revision"]:
+        raise ValueError("SWE-Milestone benchmark differs from its prepared revision")
+    features = benchmark.get("features")
+    if (not isinstance(features, list) or not features
+            or features != expected["features"][:len(features)]):
+        raise ValueError("SWE-Milestone benchmark must use an unchanged prefix of its prepared features")
+    return {**imported, "milestones": imported["milestones"][:len(features)]}
+
+
 def recorded_commits(run_dir, benchmark):
     """Missing checkpoints stay missing; never substitute the latest checkout."""
     result = json.loads((run_dir / "result.json").read_text())
@@ -369,15 +388,27 @@ def grade(repo, commit, imported, prepared, folder, seconds):
 
 def evaluation_result(folder, receipt):
     raw_path = folder / "evaluation_result.json"
-    if receipt["timed_out"] or receipt["exit_code"] not in (0, 1) or not raw_path.exists():
+    if receipt["timed_out"] or receipt["exit_code"] not in (0, 1, 2) or not raw_path.exists():
         return {"status": "error", "resolved": False, "error": "grader failed or timed out; inspect process.json and stderr.txt"}
     raw = json.loads(raw_path.read_text())
+    if not isinstance(raw, dict):
+        raise ValueError("grader report must be an object")
+    invalid = (raw.get("infrastructure_failure") or raw.get("scoring_blocked")
+               or raw.get("infra_invalid_reason") or raw.get("infra_invalid"))
+    if invalid:
+        return {"status": "error", "resolved": False, "error": invalid}
+    # This pinned release exits 2 even for explicitly scored source build
+    # failures. Its authoritative classification keeps them in the denominator.
+    build_failure = (raw.get("scored_failure_reason") == "build-failure-with-zero-tests"
+                     and raw.get("eval_status") == "failed" and raw.get("resolved") is False)
+    if build_failure:
+        return {"status": "failed", "resolved": False, "test_summary": raw.get("test_summary", {}),
+                "scored_failure_reason": raw["scored_failure_reason"], "report": str(raw_path)}
+    if receipt["exit_code"] == 2:
+        return {"status": "error", "resolved": False, "error": "grader failed; inspect process.json and stderr.txt"}
     # Upstream excludes invalid/unscorable tests via this release-owned list.
     filtered_path = folder / "evaluation_result_filtered.json"
     scored = json.loads(filtered_path.read_text()) if filtered_path.exists() else raw
-    if raw.get("infrastructure_failure") or raw.get("scoring_blocked"):
-        return {"status": "error", "resolved": False,
-                "error": raw.get("infrastructure_failure") or raw["scoring_blocked"]}
     if type(scored.get("resolved")) is not bool:
         raise ValueError("grader did not return a boolean resolved verdict")
     return {"status": "passed" if scored["resolved"] else "failed", "resolved": scored["resolved"],
@@ -417,17 +448,26 @@ def quality(repo, commit, folder, executable):
 
 
 def final_evaluation(run_dir, imported, prepared, output, only, seconds, checkpoints):
-    """Use the runner's recorded final measurement commit, never a mutable HEAD."""
+    """Use the runner's immutable final submission, never a mutable HEAD."""
     final = {"commit": None, "milestones": []}
+    submission = json.loads((run_dir / "result.json").read_text()).get("final_submission")
     receipt_path = run_dir / "scb-check" / "after_implementation" / "result.json"
+    receipt = None
     if receipt_path.exists():
         receipt = json.loads(receipt_path.read_text())
-        if receipt.get("status") == "completed":
-            commit = receipt.get("commit", "")
-            if not re.fullmatch(r"[0-9a-f]{40,64}", commit):
-                raise ValueError("final evaluation lacks an immutable commit")
-            git(run_dir / "checkout", "merge-base", "--is-ancestor", imported["revision"], commit)
-            final.update(commit=commit, quality=receipt)
+    if submission is None and receipt and receipt.get("status") == "completed":
+        submission = receipt
+    if submission is not None:
+        commit = submission.get("commit", "")
+        if not re.fullmatch(r"[0-9a-f]{40,64}", commit):
+            raise ValueError("final evaluation lacks an immutable commit")
+        git(run_dir / "checkout", "merge-base", "--is-ancestor", imported["revision"], commit)
+        tree = git(run_dir / "checkout", "rev-parse", commit + "^{tree}").decode().strip()
+        if submission.get("tree", tree) != tree:
+            raise ValueError("final submission tree differs from its recorded commit")
+        final.update(commit=commit, tree=tree)
+        if receipt and receipt.get("status") == "completed" and receipt.get("commit") == commit:
+            final["quality"] = receipt
     previous = {row["milestone"]: row for row in checkpoints}
     for task in imported["milestones"]:
         if not task["graded"]:
@@ -457,15 +497,17 @@ def final_evaluation(run_dir, imported, prepared, output, only, seconds, checkpo
 def evaluate(project, run_dir, output, only, seconds, checker):
     release()
     upstream_imports()
-    prepared, imported, benchmark = load_prepared(project)
+    prepared, imported, expected = load_prepared(project)
     run_dir = run_dir.resolve(strict=True)
+    benchmark = json.loads((run_dir / "manifest.json").read_text())["benchmark"]
+    imported = benchmark_scope(imported, expected, benchmark)
     commits = recorded_commits(run_dir, benchmark)
     available = {task["milestone"] for task in imported["milestones"]}
     if only and not set(only) <= available:
         raise ValueError("unknown milestone in --milestone")
     output = output.resolve() if output else run_dir / "swe-milestone"
     output.mkdir(parents=True, exist_ok=False)
-    shutil.copyfile(prepared / "import.json", output / "import.json")
+    write_json(output / "import.json", imported)
     report = {"schema": "swe-milestone-lab-evaluation/v1", "project": project, "run": str(run_dir),
               "version": VERSION, "pins": PINS, "adapter_sha256": digest(Path(__file__)),
               "status": "incomplete", "solved": False, "passed": 0,
@@ -479,10 +521,13 @@ def evaluate(project, run_dir, output, only, seconds, checker):
         folder = output / task["milestone"]
         folder.mkdir()
         print(f"{project}: {task['milestone']} at {row['commit'][:12]}", flush=True)
-        try:
-            row["quality"] = quality(run_dir / "checkout", row["commit"], folder / "quality", checker)
-        except (OSError, ValueError, subprocess.SubprocessError) as exc:
-            row["quality"] = {"status": "error", "error": str(exc)}
+        if checker is None:
+            row["quality"] = {"status": "not_requested"}
+        else:
+            try:
+                row["quality"] = quality(run_dir / "checkout", row["commit"], folder / "quality", checker)
+            except (OSError, ValueError, subprocess.SubprocessError) as exc:
+                row["quality"] = {"status": "error", "error": str(exc)}
         write_json(output / "result.json", report)
         try:
             if task["graded"]:
@@ -498,7 +543,8 @@ def evaluate(project, run_dir, output, only, seconds, checker):
     report["total"] = len(graded)
     report["final"] = final_evaluation(run_dir, imported, prepared, output, only, seconds, report["milestones"])
     complete = all(row["status"] in ("passed", "failed", "not_graded")
-                   and row.get("quality", {}).get("status") == "completed" for row in report["milestones"])
+                   and row.get("quality", {}).get("status") in ("completed", "not_requested")
+                   for row in report["milestones"])
     complete = complete and bool(graded) and report["final"]["commit"] is not None and all(
         row["status"] in ("passed", "failed") for row in report["final"]["milestones"])
     report["status"] = "completed" if complete else "incomplete"
@@ -522,6 +568,7 @@ def main():
     evaluation.add_argument("--milestone", action="append", help="grade only this upstream ID (repeatable; report stays incomplete)")
     evaluation.add_argument("--seconds", type=int, default=3600, help="maximum seconds per grading invocation")
     evaluation.add_argument("--scb-check", default="scb-check")
+    evaluation.add_argument("--no-quality", action="store_true", help="grade correctness without code-quality measurements")
     args = parser.parse_args()
     try:
         if args.command == "list":
@@ -532,7 +579,8 @@ def main():
         elif args.command == "evaluate":
             if args.seconds <= 0:
                 parser.error("--seconds must be positive")
-            return evaluate(args.project, args.run, args.out, args.milestone, args.seconds, args.scb_check)
+            return evaluate(args.project, args.run, args.out, args.milestone, args.seconds,
+                            None if args.no_quality else args.scb_check)
         return 0
     except (OSError, ValueError, subprocess.CalledProcessError) as exc:
         print(f"swe-milestone: {exc}", file=sys.stderr)
@@ -540,4 +588,8 @@ def main():
 
 
 if __name__ == "__main__":
+    def terminate(_signum, _frame):
+        raise KeyboardInterrupt("evaluation interrupted")
+
+    signal.signal(signal.SIGTERM, terminate)
     sys.exit(main())

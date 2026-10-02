@@ -1,7 +1,7 @@
 # SWE-Milestone projects
 
 `benchmarks/swe_milestone.py` imports [SWE-Milestone](https://github.com/DeepCommit-ai/SWE-Milestone)
-into the existing benchmark JSON format. All seven benchmark definitions are
+into the existing benchmark JSON format. All seven projects' benchmark definitions are
 committed under `benchmarks/`; each project is prepared and run separately.
 **No runner changes are required.**
 
@@ -15,6 +15,7 @@ Use these files as the first argument to `python3 -m lab run`:
 | Navidrome | `benchmarks/swe-milestone-navidrome.json` |
 | Nushell | `benchmarks/swe-milestone-nushell.json` |
 | scikit-learn | `benchmarks/swe-milestone-scikit-learn.json` |
+| scikit-learn light | `benchmarks/swe-milestone-scikit-learn-light.json` |
 | go-zero | `benchmarks/swe-milestone-go-zero.json` |
 
 The definitions include the exact upstream task text and baseline revision.
@@ -74,6 +75,15 @@ the committed definitions above refer to the same source and tasks.
 
 For scikit-learn, setup is `python3 benchmarks/swe_milestone.py prepare scikit-learn`.
 Its run argument is `benchmarks/swe-milestone-scikit-learn.json`.
+For the reduced benchmark, use `benchmarks/swe-milestone-scikit-learn-light.json`
+instead. It uses the same prepared project, baseline, checks and official grader,
+with only the first three milestones: `M06`, `M11`, and `M12.1`. Code carries
+forward in that order. Checkpoint and final grading cover only those three;
+test totals exclude the remaining nine milestones.
+
+Reduced definitions must contain a nonempty, unchanged prefix of the full
+definition's `features`. Evaluation uses the definition saved in the run's
+manifest, so regrading preserves its scope. The full benchmark is unchanged.
 
 ## Run with the existing runner
 

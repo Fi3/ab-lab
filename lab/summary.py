@@ -159,6 +159,38 @@ def slopcodebench_tables(names, rows):
     return lines
 
 
+def evaluation_tables(names, rows):
+    summaries, checkpoints = [], []
+    def outcome(value):
+        return "pass" if value is True else "fail" if value is False else "—"
+
+    for name, row in zip(names, rows):
+        evaluation = row.get("evaluation")
+        if not isinstance(evaluation, dict):
+            continue
+        summaries.append([name, evaluation.get("evaluator"), evaluation.get("status"),
+                          outcome(evaluation.get("passed")), evaluation.get("report_path", "—")])
+        for checkpoint in evaluation.get("checkpoints", []):
+            quality = checkpoint.get("quality", {})
+            report = quality.get("report", {}) if quality.get("status") == "completed" else {}
+            metrics = []
+            for metric in ("verbosity", "erosion", "cog_erosion"):
+                value = report.get(metric)
+                metrics.append(f"{100 * value:.2f}%" if type(value) in (int, float)
+                               and math.isfinite(value) and 0 <= value <= 1 else "—")
+            checkpoints.append([name, checkpoint.get("feature"), checkpoint.get("status"),
+                                outcome(checkpoint.get("passed")), *metrics])
+        final = evaluation.get("final")
+        if isinstance(final, dict):
+            checkpoints.append([name, "Final evaluation", "—", outcome(final.get("passed")), "—", "—", "—"])
+    if not summaries:
+        return []
+    lines = ["", "Benchmark evaluation:", "", table(["Run", "Evaluator", "Status", "All tests", "Report"], summaries)]
+    if checkpoints:
+        lines += ["", table(["Run", "Checkpoint", "Status", "Tests", "Verbosity", "Erosion", "Cognitive erosion"], checkpoints)]
+    return lines
+
+
 def render(rows):
     if not rows:
         raise ValueError('no runs to summarize')
@@ -183,7 +215,7 @@ def render(rows):
     counts = Counter(row['status'] for row in rows)
     lines = ['Runs: '+str(len(rows))+' | '+' | '.join(f'{key}: {value}' for key, value in counts.items()), '']
     main_rows = []
-    execution_present = any(isinstance(row.get('slopcodebench'), dict) and 'execution_status' in row for row in rows)
+    execution_present = any('execution_status' in row for row in rows)
     for name, row in zip(names, rows):
         usage = row['usage']
         complete = {True: 'complete', False: 'incomplete', None: 'unknown'}.get(usage.get('measurement_complete'), 'unknown')
@@ -279,4 +311,5 @@ def render(rows):
         lines += ['', 'Code-quality measurements (scb-check scores, not token savings):', '',
             table(['Run', 'Checkpoint', 'Status', 'Verbosity', 'Erosion', 'Cognitive erosion'], quality_rows)]
     lines += slopcodebench_tables(names, rows)
+    lines += evaluation_tables(names, rows)
     return '\n'.join(lines)+'\n'

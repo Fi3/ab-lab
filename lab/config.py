@@ -2,6 +2,7 @@
 import json
 from pathlib import Path
 import re
+from .evaluation import ADAPTERS, adapter_type
 
 FACTORS = {
     "C08": ("Compact conflict refresh", "diff from previously delivered text", "complete changed-file text"),
@@ -58,12 +59,10 @@ def author_policy(f):
 def load_benchmark(path):
     path = Path(path).resolve(strict=True)
     data = json.loads(path.read_text())
-    allowed = {"name", "repo", "revision", "features", "checks", "after_read", "slopcodebench"}
+    allowed = {"name", "repo", "revision", "features", "checks", "after_read"} | ADAPTERS.keys()
     if not isinstance(data, dict) or set(data) - allowed:
         raise ValueError("unknown benchmark fields")
-    if "slopcodebench" in data:
-        from .slopcodebench import expand
-        data = expand(data, path)
+    data = adapter_type(data).expand(data, path)
     for key in ("name", "repo", "revision"):
         if not isinstance(data.get(key), str) or not data[key].strip():
             raise ValueError(f"benchmark needs {key}")

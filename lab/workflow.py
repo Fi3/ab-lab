@@ -15,7 +15,7 @@ from .provider import Codex, Pi, clean_env
 from .review import (DEFAULT_PRIORITIES, DEFAULT_MAX_REVIEW_LOOPS, format_findings,
                      normalize_priorities, normalize_review_loops, REVIEW_TOOLS, ReviewTools, review_instructions)
 from .loops import FeatureProgress, NeedsAttention, POLICY_VERSION, WorkLimitReached, loop_policy, work_limit_error
-from . import scb, slopcodebench
+from . import scb, evaluation
 
 
 def fingerprint(value):
@@ -23,8 +23,11 @@ def fingerprint(value):
 
 
 def source_hashes():
-    return {p.name: hashlib.sha256(p.read_bytes()).hexdigest()
-            for p in sorted(Path(__file__).parent.iterdir()) if p.suffix in (".py", ".mjs")}
+    root = Path(__file__).resolve().parents[1]
+    sources = {p.name: p for p in (root / "lab").iterdir() if p.suffix in (".py", ".mjs")}
+    sources.update({str(p.relative_to(root)): p for p in (root / "benchmarks").rglob("*")
+                    if p.is_file() and p.suffix in (".py", ".json", ".txt")})
+    return {name: hashlib.sha256(path.read_bytes()).hexdigest() for name, path in sorted(sources.items())}
 
 
 def author_prompt(benchmark, feature, factors, findings=None):
@@ -129,10 +132,10 @@ def run(benchmark, factors, output, seconds, max_raw, max_turns,
               "stages": [], "checkpoints": [], "checks": [], "factor_activations": {}}
     if scb_check is not None:
         result["scb_check"] = scb.pending()
-    if "slopcodebench" in benchmark:
-        result["slopcodebench"] = slopcodebench.pending(benchmark)
+    evaluator = evaluation.adapter_type(benchmark)(benchmark, output, result)
+    if evaluator.config_key:
+        result["evaluation"] = {"evaluator": evaluator.config_key, "status": "not_run", "passed": None}
         result["execution_status"] = "incomplete"
-        result["checkpoint_stop_policy"] = slopcodebench.CHECKPOINT_STOP_POLICY
     start = time.monotonic()
     failure_origin = "runner"
     active_stage = "setup"
@@ -154,13 +157,7 @@ def run(benchmark, factors, output, seconds, max_raw, max_turns,
         manifest["loop_policy_version"] = POLICY_VERSION
         if scb_check is not None:
             manifest["scb_check"] = {"executable": str(scb_check), "seconds_per_check": scb_seconds}
-        if "slopcodebench" in benchmark:
-            manifest["checkpoint_stop_policy"] = slopcodebench.CHECKPOINT_STOP_POLICY
-            files = git(benchmark["repo"], "ls-tree", "-r", "--name-only", base).decode().splitlines()
-            if files not in ([], [".gitignore"]):
-                raise Fatal("SlopCodeBench must start from an empty project (only .gitignore is allowed)")
-            manifest["slopcodebench_runtime"] = slopcodebench.preflight(benchmark, output, deadline)
-            result["slopcodebench"]["runtime"] = manifest["slopcodebench_runtime"]
+        evaluator.start(base, manifest, deadline)
         save_json(output / "manifest.json", manifest)
         checkout = output / "checkout"
         # Fetch only the pinned commit's reachable history into an empty
@@ -186,9 +183,8 @@ def run(benchmark, factors, output, seconds, max_raw, max_turns,
         def score(phase):
             if quality is None:
                 return
-            if phase == "before_changes" and "slopcodebench" in benchmark:
-                observation = {"phase": phase, "status": "not_applicable", "commit": base,
-                               "reason": "Empty starting project has no source code to measure"}
+            observation = evaluator.baseline_measurement(base) if phase == "before_changes" else None
+            if observation is not None:
                 (output / "scb-check" / phase).mkdir()
                 save_json(output / "scb-check" / phase / "result.json", observation)
             else:
@@ -421,12 +417,12 @@ def run(benchmark, factors, output, seconds, max_raw, max_turns,
                     else:
                         evidence = "Author reports completed repairs. Inspect the actual new commits and test results."
             except NeedsAttention as exc:
-                if "slopcodebench" not in benchmark:
+                if not evaluator.retain_stopped_attempts:
                     raise
                 # Safety stops still end the workflow; reaching the configured
                 # review allowance after a completed repair does not.
                 stopped_flag = exc.flag
-                retention = slopcodebench.retain_attempt(checkout, name)
+                retention = evaluation.retain_attempt(checkout, name)
                 stopped_flag["retention"] = retention
                 progress.save_flag(stopped_flag)
 
@@ -450,27 +446,20 @@ def run(benchmark, factors, output, seconds, max_raw, max_turns,
                 for key, count in host.activations.items():
                     result["factor_activations"][key] = result["factor_activations"].get(key, 0)+count
             save_json(output / (name+"-result.json"), {**checkpoint, "factor_activations": host.activations if host else {"C17": "native tools"}})
-            if "slopcodebench" in result:
-                item = result["slopcodebench"]["checkpoints"][feature_index]
-                item.update(slopcodebench.capture(checkout, output, name))
-                item["review_approved"] = checkpoint["review_approved"]
-                item["attempt_status"] = checkpoint["status"]
-                if stopped_flag:
-                    stopped_flag["retention"].update({key: item[key] for key in ("snapshot", "commit", "tree")})
-                    progress.save_flag(stopped_flag)
-                if quality is not None:
-                    item["quality"] = scb.measure(checkout, output, "checkpoint-" + name, quality["tool"], deadline)
-                    if item["quality"]["status"] != "completed":
-                        raise Fatal("scb-check checkpoint measurement failed: " + item["quality"]["error"])
+            captured = evaluator.checkpoint(checkout, checkpoint, quality["tool"] if quality else None, deadline)
+            if stopped_flag and captured:
+                stopped_flag["retention"].update(captured)
+                progress.save_flag(stopped_flag)
             if stopped_flag:
                 raise NeedsAttention(stopped_flag)
 
         score("after_implementation")
         commits = git(checkout, "rev-list", "--reverse", base+"..HEAD").decode().splitlines()
         final_source = snapshot(checkout)
-        if "slopcodebench" in result and not git(checkout, "status", "--porcelain"):
-            result["slopcodebench"]["final"] = {"feature": "final", "status": "not_run",
-                **slopcodebench.capture(checkout, output, "final")}
+        if not git(checkout, "status", "--porcelain"):
+            result["final_submission"] = {"commit": final_source["head"],
+                "tree": git(checkout, "rev-parse", "HEAD^{tree}").decode().strip()}
+            evaluator.final(checkout)
         for index, command in enumerate(benchmark["checks"], 1):
             folder = output / f"check-{index:02d}"
             folder.mkdir()
@@ -493,7 +482,7 @@ def run(benchmark, factors, output, seconds, max_raw, max_turns,
         if not provider.report().get("measurement_complete"):
             raise Fatal("incomplete whole-workflow token measurement, including nested verification")
         result.update(status="passed", final_commits=commits)
-        if "slopcodebench" in result:
+        if evaluator.config_key:
             result["execution_status"] = "completed"
     except NeedsAttention as exc:
         result.update(status="needs_attention", error=str(exc), attention=exc.flag,
@@ -518,21 +507,19 @@ def run(benchmark, factors, output, seconds, max_raw, max_turns,
             result["usage"] = {"observed_raw_tokens": None, "measurement_complete": False,
                                "reason": "provider did not initialize; inspect retained stderr"}
         git_context.close()
-        if ("slopcodebench" in result and "shutdown_error" not in result
-                and result.get("error") != "operator interruption"
-                and any("snapshot" in item for item in result["slopcodebench"]["checkpoints"])):
+        if (evaluator.config_key and "shutdown_error" not in result
+                and result.get("failure", {}).get("origin") != "operator"
+                and result["checkpoints"]):
             # All model sessions, including nested verification, are closed.
             # Hidden tests never enter the author/review/repair loop.
-            save_json(output / "slopcodebench" / "before-evaluation.json", result)
-            try:
-                slopcodebench.evaluate(benchmark, result, output)
-            except (Exception, KeyboardInterrupt) as exc:
-                result.update(status="failed", error=str(exc) or "evaluation interrupted")
-                result["failure"] = {"origin": "evaluator", "stage": "evaluation",
-                                     "type": type(exc).__name__, "message": result["error"]}
+            if source_hashes() != code:
+                result.update(status="failed", error="runner or benchmark source changed before evaluation")
+                result["evaluation"].update(status="error", error=result["error"])
+            else:
+                evaluation.finish(evaluator)
         result["duration_seconds"] = time.monotonic()-start
         result["fixture_executed"] = fixture_fired
-        save_json(output / "result.json", result)
+        evaluation.save_result(output, result)
     return result
 
 
