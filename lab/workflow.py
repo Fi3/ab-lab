@@ -100,7 +100,8 @@ def run(benchmark, factors, output, seconds, max_raw, max_turns,
         model="gpt-5.5", effort="xhigh", executable="codex", backend=Codex, *,
         harness=None, scb_check=None, scb_seconds=300, child_codex="codex",
         review_priorities=DEFAULT_PRIORITIES, max_review_loops=DEFAULT_MAX_REVIEW_LOOPS,
-        loop_options=None, preset=None, compaction_tokens=AUTO_COMPACT_TOKENS, _base_commit=None):
+        loop_options=None, preset=None, compaction_tokens=AUTO_COMPACT_TOKENS, _base_commit=None,
+        executor=None, _admitted_output=False):
     if seconds <= 0 or max_raw <= 0 or max_turns <= 0:
         raise ValueError("positive wall-time, observed-token and turn limits are required")
     if not math.isfinite(scb_seconds) or scb_seconds <= 0:
@@ -117,6 +118,20 @@ def run(benchmark, factors, output, seconds, max_raw, max_turns,
     if getattr(backend, "supports_compaction_tokens", False) is not True:
         name = harness or getattr(backend, "__name__", type(backend).__name__)
         raise ValueError(f"harness {name!r} does not support setting compaction tokens")
+    if executor is not None:
+        if backend not in (Codex, Pi):
+            raise ValueError('pinned execution supports the Codex and Pi providers')
+        from .executor import run_pinned
+        return run_pinned(benchmark, factors, output, executor, {
+            'seconds': seconds, 'max_raw': max_raw, 'max_turns': max_turns,
+            'model': model, 'effort': effort,
+            'executable': 'pi' if backend is Pi and executable == 'codex' else executable,
+            'harness': harness or ('pi' if backend is Pi else 'codex'),
+            'scb_check': str(scb_check) if scb_check is not None else None,
+            'scb_seconds': scb_seconds, 'child_codex': child_codex,
+            'review_priorities': list(review_priorities), 'max_review_loops': max_review_loops,
+            'loop_options': loop_options, 'preset': preset, 'compaction_tokens': compaction_tokens},
+            base=_base_commit)
     fixture = benchmark.get("after_read")
     if fixture and not factors["C17"]:
         raise ValueError("after_read fixture requires mediated host reads (C17=on)")
@@ -124,7 +139,13 @@ def run(benchmark, factors, output, seconds, max_raw, max_turns,
     output = Path(output).resolve()
     # Exclusive creation is the admission boundary: no overwrite, auto-resume,
     # replacement or automatic control run.
-    output.mkdir(parents=True, exist_ok=False)
+    if _admitted_output:
+        from .executor import PRIVATE_ENV
+        import os
+        if not os.environ.get(PRIVATE_ENV) or not output.is_dir() or any(output.iterdir()):
+            raise ValueError('executor admission requires a newly created empty output directory')
+    else:
+        output.mkdir(parents=True, exist_ok=False)
     deadline = time.monotonic()+seconds
     provider = None
     git_context = ExitStack()
@@ -138,7 +159,9 @@ def run(benchmark, factors, output, seconds, max_raw, max_turns,
               "stages": [], "checkpoints": [], "checks": [], "factor_activations": {}}
     if scb_check is not None:
         result["scb_check"] = scb.pending()
-    evaluator = evaluation.adapter_type(benchmark)(benchmark, output, result)
+    evaluator = evaluation.make_evaluator(benchmark, output, result)
+    from .executor import execution_record
+    result['execution_environment'] = execution_record()
     if evaluator.config_key:
         result["evaluation"] = {"evaluator": evaluator.config_key, "status": "not_run", "passed": None}
         result["execution_status"] = "incomplete"
@@ -156,6 +179,7 @@ def run(benchmark, factors, output, seconds, max_raw, max_turns,
                     "workflow": "sequential-implement-optional-review-repair-and-evaluate",
                     "transport": transport, "created_at_unix": time.time()}
         manifest["checkout_policy"] = "pinned-history-no-remotes-v1"
+        manifest['execution_environment'] = result['execution_environment']
         manifest["workflow_version"] = WORKFLOW_VERSION
         manifest["review_priorities"] = list(review_priorities)
         manifest["max_review_loops"] = max_review_loops
@@ -216,6 +240,10 @@ def run(benchmark, factors, output, seconds, max_raw, max_turns,
                 json.dump(manifest, out, ensure_ascii=False, indent=2)
                 out.write("\n")
         invariant = {k: v for k, v in manifest.items() if k not in ("factors", "created_at_unix")}
+        # Image IDs include build metadata; the public recipe hash identifies
+        # the software environment consistently across independent rebuilds.
+        invariant['execution_environment'] = {k: v for k, v in result['execution_environment'].items()
+                                               if k != 'image'}
         invariant["provider"] = provider.identity
         if quality is not None:
             invariant["scb_check_tool"] = quality["tool"]

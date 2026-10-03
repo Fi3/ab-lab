@@ -1,0 +1,19 @@
+{
+  "schema": "agent-behavior-lab/executor-build-v1",
+  "platform": "linux/amd64",
+  "runner_root": "/opt/agent-lab/runner",
+  "python": "/usr/bin/python3",
+  "environment": {
+    "PATH": "/opt/agent-lab/harnesses/node_modules/.bin:/usr/local/bin:/usr/bin:/usr/lib/jvm/default/bin",
+    "SHELL": "/usr/bin/fish",
+    "LANG": "C.UTF-8",
+    "LC_ALL": "C.UTF-8",
+    "HOME": "/home/agent",
+    "USER": "agent"
+  },
+  "harnesses": {
+    "codex": "/opt/agent-lab/harnesses/node_modules/.bin/codex",
+    "pi": "/opt/agent-lab/harnesses/node_modules/.bin/pi"
+  },
+  "quality": "/opt/agent-lab/quality/bin/scb-check"
+}

@@ -161,10 +161,10 @@ the feature budget when `final_review` is enabled.
 
 ## Setup and a first run
 
-The Python runner uses the standard library. It requires Git, an installed
-Codex binary with an existing ChatGPT subscription login, and a separately
-installed `scb-check` executable. Pi runs additionally require an installed Pi
-harness and its SDK. API-key authentication is rejected; there is no API-credit
+The host runner uses Python's standard library and requires Git and Docker on
+Linux x86-64. The executor builds Codex, Pi, its SDK and `scb-check` from public
+pinned packages. Supply your own subscription login; authentication is injected
+at runtime. API-key authentication is rejected; there is no API-credit
 fallback.
 
 With **C17 off**, delegation follows the native harness configuration. Codex
@@ -181,11 +181,12 @@ Policy versions and effective settings are recorded in provider metadata.
 Historical runs retain the restrictions under which they actually ran; removing
 integration accounting does not turn them into native baseline runs.
 
-Install the quality checker in an environment with Python 3.12 or newer:
+Run on Linux x86-64 with Docker and Python 3.12 or newer. The runner builds its
+[pinned executor](docs/EXECUTOR.md) from the public recipe in `executors/`;
+project commands use that environment on every host:
 
 ```sh
-python3 -m venv .venv
-.venv/bin/python -m pip install scb-check==0.2.0
+python3 -m lab.executor build
 python3 -m unittest discover -s tests -v
 python3 -m lab factors
 python3 -m lab doctor --out runs/login-check
@@ -208,8 +209,7 @@ Run with explicit global limits and a harness:
 ```sh
 python3 -m lab run benchmarks/example.json \
   --harness codex --out runs/example-codex \
-  --seconds 1800 --max-raw 3000000 --max-turns 100 \
-  --scb-check .venv/bin/scb-check
+  --seconds 1800 --max-raw 3000000 --max-turns 100
 ```
 
 Replace `--harness codex` with `--harness pi` to use Pi. Both default to model
@@ -299,8 +299,7 @@ python3 -m lab.slopcodebench setup
 python3 -m lab plan benchmarks/scb-code-search.json
 python3 -m lab run benchmarks/scb-code-search.json \
   --harness codex --out runs/code-search-current \
-  --seconds 7200 --max-raw 16000000 --max-turns 250 \
-  --scb-check .venv/bin/scb-check
+  --seconds 7200 --max-raw 16000000 --max-turns 250
 ```
 
 SlopCodeBench prompts come from its pinned upstream `just-solve.jinja` template

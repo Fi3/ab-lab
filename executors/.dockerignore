@@ -1,0 +1,6 @@
+*
+!Dockerfile
+!default.json
+!package.json
+!package-lock.json
+!requirements.lock

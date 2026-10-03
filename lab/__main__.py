@@ -1,6 +1,7 @@
 """Run with python3 -m lab; scb-check is an external measurement command."""
 import argparse
 import json
+import os
 from pathlib import Path
 import sys
 import time
@@ -14,6 +15,7 @@ from .loops import POLICY_VERSION, loop_policy
 from .workflow import compare, interaction, run
 from .batch import run_batch
 from .summary import records
+from .executor import DEFAULT_PROFILE, PRIVATE_ENV
 
 
 def positive_integer(value):
@@ -71,6 +73,8 @@ def main():
         progress.add_argument("--no-loop-detection", action="store_true", help="disable feature stopping rules; retain review allowance and global run limits")
         p.add_argument("--scb-check", default="scb-check", help="scb-check executable for source quality measurements")
         p.add_argument("--scb-seconds", type=float, default=300, help="maximum seconds per quality measurement, within the workflow deadline")
+        p.add_argument('--executor', type=Path, default=DEFAULT_PROFILE,
+                       help='public executor build definition (default: executors/default.json)')
         if name == "plan":
             p.add_argument("--harness", choices=("codex", "pi"), default="codex", help="agent harness: codex or pi")
         if name == "run":
@@ -92,6 +96,8 @@ def main():
     doctor.add_argument("--codex", default="codex")
     doctor.add_argument("--pi", default="pi")
     doctor.add_argument("--model", default=None)
+    doctor.add_argument('--native', action='store_true', help='qualify native delegation without model generation')
+    doctor.add_argument('--executor', type=Path, default=DEFAULT_PROFILE)
     report = commands.add_parser("report")
     report.add_argument("results", type=Path, nargs="+")
     comp = commands.add_parser("compare", help="observed change versus reference, with a named denominator")
@@ -119,6 +125,7 @@ def main():
                          "loop_policy": progress_policy,
                          "loop_policy_version": POLICY_VERSION, "workflow_version": WORKFLOW_VERSION,
                          "author_policy": author_policy(factors), "generation": "none",
+                         "executor": str(args.executor.resolve()) if args.executor else None,
                          "scb_check": {"executable": args.scb_check, "seconds_per_check": args.scb_seconds,
                                        "phases": ["before_changes", "after_implementation"]}}
             else:
@@ -139,7 +146,7 @@ def main():
                         review_priorities=args.review_priorities,
                         max_review_loops=args.max_review_loops, preset=args.preset,
                         compaction_tokens=args.compaction_tokens,
-                        loop_options=progress_policy)
+                        loop_options=progress_policy, executor=args.executor)
                 else:
                     value = run(benchmark, factors, args.out, args.seconds, args.max_raw, args.max_turns,
                                 model, args.effort, executable, backend=backend, harness=args.harness,
@@ -147,8 +154,11 @@ def main():
                                 review_priorities=args.review_priorities,
                                 max_review_loops=args.max_review_loops, preset=args.preset,
                                 compaction_tokens=args.compaction_tokens,
-                                loop_options=progress_policy)
+                                loop_options=progress_policy, executor=args.executor)
         elif args.command == "doctor":
+            if not os.environ.get(PRIVATE_ENV):
+                from .executor import doctor as executor_doctor
+                return executor_doctor(args.executor, args.out, args.harness, args.native, args.model)
             harness = getattr(args, "harness", "codex")
             if harness == "pi":
                 backend = Pi
@@ -159,6 +169,7 @@ def main():
                 executable = getattr(args, "codex", "codex")
                 model = getattr(args, "model", None) or "gpt-5.5"
             provider = backend(args.repo.resolve(strict=True), args.out, model, "xhigh", time.monotonic()+30, 1, 1, executable,
+                               **({'allow_delegation': True} if args.native else {}),
                                **({"codex_executable": args.codex} if backend is Pi else {}))
             try:
                 value = {**provider.identity, "generation": "none"}

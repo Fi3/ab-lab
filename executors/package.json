@@ -1,0 +1,8 @@
+{
+  "name": "agent-lab-executor",
+  "private": true,
+  "dependencies": {
+    "@openai/codex": "0.159.3",
+    "@earendil-works/pi-coding-agent": "0.87.1"
+  }
+}

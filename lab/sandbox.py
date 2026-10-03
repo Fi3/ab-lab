@@ -1,5 +1,6 @@
 """Shared filesystem and network permissions for native tools and test commands."""
 import json
+import os
 from pathlib import Path
 
 
@@ -15,7 +16,16 @@ class CommandSandbox:
         self.roots = list(dict.fromkeys(str(Path(p).resolve()) for p in
             (self.repo, self.repo / '.git', *writable_roots)))
         self.blocked_paths = list(dict.fromkeys(str(Path(p).resolve()) for p in blocked_paths))
+        # The host grading bridge and provider credentials are trusted runner
+        # state. All agent roles, including native child tools, must be masked.
+        private = os.environ.get('AGENT_LAB_EXECUTOR_PRIVATE')
+        if private:
+            self.blocked_paths.append(str(Path(private).resolve()))
         self.read_only_blocked_paths = [str(Path(p).resolve()) for p in read_only_blocked_paths]
+        masked = {Path(p) for p in self.blocked_paths}
+        self.blocked_paths = sorted(str(p) for p in masked if not any(parent in masked for parent in p.parents))
+        self.read_only_blocked_paths = [p for p in self.read_only_blocked_paths
+                                       if not any(Path(p) == mask or Path(p).is_relative_to(mask) for mask in masked)]
         self.read_only_paths = list(dict.fromkeys(str(Path(p).resolve()) for p in read_only_paths))
 
     def policy(self, writable):

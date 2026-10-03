@@ -55,7 +55,7 @@ def run_batch(benchmark, factors, output, repeat, parallel, *, seconds, max_raw,
               scb_check=None, scb_seconds=300, child_codex='codex',
               review_priorities=DEFAULT_PRIORITIES, max_review_loops=DEFAULT_MAX_REVIEW_LOOPS,
               loop_options=None, preset=None, compaction_tokens=AUTO_COMPACT_TOKENS,
-              _worker_command=None):
+              _worker_command=None, executor=None):
     review_priorities = normalize_priorities(review_priorities)
     max_review_loops = normalize_review_loops(max_review_loops)
     compaction_tokens = validate_compaction_tokens(compaction_tokens)
@@ -68,6 +68,9 @@ def run_batch(benchmark, factors, output, repeat, parallel, *, seconds, max_raw,
             raise ValueError(name+' must be a positive integer')
     if not math.isfinite(scb_seconds) or scb_seconds <= 0:
         raise ValueError('scb-check needs a positive finite time limit')
+    if executor is not None:
+        from .executor import load_lock
+        load_lock(executor)
     output = Path(output).resolve()
     if output.exists():
         raise FileExistsError(str(output))
@@ -85,6 +88,8 @@ def run_batch(benchmark, factors, output, repeat, parallel, *, seconds, max_raw,
             'max_review_loops': max_review_loops,
             'compaction_tokens': compaction_tokens,
             'loop_options': progress_policy, 'preset': preset}}
+    if executor is not None:
+        config['options']['executor'] = str(Path(executor).resolve())
     config_path = output/'batch-input.json'
     save_json(config_path, config)
     prefix = _worker_command or [sys.executable, '-m', 'lab.batch']

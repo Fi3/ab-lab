@@ -312,4 +312,9 @@ def render(rows):
             table(['Run', 'Checkpoint', 'Status', 'Verbosity', 'Erosion', 'Cognitive erosion'], quality_rows)]
     lines += slopcodebench_tables(names, rows)
     lines += evaluation_tables(names, rows)
+    if any('execution_environment' in row for row in rows):
+        lines += ['', 'Execution environments:', '', table(['Run', 'Mode', 'Identity'], [
+            [name, row.get('execution_environment', {}).get('mode', 'legacy host (unrecorded)'),
+             row.get('execution_environment', {}).get('environment_identity')]
+            for name, row in zip(names, rows)])]
     return '\n'.join(lines)+'\n'

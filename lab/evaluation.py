@@ -46,6 +46,16 @@ def adapter_type(benchmark):
     return adapter
 
 
+def make_evaluator(benchmark, output, result):
+    """Use the host grader when the workflow runs in a frozen executor."""
+    import os
+    adapter = adapter_type(benchmark)
+    if os.environ.get('AGENT_LAB_EXECUTOR_PRIVATE'):
+        from .executor import RemoteEvaluator
+        return RemoteEvaluator(benchmark, output, result, adapter)
+    return adapter(benchmark, output, result)
+
+
 def retain_attempt(checkout, feature):
     """Save actually applied edits at a stopped boundary for external grading."""
     previous = git(checkout, "rev-parse", "HEAD").decode().strip()

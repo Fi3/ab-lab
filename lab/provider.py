@@ -14,6 +14,7 @@ import uuid
 
 from .host import Fatal, save_json
 from .environment import clean_env
+from .executor import normalize_runtime
 from .nested import (CommandEnvironment, NestedUsage, PiNestedUsage, DELEGATION_POLICY,
                      NATIVE_DELEGATION_POLICY, pi_usage_tokens as nested_pi_usage_tokens)
 from .native_usage import NativeUsage
@@ -349,6 +350,7 @@ class Codex(ChildAccounting):
             normalized_config = json.dumps(config, sort_keys=True).replace(str(self.artifacts.resolve()), "<RUN_PROVIDER>")
             if self.commands.native_state is not None:
                 normalized_config = normalized_config.replace(str(self.commands.native_state.root), "<NATIVE_STATE>")
+            normalized_config = normalize_runtime(normalized_config)
             self.identity = {"codex_version": subprocess.check_output([self.commands.executable, "--version"], text=True, env=clean_env()).strip(),
                 "auth": "chatgpt", "model": model, "effort": effort,
                 "effective_config_sha256": hashlib.sha256(normalized_config.encode()).hexdigest(),
@@ -359,7 +361,7 @@ class Codex(ChildAccounting):
                                    if self.delegation_disabled else {"mode": "harness-native",
                                        "auto_compact_tokens": self.auto_compact_limit}),
                 "delegation_policy": DELEGATION_POLICY if self.delegation_disabled else NATIVE_DELEGATION_POLICY,
-                "native_configuration": self.commands.native_state.fingerprints if self.commands.native_state else None}
+                "native_configuration": normalize_runtime(self.commands.native_state.fingerprints) if self.commands.native_state else None}
             save_json(self.artifacts / "provider.json", self.identity)
             if require_git_write:
                 self.verify_git_write()
@@ -1307,6 +1309,7 @@ class Pi(ChildAccounting):
                     "execution_policy": EXECUTION_POLICY,
                     "delegation_policy": DELEGATION_POLICY if self.delegation_disabled else NATIVE_DELEGATION_POLICY,
                 "native_configuration": self.commands.native_state.fingerprints if self.commands.native_state else None}
+        controls = normalize_runtime(controls)
         self.identity = {
             **controls,
             "harness": "pi",
