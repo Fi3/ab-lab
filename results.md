@@ -77,7 +77,11 @@
 * [bench19](runs/bench19/result.json)
 * [bench20](runs/bench20/result.json)
 * [bench21](runs/bench21/result.json)
-* [bench29](runs/bench29/result.json)
+* [bench33](runs/bench33/result.json)
+* [bench34](runs/bench34/result.json)
+* [bench34](runs/bench35/result.json)
+* [bench36](runs/bench36/result.json)
+* [bench37](runs/bench37/result.json)
 
 | model/reasoning      | test passes       | total tokens | uncached tokens | harness | conditions | maxrevs | verbosity | erosion | cognitive erosion | time       | P | compaction |
 | -------------------- | ----------------- | ------------ | --------------- | ------- | ---------- | ------- | --------- | ------- | ----------------- | ---------- | - | ---------- |
@@ -87,7 +91,11 @@
 | gpt-5.5 / xhigh      | 64565/79252       | 32,339,056   | 2,099,312       | Codex   | all        | 3       | 6.42%     | 39.58%  | 75.37%            | 2h 35m 50s | 0 | 131,072    |
 | gpt-5.5 / xhigh      | 57539/79252       | 50,119,241   | 2,044,489       | Pi      | all        | 3       | 6.44%     | 39.62%  | 75.39%            | 1h 35m 11s | 1 | 255,616    |
 | gpt-5.5 / xhigh      | 57536/79252       | 50,121,274   | 1,950,778       | Pi      | all        | 3       | 6.42%     | 39.70%  | 75.41%            | 1h 48m 51s | 1 | 131,072    |
-| gpt-6-luna / xhigh   | 57539/79252       | 25,009,891 (25M cap) | 1,066,723       | Codex   | partial    | 3       | 6.43%     | 39.57%  | 75.36%            | 1h 16m 44s | 1 | 131,072    |
+| gpt-6-luna / xhigh   | 79230/79252       | 34,661,945   | 1,498,169       | Codex   | partial    | 3       | 6.40%     | 39.57%  | 75.35%            | 1h 52m 21s | 1 | 131,072    |
+| gpt-6-luna / xhigh   | 79235/79252       | 40,565,380   | 1,692,804       | Codex   | partial    | 3       | 6.42%     | 39.72%  | 75.37%            | 2h 40m 02s | 1 | 131,072    |
+| gpt-6.1-sol / xhigh  | 79242/79252       | 18,732,192   | 1,039,264       | Codex   | all        | 3       | 6.39%     | 39.61%  | 75.20%            | 2h 42m 08s | 1 | 131,072    |
+| gpt-6.1-sol / xhigh  | 79242/79252       | 17,205,223   | 1,057,383       | Codex   | partial    | 3       | 6.39%     | 39.45%  | 75.21%            | 2h 20m 20s | 1 | 131,072    |
+| gpt-6.1-sol / xhigh  | 79243/79252       | 15,948,363   | 586,187         | Codex   | all        | 0       | 6.40%     | 39.50%  | 75.24%            | 1h 43m 17s | 2 | 131,072    |
 
 
 ### control run
@@ -95,9 +103,11 @@
 * [bench18](runs/bench18/result.json)
 * [bench22](runs/bench22/result.json)
 * [bench23](runs/bench23/result.json)
+* [bench38](runs/bench38/result.json)
 
 | mode/reasoning       | test passes | total tokens | uncached tokens | harness | verbosity | erosion | cognitive erosion | time       | compaction |
 | -------------------- | ----------- | ------------ | --------------- | ------- | --------- | ------- | ----------------- | ---------- | ---------- |
 | gpt-5.5 / xhigh      | 61775/79252 | 32,659,869   | 806,173         | Codex   | 6.42%     | 39.63%  | 75.38%            | 1h 13m 39s | 131,072    |
 | gpt-5.5 / xhigh      | 57534/79252 | 50,029,172   | 896,628         | Pi      | 6.44%     | 39.67%  | 75.44%            | 1h 15m 38s | 255,616    |
 | gpt-5.5 / xhigh      | 57536/79252 | 50,151,058   | 1,373,330       | Pi      | 6.46%     | 39.62%  | 75.35%            | 1h 26m 29s | 131,072    |
+| gpt-6.1-sol / xhigh  | 79244/79252 | 9,194,682    | 532,282         | Codex   | 6.40%     | 39.45%  | 75.28%            | 1h 12m 36s | 131,072    |

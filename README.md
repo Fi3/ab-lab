@@ -1,416 +1,637 @@
 # Agent Behavior Lab
 
-Compare coding-agent harnesses and selected behavior conditions on the same
-benchmark. The runner records implementation, independent review, repairs,
-benchmark grades, and token accounting. It does not assume that
-an enabled condition improves quality or reduces work.
+A tool to compare harness/model/settings across different benchmarks.
 
-[SWE-Milestone projects](docs/SWE_MILESTONE.md) can be imported and run separately
-with the existing runner. The adapter adds independent grading and per-milestone
-code-quality measurements after a run.
+The tool is call a runner and than an evaluator. The runner will run the bench in a fixed env and
+then the evaluator will execute the bench specific tests on the results and also run slope code
+rate.
 
-The current workflow is `benchmark-native-delegation-no-integration-v5`. There are **eight
-active factors**. C25 and the old printed-command protocol have been removed;
-there is no legacy execution mode. Historical run artifacts remain historical
-evidence and are not directly interchangeable with current runs.
+The tool execute the bench using a patch/review loop. To better control it we force the benched
+harness to not spawn reviews subagents but only the runner can do it.
 
-## Agent requests and tools
+This is an example of a run:
 
-The implementation prompt contains the benchmark request and the enabled
-factor instructions. It does not add generic coding, testing, documentation,
-worktree, or budget coaching. Repair prompts add the review findings, and
-recovery prompts report the state needed to continue. Harness-provided system
-instructions and repository instructions still apply.
+```sh
+python3 -m lab run ./benchmarks/swe-milestone-scikit-learn-light.json \
+                --out runs/bench33 \
+                --harness codex \
+                --model gpt-6-luna \
+                --effort xhigh \
+                --preset all --off C08,C16,C17  \
+                --review-priorities P0,P1 \
+                --seconds 14400 \
+                --max-raw 50000000 \
+                --max-turns 100 \
+                --scb-check .venv/bin/scb-check \
+                --max-review-loops 3 \
+                --paralle 4
+```
+For example the above command will run the scikitlive bench usin codex with gpt-6-luna xhigh. It
+will allow a max of 3 review loops and only P0 and P1 issue will be fixed. It add a safety net, so
+after either 4 hours of running, 50M tot token used, or 100 turns the runner will stop. The run
+result will be saved in `./runs/bench33`. The last option tell the runner that we want to run 4
+instance of the same bench.
+The above command also instruct the runner to run the bench with specific condition in
+particular all conditions but C08,C16,C17.
 
-With **C17 on**, the agent calls actual tools registered with its harness:
+In order to have a baseline `--preset native` can be used. This will remove all runner interventions
+and run the harness in native mode without limitation (for example can spwan all the sub-agent
+that want). Of course when native mode is one there is not a patch/review loop enforced or and
+condition enforced.
 
-| Tool | Behavior |
+The output is very big so in order to read it `summarize.py` can be used. For example:
+```sh
+./summarize.py runs/bench11/result.json
+```
+An example of an output of the summarizer is [here](summarize_example.md)
+
+## Why
+
+I want to use this bench to drive build of an agent that use the patch/review loops and minimise the
+uncached-token/out-quality metrics. (I'm thinking at a nvim plugin for ui and a pi
+plugin for the engine but still have to look into it)
+
+## Conditions
+
+Conditions are switches that let you compare agent behavior on the same
+benchmark. Some conditions change how the runner uses tools and applies edits.
+Other conditions add instructions to the author agent's prompt. An instruction
+specifies the requested behavior. It does not guarantee that the agent follows
+that instruction. Benchmark results show whether a condition improves quality
+or decreases token use.
+
+This section uses these terms:
+
+- **Author agent:** The agent that writes and corrects the code. It also runs
+  checks on its changes.
+- **Review agent:** The agent that examines the submitted code and reports
+  defects. It must not change the submitted code.
+- **Runner:** The software that controls the benchmark run. It starts the
+  author agent and any configured review agent. When a review requires
+  corrections, the runner sends the reported defects to the author agent.
+- **Host tools:** The runner's tools for file reads, source edits, and commands.
+- **Native tools:** The tools that the agent's harness supplies. The harness is
+  the software that runs the agent.
+- **Focused check:** A check that directly tests the changed code.
+- **Diff:** A text representation of the differences between two file versions.
+
+Use `--preset all` to enable all eight conditions. Use `--preset native` to
+disable all eight conditions. This preset also disables feature reviews and
+loop detection by default.
+
+Use `--off` and `--on` with condition IDs separated by commas to change
+individual conditions. For example, `--preset all --off C13,C14` enables all
+conditions except C13 and C14. C08 requires C17. To use native editing tools,
+disable both conditions with `--off C08,C17`.
+
+### C08
+
+C08 controls the file information that the host returns after it rejects an
+edit because the context does not match. Context is the source text that an
+edit uses to identify where a change belongs. C08 requires C17 because this
+condition uses the host editing tools.
+
+#### Enabled
+
+If a file changed after the host supplied its complete contents, the rejection
+response includes a diff. The diff compares the version supplied to the author
+agent with the current version.
+
+For example, one function changes after the author agent reads a large file.
+The response shows the changed function and the surrounding context. The
+author agent can use this information to correct the proposed edit. It does
+not need to receive the complete file again.
+
+C08 changes the information in the response. The host still applies the same
+checks before it accepts an edit.
+
+#### Disabled
+
+For the same changed file, the response includes the complete current contents
+instead of a diff. The author agent receives this text before it tries the
+edit again.
+
+The following rules apply with either setting:
+
+- If the host has not supplied a previous file version, it uses the same
+  fallback response.
+- If the file has not changed, the response reports that fact.
+- If the diff is unavailable or too large, the author agent must use
+  `host_read` to read the current file.
+
+### C13
+
+C13 adds instructions about the checks that the author agent runs when it
+writes or corrects code.
+
+#### Enabled
+
+The runner instructs the author agent to start with focused checks. If a check
+fails, the author agent must correct the cause and run the applicable checks
+again. The instructions also permit checks across features when necessary to
+complete the work correctly.
+
+For example, a parser change can start with that parser's unit tests. A change
+to a shared interface can require checks across several components.
+
+With host tools enabled, each accepted edit includes an additional
+instruction. It tells the author agent to run at most one applicable focused
+check for that accepted work. Further checks and edits are permitted for
+actual failures or incomplete requirements.
+
+#### Disabled
+
+The runner adds no instruction to prefer focused checks. It also adds no
+instruction to limit checks after an accepted edit. The author agent selects
+its checks from the task, repository instructions, and harness behavior.
+
+The author agent can still run tests. Review agents can still request
+corrections. The configured final checks and independent benchmark evaluation
+still apply.
+
+### C14
+
+C14 adds instructions about related source changes in the same edit.
+
+#### Enabled
+
+The runner instructs the author agent to submit related code and focused tests
+together when the required test sequence permits this. One edit can include
+several files and several changed regions.
+
+For example, one edit can add a function and its unit tests. The author agent
+does not have to put the complete feature in one edit. It must still follow
+the required test sequence.
+
+#### Disabled
+
+The runner adds no instruction to group changes. The author agent can submit
+related code and tests together or in separate edits. The task and the agent's
+usual procedure determine this choice.
+
+The available editing tools stay the same. The author agent must still
+complete the assigned work.
+
+### C15
+
+C15 controls whether the runner replaces a requirement to run a test and show
+a failure before implementation starts.
+
+#### Enabled
+
+The runner instructs the author agent to design the required tests first. The
+author agent does not have to run those tests before implementation only to
+show a failure.
+
+For example, the author agent can define the expected behavior and test cases
+first. It can then change the code and run the tests.
+
+This instruction takes precedence over rules in `AGENTS.md` that require a
+failing test before implementation. Required test coverage still applies. The author agent must still examine
+actual failures and check the completed code.
+
+#### Disabled
+
+The runner adds no instruction to replace the required test sequence.
+Repository and harness instructions determine the sequence of tests and
+implementation.
+
+If those instructions require a failing test before a correction, that
+requirement still applies. Disabling C15 does not add this requirement when
+it does not exist.
+
+### C16
+
+C16 controls the requested format for source edits.
+
+#### Enabled
+
+With C17 enabled, the runner instructs the author agent to use the structured
+patch format. This format includes these elements:
+
+- `*** Begin Patch` at the start.
+- Explicit `*** Add File:`, `*** Update File:`, or `*** Delete File:` entries
+  with file paths.
+- `@@` change blocks with context that matches the source exactly.
+- `*** End Patch` at the end.
+
+The host checks the format and the context before it applies the edit. It does
+not estimate where the change belongs.
+
+With C17 disabled, the runner instructs the author agent to prefer the native
+structured patch tool that its harness supplies.
+
+#### Disabled
+
+The runner adds no instruction about the edit format. With C17 enabled, the
+host accepts its structured patch format or a supported standard unified diff.
+The host checks both formats before it applies changes. It still requires
+exact context matches.
+
+With C17 disabled, the author agent uses the native editing tools and follows
+their rules.
+
+### C17
+
+C17 determines which software applies source edits, runs author agent
+commands, and records source changes in Git.
+
+#### Enabled
+
+The author agent uses `host_read`, `host_edit`, and `host_run`. The host applies
+accepted patches and commits the resulting source changes.
+
+The host also records and commits source changes that commands produce. This
+includes changes from a failed command. The host reports the actual command
+output and exit status.
+
+The host controls the Git index and history. Native tools remain available
+for inspection, but they must not change the source. The author agent cannot
+start other agents in this mode. The runner starts any configured independent
+review agent.
+
+#### Disabled
+
+The author agent uses its harness's native editing and command tools. The
+native harness configuration determines whether the author agent can start
+other agents.
+
+The runner saves the source in a commit at each stage boundary. This creates
+a checkpoint even if the author agent did not create a commit.
+
+File system permissions and limits for the complete run still apply. The
+review configuration separately determines whether the runner starts review
+agents. Disabling C17 alone does not disable those reviews.
+
+C08 must also be disabled because it requires host tools.
+
+### C20
+
+C20 adds instructions about the next action after an operation finishes.
+
+#### Enabled
+
+The runner instructs the author agent to select its next action from the
+actual operation results. The author agent must not repeat accepted work. It
+must not use missing output as evidence of success.
+
+With host tools enabled, command responses also include this instruction.
+
+For example, a failed test requires the author agent to examine the failure.
+A short response to a successful edit does not require the author agent to
+submit that edit again. The author agent selects the next action.
+
+#### Disabled
+
+The runner omits this instruction from the prompt and host command responses.
+Those responses still report the actual output, exit status, and recorded
+source changes.
+
+The author agent uses its existing instructions to interpret these results.
+The criteria for success stay the same. Command responses still report
+failures.
+
+### C38
+
+C38 adds instructions about when the author agent ends its turn.
+
+#### Enabled
+
+The runner instructs the author agent to end its turn when the assigned work
+and applicable checks are complete. The runner starts any configured
+independent review.
+
+The instruction tells the author agent to avoid extra work based only on
+assumptions and additional exchanges only to report progress. With host tools
+enabled, accepted edits and command results also include completion reminders.
+
+The author agent must still correct actual failures and complete unfinished
+requirements before it ends its turn.
+
+#### Disabled
+
+The runner adds no completion instruction or related tool reminders. The
+author agent uses the task, harness instructions, and repository instructions
+to decide when to end its turn.
+
+The same run limits, review configuration, final checks, and benchmark
+evaluation still apply. The criteria for the submitted work stay the same.
+
+## Patch review loop
+
+The patch review loop separates code changes from code review. The author
+agent writes and corrects the code. The review agent examines the submitted
+code and reports defects. The runner controls the sequence.
+
+For each feature, the runner uses this procedure:
+
+1. Save the starting commit and start a new author conversation.
+2. Send the feature request and enabled condition instructions to the author
+   agent. The author agent changes the code and runs the applicable checks.
+3. Save the resulting source in Git. With C17 enabled, the host commits source
+   changes. With C17 disabled, the runner also saves uncommitted source at
+   stage boundaries.
+4. Start an independent review conversation if reviews are enabled. The review
+   agent examines changes from the feature's starting commit to the current
+   commit. It can run checks in a temporary copy. It must not change the
+   submitted code.
+5. Receive the review findings through `submit_review`. The runner determines
+   approval from the findings and configured priorities.
+6. If the review reports defects that require corrections, send those defects
+   to the same author conversation. The author agent corrects the code.
+7. Repeat the review after corrections if another review is permitted. Use
+   the same review conversation for subsequent reviews of that feature.
+
+A complete review with no blocking findings ends the loop. A blocking finding
+is a defect with a priority selected by `--review-priorities`. The default
+priorities are P0, P1, and P2. P3 findings are advisory by default. A review
+must check the requested behavior even when the author agent made no changes.
+
+`--max-review-loops N` permits at most N reviews per feature. The default is
+3 with `--preset all` and 0 with `--preset native`. A value of 0 disables
+feature reviews.
+
+After each review with blocking findings, the author agent corrects the code
+if the applicable limits permit further work. After corrections from the last
+permitted review, the runner continues to the next feature. It records those
+corrections without review approval. For example, a limit of 3 permits three
+reviews and up to three correction attempts. The third correction attempt
+receives no further review.
+
+An incomplete review, failed correction attempt, or applicable stopping rule
+can stop the workflow. Reaching the review limit alone permits the workflow
+to continue. The runner retains source and recorded results when work stops.
+
+After the feature sequence, the runner measures source quality and runs the
+benchmark's final checks. Configured independent grading runs after the model
+sessions close. Grading results do not enter the author and review loop.
+Review approval and successful public checks do not replace independent
+grading.
+
+## Bench definition
+
+A benchmark is a JSON file. It identifies the starting source, requested
+features, and final checks. The source must be an existing local Git
+repository. The runner resolves the requested revision to a commit before
+model execution.
+
+### Define a local benchmark
+
+Create a JSON file with these fields:
+
+| Field | Required content |
 | --- | --- |
-| `host_read` | Return complete current file text. |
-| `host_edit` | Apply a patch and commit the resulting source changes. |
-| `host_run` | Execute a command and report its actual output, exit status, and source changes. |
+| `name` | A nonempty benchmark name. |
+| `repo` | The path to the local source repository. Relative paths start from the JSON file's directory. |
+| `revision` | The starting Git revision. Use a commit ID to keep the baseline fixed. |
+| `features` | A nonempty list of feature requests. The runner executes them in list order. |
+| `features[].id` | A unique ID. Start with a letter or digit. Use only letters, digits, underscores, and hyphens. |
+| `features[].request` | A nonempty description of the required behavior and tests. |
+| `checks` | A nonempty list of shell commands for final checks. |
 
-Codex receives dynamic tools through its app-server connection. Pi receives
-registered tools through its SDK connection. The host owns the Git index and
-history in this condition; native tools remain available for read-only
-inspection.
-
-Commands do not declare which files they might write. The runner records actual
-tracked changes, new source files, deletions, and executable-bit changes after
-execution. It commits source effects even when the command returns a failure,
-so the next action can use the real state. Ignored build artifacts remain
-ignored. The command sandbox denies writes to the host-owned Git metadata;
-the runner publishes source changes after execution. Unsupported source objects
-stop execution with their actual state retained.
-
-Tool requests and results are journaled by call identity. A repeated completed
-call returns its recorded result without executing again. A call whose effects
-may have occurred but whose final receipt is missing stops for inspection; an
-arbitrary shell command cannot be assumed safe to replay after a crash.
-
-With **C17 off**, the agent uses native editing and execution tools. The runner
-records its actual files at the stage boundary, without requiring the agent to
-make a commit. Both modes use normal harness completion. There is no required
-completion token, final JSON object, ban on prose, or instruction to print a
-command for the runner to parse.
-
-Native tools still use configured filesystem permissions. Native mode means
-native harness tools, not unrestricted access to the laptop. Execution uses the
-isolated checkout, permitted run-owned paths, and temporary storage. The shared
-execution policy permits network access. Independent reviewers have read-only
-access to the submission and writable temporary space. Their `review_run` tool
-runs checks in fresh writable copies of the reviewed commit. Changing tracked
-source in a copy invalidates that check; the submission remains unchanged.
-Pi hides native edit/write tools from read-only roles. These restrictions are recorded
-experimental conditions, independent of whether evaluation uses Docker.
-
-Reviewers submit structured findings through `submit_review`, bound to the
-current round and commit. Invalid arguments receive tool feedback; missing or
-incomplete verdicts cannot approve a feature. The runner applies the configured
-priority threshold to the submitted findings. Final prose is not parsed as a verdict.
-
-## Workflow and failure handling
-
-Each feature gets a fresh author conversation and, when enabled, an independent
-reviewer conversation. `--max-review-loops N` sets the maximum number of reviews
-per feature and defaults to **3** with `--preset all`, or **0** with
-`--preset native`. After the initial implementation,
-each review with blocking findings is followed by an author repair. After the
-Nth repair, the workflow continues to the next feature without another review.
-An approving review ends the loop sooner. `--max-review-loops 0` skips feature
-review and proceeds after implementation.
-
-The default blocking priorities are P0, P1, and P2; P3 findings remain advisory.
-An empty diff is reviewed against the requested behavior and does not imply
-approval. Reaching the review allowance is normal workflow completion, but the
-final repair remains unreviewed and is not recorded as approved. Independent
-benchmark evaluation determines correctness.
-
-After feature attempts, the runner executes the configured final checks and
-independent evaluation against the final author submission. There is no final
-integration agent, plan/accept exchange, repair stage, or history linearization.
-The runner preserves author commits and records uncommitted source at checkpoint
-boundaries so every evaluation has an immutable source identity.
-
-Limits are enforced outside agent prompts. By default, author and reviewer
-work share the explicitly selected whole-run time, token, and turn limits.
-There is no separate feature token cap or review token/time cap. Default
-feature policy:
-
-| Setting | Default |
-| --- | ---: |
-| Reviews per feature (`--max-review-loops`) | 3 for all; 0 for native |
-| Feature observed raw tokens | No separate cap |
-| Per-review observed raw tokens | No separate cap |
-| Per-review wall time | No separate cap |
-| Review receipt settlement allowance | 600 seconds |
-| Repeated failed-operation cycle threshold | 3 for all; disabled for native |
-
-A configured review token or time cap stops the workflow; it does not start
-another generation asking for a conclusion or advance to the next feature. The
-settlement allowance lets an already in-flight response
-supply its accounting receipt. It does not grant approval to a late verdict,
-and global or token limits can end settlement sooner. Observed-token limits can
-overshoot while usage arrives and cancellation takes effect; they are not
-hard billing caps.
-
-Repeated reads and successful polling are not treated as failed-operation
-loops. Repeated failing operations with unchanged state, repeated rejected
-source trees, repeated blocking findings, and exhausted explicit feature limits
-can produce `needs_attention`. A stopped author may receive one final review
-when configured and when both the review allowance and remaining limits permit it.
-
-Completed features proceed after approval, the configured review/repair rounds,
-or implementation when reviews are disabled. An unfinished review, failed repair,
-or safety guard still stops the workflow as incomplete; exhausting the review
-allowance does not bypass these failures. For a local review/loop
-stop, SlopCodeBench retains and independently grades the stopped snapshot;
-later checkpoints and final evaluation remain unrun. Whole-run or provider stops
-retain the checkout and grade already captured snapshots; an uncaptured active
-checkpoint remains ungraded. A provider refusal,
-unreconciled interruption, missing accounting, or infrastructure failure is
-reported separately; it is not approval or a successful benchmark result.
-
-See [the failure-mode contract](docs/FAILURE_MODES.md) for detection, retained
-state, retry rules, and outcome ownership. A new invocation requires a fresh
-output directory. There is no automatic resume of an interrupted run and no
-silent replacement run.
-
-Use `--loop-policy policy.json` to override known policy fields. These are the
-defaults; optional stage caps accept a positive integer instead of `null`:
+For example, save this definition as `benchmarks/my-example.json`:
 
 ```json
 {
-  "max_feature_raw": null,
-  "max_review_raw": null,
-  "max_review_seconds": null,
-  "max_review_settle_seconds": 600,
-  "repeat_limit": 3,
-  "final_review": true
-}
-```
-
-`--max-review-loops` is a separate CLI option and is recorded in plans, run
-manifests, batch configurations, and results. `--no-loop-detection` disables the
-feature stopping policy while retaining the review allowance and global
-wall-time, token, and turn limits. Native defaults to this disabled policy unless
-`--loop-policy` is explicitly supplied. Policy version
-`bounded-review-loops-v6` is recorded in results. If both feature and review
-token caps are explicitly configured, a final review reserve is taken from
-the feature budget when `final_review` is enabled.
-
-## Setup and a first run
-
-The host runner uses Python's standard library and requires Git and Docker on
-Linux x86-64. The executor builds Codex, Pi, its SDK and `scb-check` from public
-pinned packages. Supply your own subscription login; authentication is injected
-at runtime. API-key authentication is rejected; there is no API-credit
-fallback.
-
-With **C17 off**, delegation follows the native harness configuration. Codex
-collaboration and configured apps are available; Pi keeps normal tools and
-extension discovery inside a process sandbox. Pi delegation depends on the
-installed extensions or CLI usage; Pi has no built-in subagent tool. Owned child
-sessions contribute to usage and global budgets, and may use their own configured
-models and effort. With **C17 on**, delegation is disabled to preserve host
-ownership of edits and commands. This policy follows the condition, not the model.
-See [delegation and accounting](docs/nested-verification.md) and the
-[native baseline audit](docs/NATIVE_BASELINE.md).
-
-Policy versions and effective settings are recorded in provider metadata.
-Historical runs retain the restrictions under which they actually ran; removing
-integration accounting does not turn them into native baseline runs.
-
-Run on Linux x86-64 with Docker and Python 3.12 or newer. The runner builds its
-[pinned executor](docs/EXECUTOR.md) from the public recipe in `executors/`;
-project commands use that environment on every host:
-
-```sh
-python3 -m lab.executor build
-python3 -m unittest discover -s tests -v
-python3 -m lab factors
-python3 -m lab doctor --out runs/login-check
-```
-
-`doctor` checks configuration and authentication without model generation.
-Every output directory shown here must be new.
-
-Initialize the small example source repository once:
-
-```sh
-git -C examples/tiny-project init
-git -C examples/tiny-project add .
-git -C examples/tiny-project -c user.name='Agent Behavior Lab' -c user.email='lab@example.invalid' commit -m 'Initial example'
-python3 -m lab plan benchmarks/example.json
-```
-
-Run with explicit global limits and a harness:
-
-```sh
-python3 -m lab run benchmarks/example.json \
-  --harness codex --out runs/example-codex \
-  --seconds 1800 --max-raw 3000000 --max-turns 100
-```
-
-Replace `--harness codex` with `--harness pi` to use Pi. Both default to model
-`gpt-5.5` and effort `xhigh`; choose explicitly with `--model` and `--effort`.
-The limits above are example settings, not a guarantee that a task will finish.
-
-`plan` and `run` accept `--compaction-tokens N`, a positive integer defaulting to
-`131072` for both harnesses and every preset, including `native`. For example,
-`--compaction-tokens 200000` requests a 200,000-token compaction threshold.
-The runner applies the requested threshold to the harness and stops if it cannot
-enforce it. Native mode retains harness context handling without runner-triggered
-compaction or synthetic recovery prompts. The threshold is recorded in plans,
-run manifests, results, and batch configurations, and is part of comparison
-identity; use the same value for matched runs.
-For Pi, this uses its native `reserveTokens` setting: model context window minus
-the requested threshold. The threshold must be below that window. Settings are
-changed only in a private run copy; conflicting project settings cause an error.
-
-## Choosing conditions
-
-| Factor | Enabled behavior | Disabled behavior |
-| --- | --- | --- |
-| C08 | Conflict refresh uses a diff against previously delivered text. | Return complete changed-file text. |
-| C13 | Ask for focused author validation, with broad validation when needed. | No added validation instruction. |
-| C14 | Ask to submit related implementation and tests together. | No added grouping instruction. |
-| C15 | Design required tests first; no mandatory deliberately failing execution. | No test-order override. |
-| C16 | Ask for exact-context structured patches. | No added edit-format instruction. |
-| C17 | Host tools own source edits, command effects, and commits. | Native tools; runner captures stage source. |
-| C20 | Add guidance to choose the next action from actual operation results. | Results contain facts without that guidance. |
-| C38 | Add reminders to finish once required work and checks are complete. | No added completion reminder. |
-
-All eight factors default on with `--preset all`. `--preset native` turns
-**all eight off**, defaults to zero external reviews, and disables the runner
-loop detector. C08 requires C17. Use `--off` and `--on`
-with comma-separated factor IDs:
-
-```sh
-python3 -m lab plan benchmarks/example.json --off C13,C14,C15,C16
-python3 -m lab plan benchmarks/example.json --preset native
-python3 -m lab plan benchmarks/example.json --off C08,C13,C14,C15,C16,C17,C20,C38
-```
-
-C25 is no longer accepted. Its old intervention interrupted generation after a
-printed host request; actual tool calls supply their own execution boundary.
-
-## Benchmarks and SlopCodeBench
-
-A local benchmark specifies a local Git repository, revision, feature requests,
-and explicit final checks. Paths are relative to its JSON file:
-
-```json
-{
-  "name": "example",
+  "name": "my-example",
   "repo": "../examples/tiny-project",
   "revision": "HEAD",
   "features": [
-    {"id": "negate", "request": "Implement negate(value) and cover positive, negative and zero values with tests."}
+    {
+      "id": "negate",
+      "request": "Add negate(value) to numbers_demo.py. Return the negative of value. Add tests for positive, negative, and zero values."
+    }
   ],
   "checks": ["python3 -m unittest discover -s tests -v"]
 }
 ```
 
-Put task requirements in the feature request. The runner does not prepend a
-separate local instruction block. Removed configuration fields `instructions`
-and `defer_documentation` are rejected rather than silently ignored. A configured `after_read` fixture can apply a
-declared intervening source change for C08 experiments; it requires C17.
+Initialize the example source as a Git repository and create its first commit
+before use. To inspect the definition and selected settings, run:
 
-Benchmarks own their evaluation. The registrations in
-`benchmarks/evaluators.py` connect a benchmark's JSON section to its adapter;
-the runner uses the same lifecycle for each adapter. Existing Work Leaf and
-other plain definitions keep their declared final checks. SlopCodeBench's
-`slopcodebench` section and SWE-Milestone's `swe_milestone` section additionally
-select independent grading, which runs automatically after every model session
-has closed. The `lab run` command, harness interfaces, prompts and review
-allowances are unchanged. See [the evaluator contract](docs/BENCHMARK_EVALUATION.md).
+```sh
+python3 -m lab plan benchmarks/my-example.json
+```
 
-The seven [SWE-Milestone projects](docs/SWE_MILESTONE.md) run separately using
-`benchmarks/swe-milestone-PROJECT.json`. A single `lab run` invocation implements
-the tasks, executes public checks, grades saved submissions, and records
-per-milestone quality. Set up the project's source and evaluator environment
-before the first run. Evaluator readiness is checked before model execution.
+To execute it, use a new output directory and specify the required limits:
 
-Set up the pinned SlopCodeBench evaluator with Docker and `uv` available:
+```sh
+python3 -m lab run benchmarks/my-example.json \
+  --harness codex --out runs/my-example \
+  --seconds 1800 --max-raw 3000000 --max-turns 100
+```
+
+These limits are example values. They do not guarantee completion. Code
+changes from each feature remain available to subsequent features.
+
+### Optional benchmark fields
+
+`after_read` defines a source change that the runner applies after a specified
+host read. It contains exactly `path` and `command`. The path must identify a
+source file relative to the repository. This option requires C17 and supports
+C08 conflict experiments.
+
+A benchmark can select one independent evaluator. Use `slopcodebench` for
+SlopCodeBench or `swe_milestone` for SWE-Milestone. SlopCodeBench supplies its
+feature requests from the pinned dataset. Do not add a separate `features`
+list to a SlopCodeBench definition. SWE-Milestone definitions include their
+imported feature requests.
+
+The runner rejects unknown fields. See the
+[evaluator contract](docs/BENCHMARK_EVALUATION.md) for evaluator configuration
+and result handling.
+
+### Available benchmarks
+
+The following runnable definitions are in `benchmarks/`:
+
+| Definition | Requested work |
+| --- | --- |
+| [example.json](benchmarks/example.json) | Add clamp and parity functions to a small Python project. |
+| [conflict-example.json](benchmarks/conflict-example.json) | Add an increment function after a declared source change. Requires C17. |
+| [work-leaf.json](benchmarks/work-leaf.json) | Add visual selection, command routing, and review completion behavior. Requires the specified local Work Leaf repository. |
+| [scb-code-search.json](benchmarks/scb-code-search.json) | Complete the SlopCodeBench code search problem. |
+| [scb-code-search-smoke.json](benchmarks/scb-code-search-smoke.json) | Complete only the first code search checkpoint. |
+| [scb-log-query.json](benchmarks/scb-log-query.json) | Complete the SlopCodeBench log query problem. |
+| [scb-config-service.json](benchmarks/scb-config-service.json) | Complete the SlopCodeBench configuration service problem. |
+| [swe-milestone-ripgrep.json](benchmarks/swe-milestone-ripgrep.json) | Complete the imported Ripgrep milestones. |
+| [swe-milestone-dubbo.json](benchmarks/swe-milestone-dubbo.json) | Complete the imported Dubbo milestones. |
+| [swe-milestone-element-web.json](benchmarks/swe-milestone-element-web.json) | Complete the imported Element Web milestones. |
+| [swe-milestone-navidrome.json](benchmarks/swe-milestone-navidrome.json) | Complete the imported Navidrome milestones. |
+| [swe-milestone-nushell.json](benchmarks/swe-milestone-nushell.json) | Complete the imported Nushell milestones. |
+| [swe-milestone-scikit-learn.json](benchmarks/swe-milestone-scikit-learn.json) | Complete all imported scikit-learn milestones. |
+| [swe-milestone-scikit-learn-light.json](benchmarks/swe-milestone-scikit-learn-light.json) | Complete the first three scikit-learn milestones: M06, M11, and M12.1. |
+| [swe-milestone-go-zero.json](benchmarks/swe-milestone-go-zero.json) | Complete the imported go-zero milestones. |
+
+`swe-milestone-projects.json` is a preparation catalog, not a runnable benchmark.
+
+Prepare SlopCodeBench data and its evaluator before the first run:
 
 ```sh
 python3 -m lab.slopcodebench setup
-python3 -m lab plan benchmarks/scb-code-search.json
-python3 -m lab run benchmarks/scb-code-search.json \
-  --harness codex --out runs/code-search-current \
-  --seconds 7200 --max-raw 16000000 --max-turns 250
 ```
 
-SlopCodeBench prompts come from its pinned upstream `just-solve.jinja` template
-and upstream renderer. The upstream setup requirements, including virtualenv
-and dependency instructions, are preserved. We do not add our own Python
-version, entrypoint, testing, or dependency coaching. Earlier official rendered
-requests are concatenated for a fresh checkpoint conversation so prior
-requirements remain available; future checkpoints are not disclosed early.
+For SWE-Milestone, prepare the selected project and install its evaluator
+requirements. See [SWE-Milestone setup](docs/SWE_MILESTONE.md) for the required
+commands. Definitions alone do not include source repositories or grading
+environments.
 
-Prompt provenance records dataset and evaluator revisions, raw specification
-hashes, rendered prompt hashes, template and renderer hashes, and cumulative
-request hashes. Fidelity is to the upstream renderer: its canary removal and
-entrypoint substitution are recorded transformations, not silently asserted
-byte identity to raw specifications.
+## Supported harness
+For now I support only codex (is the one that I use mostly) and PI is the one that I was to use to
+build my custom agent.
 
-Independent evaluation uses retained checkpoint snapshots after model sessions
-have closed. Hidden evaluator tests and results are not fed back into the
-author/review/repair loop. The final author snapshot is also evaluated against the complete test sequence.
-The `scb-check` quality measurements are separate from benchmark correctness:
-its findings can be present on a correctly functioning submission.
+## Execution env
+The execution env is pinned and defined in executors for reproducible runs.
 
-## Results and comparisons
+The executor is a Docker container for Linux x86-64. The public build inputs
+are in `executors/`. The default profile is `executors/default.json`.
 
-Run artifacts live under the supplied output directory:
-
-- `manifest.json`: benchmark identity, source hashes, factors, harness/model,
-  permissions, workflow version, and limits.
-- `result.json`: stage outcomes, reviews, checks, checkpoint grades, failures,
-  token accounting, and final summary.
-- `before-evaluation.json`: immutable workflow result before independent grading.
-  `result.json` adds the normalized `evaluation` verdict and the adapter's full report;
-  `summarize.py` displays these with the existing workflow and quality results.
-- `checkout/`: retained source and commits.
-- `provider/`: prompts, transport events, responses, and accounting evidence.
-- Feature host directories: tool journals and actual execution receipts.
-- `slopcodebench/`: captured checkpoint/final snapshots and evaluator evidence.
-- `attention/`: retained state and findings for stopped feature attempts.
-
-`runs/`, `.benchmarks/`, and `.venv/` are ignored by Git. Do not commit generated
-run directories. Keep only intentionally selected, compact reports outside
-those directories when retaining an experiment permanently.
-
-For SlopCodeBench, read execution and correctness separately:
-
-| Field | Meaning |
+| File | Purpose |
 | --- | --- |
-| `execution_status` | Whether all checkpoints completed their configured review/repair sequence and final checks completed. |
-| `status` | Overall workflow outcome, including reviews and evaluation. |
-| `max_review_loops` | Maximum reviews per feature; zero disables feature review. |
-| `checkpoints[].status` | `approved`, `review_limit_reached`, or `review_skipped` for completed feature attempts; stopped attempts retain their failure status. |
-| `checkpoints[].review_approved` | Approval of the recorded final feature state; `null` when that state was not reviewed. |
-| `slopcodebench.checkpoints` | Independent grade for each recorded checkpoint snapshot. |
-| `slopcodebench.final` | Independent grade for the final author snapshot. |
-| `slopcodebench.solved` | Benchmark success from its evaluation, not a completion inference. |
-| `failure.origin` | Component associated with a terminal execution failure, when present. |
-| `usage.measurement_complete` | Whether required accounting evidence was captured. |
+| [default.json](executors/default.json) | Defines the platform, runtime environment variables, tool paths, and quality checker path. |
+| [Dockerfile](executors/Dockerfile) | Defines the base image, operating system packages, Rust toolchain, and installation steps. |
+| [package.json](executors/package.json) | Selects Codex and Pi versions. |
+| [package-lock.json](executors/package-lock.json) | Records exact Node package versions and integrity values. |
+| [requirements.lock](executors/requirements.lock) | Records exact Python dependencies and hashes for the quality checker. |
 
-A completed execution with failed tests is a completed experiment with an
-unsuccessful submission. Two passing checkpoints out of five are not a passed
-full benchmark. A failed infrastructure run with partial usage is not evidence
-of token savings. Read the retained stage and failure evidence before assigning
-a cause; component attribution does not replace diagnosis.
+The recipe selects an Arch Linux base image by SHA-256 digest. Operating
+system packages come from the archive dated 2026-09-18. The Rust archive also
+has a fixed version and SHA-256 hash. These inputs define the software
+environment independently of the host's installed tools.
 
-Raw tokens include input and output; cached input is included once in input,
-and reasoning already included in output is not added again. Owned compaction
-and child-process usage are retained. Missing coverage stays explicit and blocks
-further measured work instead of being counted as zero.
+The container includes Python, Git, GCC, build tools, CMake, Java 17, Node,
+npm, Rust, Cargo, ripgrep, fish, uv, and bubblewrap. It includes Codex 0.159.3
+and Pi 0.87.1. The `scb-check` quality checker uses a separate Python virtual
+environment. The default Python does not include NumPy, SciPy, Cython, or
+pytest. Check the selected benchmark's dependency requirements before use.
+
+The author agent, review agents, child agents, builds, and public checks run
+in the same executor. Independent benchmark grading uses its separate
+configured environment. The runner imports only the requested Git baseline
+and its reachable history into the coding environment.
+
+The executor receives authentication through temporary runtime state. The
+build does not contain credentials. Personal host files and shell profiles
+are not build inputs.
+
+Use Linux x86-64 with Docker and Python 3.12 or newer. To build the default
+executor explicitly, run:
 
 ```sh
-python3 -m lab report runs/example-codex/result.json
-python3 summarize.py runs/example-codex/result.json
-python3 -m lab compare runs/reference/result.json runs/changed/result.json
+python3 -m lab.executor build
 ```
 
-Historical results can receive an evidence-based integration exclusion:
+The `run` and `doctor` commands build the executor automatically if its image
+is absent. Docker reuses its local build cache. A change to a recipe input
+creates a new environment identity. A failed build stops execution.
 
-```sh
-python3 -m lab.exclude_integration runs/OLD/result.json --apply --report runs/exclusion-audit.json
-```
+Use `--executor PATH` to select another public build profile. Results record
+the environment identity for comparison. Hardware, the host kernel, network,
+and model service remain external inputs. Fixed software versions do not
+guarantee identical model output or execution times.
 
-This attaches derived metadata and preserves original usage, outcomes and source.
-`summarize.py` displays comparison tokens alongside actual consumed tokens. It
-uses the verified last checkpoint and before-integration quality measurement
-when available; missing child attribution, snapshots, time or final checks are
-reported as unavailable. It never makes an old restricted run a native baseline.
-Omit `--apply` to inspect the proposed correction without writing results.
+See [executor details](docs/EXECUTOR.md) for build and runtime behavior.
 
-`compare` requires successful, completely measured workflows with matching
-non-factor settings. Source version, prompt provenance, model, harness,
-benchmark revision, policies, review allowance, and limits
-can change the experiment. Rerun comparison cells under the same current runner instead of
-claiming a model or factor effect from old and new runner versions.
+## Args and defaults
 
-`--repeat N --parallel P` runs N independent repetitions with at most P active
-workflows. Without `--repeat`, `--parallel P` also selects P repetitions. Each
-repetition has its own checkout and limits. Four matched cells can be inspected
-with `python3 -m lab interaction neither.json a.json b.json both.json`; observed
-interaction is not proof that individual savings add together.
+Use `python3 -m lab COMMAND`. The tables below cover all arguments for this
+entry point. Required arguments have no default. Every command accepts `-h`
+or `--help` to show help and exit.
 
-The optional live probes under `tests/real_*.py` make model calls only when run
-explicitly. Offline tests and probe fault injections exercise distinct failure
-boundaries; neither substitutes for a completed real benchmark on each harness.
-Historical experiment reports describe the versions and limitations they
-actually tested.
+### Commands
 
-The [host-tools verification report](docs/HOST_TOOLS_VERIFICATION.md) records
-the earlier protocol reproductions and benchmark executions. Those runs used
-the previous stop-and-continue policy; their completed execution status does
-not establish completed review/repair for every checkpoint.
+| Command | Purpose |
+| --- | --- |
+| `factors` | Show each condition's enabled and disabled meanings. No additional arguments. |
+| `plan` | Load a benchmark and show effective settings without model execution. |
+| `run` | Execute one benchmark or a batch of repetitions. |
+| `doctor` | Check authentication and harness configuration without model execution. |
+| `report` | Read saved results and print report records. |
+| `compare` | Compare token use in two matching, successful runs. |
+| `interaction` | Compare four matching runs for two separate condition changes. |
 
-The [review-completion verification report](docs/REVIEW_COMPLETION_VERIFICATION.md)
-records the earlier approval-gate contract's limit regressions, end-to-end smoke
-runs, and full-benchmark attempts, including their unresolved outcomes. Those
-historical outcomes do not verify the current bounded-review contract.
+### Arguments shared by `plan` and `run`
+
+| Argument | Purpose | Default |
+| --- | --- | --- |
+| `benchmark` | Path to the benchmark JSON file. | Required. |
+| `--preset all\|native` | Select the condition and workflow defaults. | `all`. |
+| `--on IDS` | Enable condition IDs separated by commas. | Empty list. |
+| `--off IDS` | Disable condition IDs separated by commas. | Empty list. |
+| `--model ID` | Select the model for the agent. | `gpt-5.5`. |
+| `--effort LEVEL` | Select `minimal`, `low`, `medium`, `high`, or `xhigh`. | `xhigh`. |
+| `--compaction-tokens N` | Set the positive context token threshold for harness compaction. | `131072`. |
+| `--review-priorities IDS` | Select finding priorities that require corrections. Use P0 through P3, separated by commas. | `P0,P1,P2`. |
+| `--max-review-loops N` | Set the maximum reviews per feature. A value of 0 disables reviews. | 3 for `all`; 0 for `native`. |
+| `--loop-policy PATH` | Read JSON overrides for feature limits, review limits, and repetition detection. | No file. Use the preset's policy. |
+| `--no-loop-detection` | Disable feature stopping rules. Keep review counts and limits for the complete run. | Not selected. The `native` preset disables detection by default. |
+| `--scb-check PATH` | Select the source quality checker executable. | `scb-check`. |
+| `--scb-seconds N` | Set the maximum seconds per quality measurement within the workflow deadline. | `300`. |
+| `--executor PATH` | Select the public executor build profile. | `executors/default.json`. |
+
+Do not put the same condition in `--on` and `--off`. C08 requires C17.
+`--loop-policy` and `--no-loop-detection` cannot be used together. A supplied
+policy file replaces the preset's policy defaults with its specified values.
+Unspecified fields use the standard policy defaults.
+
+The standard policy enables detection after three repeated failed operation
+cycles. Separate feature token limits, review token limits, and review time
+limits are absent by default. The review receipt settlement allowance is
+600 seconds. A final review after an author stop is enabled when the remaining
+review count and applicable limits permit it. See
+[policy fields](lab/loops.py) for the accepted JSON keys and value rules.
+
+The compaction threshold applies to both harnesses and every preset. A
+harness that cannot apply the requested threshold stops before model
+execution. Default executable names resolve inside the selected executor.
+
+### Additional arguments for `plan`
+
+| Argument | Purpose | Default |
+| --- | --- | --- |
+| `--harness codex\|pi` | Select the harness shown in the plan. | `codex`. |
+
+### Additional arguments for `run`
+
+| Argument | Purpose | Default |
+| --- | --- | --- |
+| `--out PATH` | Select a new run or batch directory. The directory must not exist. | Required. |
+| `--seconds N` | Set the positive time limit in seconds for each workflow. | Required. |
+| `--max-raw N` | Set the positive observed token stopping limit for each workflow. | Required. |
+| `--max-turns N` | Set the positive agent turn limit for each workflow. | Required. |
+| `--harness codex\|pi` | Select the coding harness. | Required. |
+| `--codex PATH` | Select the Codex executable, including Codex child sessions used by Pi. | `codex`. |
+| `--pi PATH` | Select the Pi executable when Pi is the harness. | `pi`. |
+| `--parallel N` | Set the positive maximum number of simultaneous workflows. | `1`. |
+| `--repeat N` | Set the positive total number of benchmark repetitions. | The value of `--parallel`. |
+
+Each repetition receives the same workflow limits. For example, `--parallel 2
+--repeat 5` runs five repetitions with at most two active workflows. Observed
+token use can exceed `--max-raw` while usage reports arrive and cancellation
+takes effect. This argument is a stopping limit, not a guaranteed billing
+limit.
+
+### Arguments for `doctor`
+
+| Argument | Purpose | Default |
+| --- | --- | --- |
+| `--repo PATH` | Select the repository for a direct provider check. The executor uses a temporary repository. | Current working directory. |
+| `--out PATH` | Select a new directory for check results. | Required. |
+| `--harness codex\|pi` | Select the harness to check. | `codex`. |
+| `--codex PATH` | Select the executable for a direct Codex check. The executor uses its profile path. | `codex`. |
+| `--pi PATH` | Select the executable for a direct Pi check. The executor uses Pi inside the container. | `pi`. |
+| `--model ID` | Select the model configuration to check. | `gpt-5.5`. |
+| `--native` | Also check native delegation configuration without model execution. | Not selected. |
+| `--executor PATH` | Select the public executor build profile. | `executors/default.json`. |
+
+### Arguments for saved results
+
+| Command | Argument | Purpose | Default |
+| --- | --- | --- | --- |
+| `report` | `results` | One or more saved result files. | Required. |
+| `compare` | `reference` | The reference result file. Its token use is the comparison denominator. | Required. |
+| `compare` | `changed` | The result file with changed conditions. | Required. |
+| `interaction` | `results` | Four result files in this order: neither change, A only, B only, both changes. | Required. |
+
+`compare` and `interaction` require successful runs with complete token
+measurements and matching settings outside the compared conditions.
