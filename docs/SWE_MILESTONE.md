@@ -21,7 +21,9 @@ Use these files as the first argument to `python3 -m lab run`:
 
 The definitions include the exact upstream task text and baseline revision.
 The starting repositories are local setup artifacts under `.benchmarks/` and
-are not committed. On a fresh checkout, prepare the project before running it.
+are not committed. `lab run` prepares the selected project and its evaluator
+automatically on a fresh checkout. The commands below also allow separate
+preparation. `lab plan` stays read-only and reports the setup command if needed.
 
 | Project argument | Release range | Tasks | Graded tasks |
 | --- | --- | ---: | ---: |
@@ -87,7 +89,8 @@ Reduced definitions must contain a nonempty, unchanged prefix of the full
 definition's `features`. Evaluation uses the definition saved in the run's
 manifest, so regrading preserves its scope. The full benchmark is unchanged.
 
-Install the evaluator environment once, before running any project:
+`lab run` installs missing evaluator dependencies automatically. To install
+the evaluator environment separately:
 
 ```bash
 python3 -m venv .benchmarks/swe-milestone-venv
@@ -108,7 +111,7 @@ python3 -m lab run benchmarks/swe-milestone-ripgrep.json \
   --harness codex --model MODEL_ID --effort xhigh \
   --preset all --max-review-loops 3 \
   --seconds 10800 --max-raw 15000000 --max-turns 1000 \
-  --scb-check .venv/bin/scb-check
+  --scb-check scb-check
 ```
 
 Use the same imported configuration, execution environment and budgets when

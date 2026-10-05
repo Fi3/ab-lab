@@ -16,6 +16,7 @@ from .workflow import compare, interaction, run
 from .batch import run_batch
 from .summary import records
 from .executor import DEFAULT_PROFILE, PRIVATE_ENV
+from .setup import ensure_benchmark
 
 
 def positive_integer(value):
@@ -114,7 +115,16 @@ def main():
         if args.command == "factors":
             value = {key: dict(zip(("description", "on", "off"), meaning)) for key, meaning in FACTORS.items()}
         elif args.command in ("run", "plan"):
-            benchmark, factors = load_benchmark(args.benchmark), factors_from(args)
+            factors = factors_from(args)
+            if args.executor.resolve() == DEFAULT_PROFILE and args.scb_check in (".venv/bin/scb-check", "./.venv/bin/scb-check"):
+                args.scb_check = "scb-check"
+            if args.command == "run":
+                if args.out.exists():
+                    raise FileExistsError(str(args.out))
+                if min(args.seconds, args.max_raw, args.max_turns) <= 0:
+                    raise ValueError("positive wall-time, observed-token and turn limits are required")
+                ensure_benchmark(args.benchmark)
+            benchmark = load_benchmark(args.benchmark)
             if args.max_review_loops is None:
                 args.max_review_loops = 0 if args.preset == "native" else DEFAULT_MAX_REVIEW_LOOPS
             progress_policy = loop_policy(json.loads(args.loop_policy.read_text()) if args.loop_policy else

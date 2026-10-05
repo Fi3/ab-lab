@@ -197,6 +197,9 @@ def prepare(project, checks=None):
     destination = CACHE / "swe-milestone-projects" / project
     if destination.exists():
         prepared, imported, benchmark = load_prepared(project)
+        _, image_id = pull_image(spec["workspace"], "base-offline")
+        if image_id != imported["baseline_image_id"]:
+            raise ValueError("prepared baseline image identity changed")
         if checks and checks != benchmark["checks"]:
             raise ValueError(f"{destination} already has different checks; existing inputs were retained")
         if git(prepared / "repo", "rev-parse", "HEAD").decode().strip() != imported["revision"] or git(
