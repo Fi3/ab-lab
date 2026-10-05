@@ -9,6 +9,23 @@ rate.
 The tool execute the bench using a patch/review loop. To better control it we force the benched
 harness to not spawn reviews subagents but only the runner can do it.
 
+On a fresh checkout or another PC, prepare the benchmark before the first run.
+The `.benchmarks/` directory contains downloaded datasets, starting repositories,
+and evaluator dependencies. Git does not include this directory. The Docker
+executor rebuilds the agent toolchain; benchmark preparation is a separate step.
+For the scikit-learn example below, with Docker, Git, and Python available:
+
+```sh
+python3 benchmarks/swe_milestone.py prepare scikit-learn
+python3 -m venv .benchmarks/swe-milestone-venv
+.benchmarks/swe-milestone-venv/bin/python -m pip install \
+  -r benchmarks/swe-milestone-requirements.txt
+```
+
+The full and light scikit-learn benchmarks use the same prepared project.
+Supply your own provider login on the new PC. See [SWE-Milestone setup](docs/SWE_MILESTONE.md)
+for other projects and [executor setup](docs/EXECUTOR.md) for the Docker toolchain.
+
 This is an example of a run:
 
 ```sh

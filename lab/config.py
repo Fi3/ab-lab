@@ -92,5 +92,22 @@ def load_benchmark(path):
     # Repository sources are local Git repositories; this avoids surprise network
     # clones and lets admission pin a resolved commit before any model runs.
     repo = Path(data["repo"]).expanduser()
-    data["repo"] = str((repo if repo.is_absolute() else path.parent / repo).resolve(strict=True))
+    repo = repo if repo.is_absolute() else path.parent / repo
+    try:
+        data["repo"] = str(repo.resolve(strict=True))
+    except FileNotFoundError as exc:
+        if "swe_milestone" in data:
+            project = data["swe_milestone"]["project"]
+            raise ValueError(
+                f"SWE-Milestone source repository is missing: {repo.resolve()}. "
+                ".benchmarks/ contains local setup artifacts and is not included in Git clones. "
+                "From the agent-behavior-lab checkout, run "
+                f"`python3 benchmarks/swe_milestone.py prepare {project}`, then retry. "
+                "Also install the evaluator once: "
+                "`python3 -m venv .benchmarks/swe-milestone-venv` and "
+                "`.benchmarks/swe-milestone-venv/bin/python -m pip install "
+                "-r benchmarks/swe-milestone-requirements.txt`. "
+                "See docs/SWE_MILESTONE.md."
+            ) from exc
+        raise
     return data

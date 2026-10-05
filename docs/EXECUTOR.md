@@ -24,6 +24,19 @@ Other benchmarks retain their dataset preparation and grading setup. Supply
 your own provider login; only `auth.json` is copied into temporary runtime state.
 Personal provider settings, skills, plugins and shell profiles are not imported.
 
+The ignored `.benchmarks/` directory is not present in a fresh Git clone. For
+either scikit-learn definition, prepare it on the new machine before `lab run`:
+
+```sh
+python3 benchmarks/swe_milestone.py prepare scikit-learn
+python3 -m venv .benchmarks/swe-milestone-venv
+.benchmarks/swe-milestone-venv/bin/python -m pip install \
+  -r benchmarks/swe-milestone-requirements.txt
+```
+
+This downloads the pinned benchmark inputs and prepares its separate evaluator.
+For other projects, follow [SWE-Milestone setup](SWE_MILESTONE.md).
+
 The toolchain follows the previous host's versions: Python 3.14.7, GCC 16.2.1,
 Git 2.55.0, Node 26.9.0, npm 12.0.2, ripgrep 15.2.0, uv 0.12.16, fish 4.9.3,
 Rust 1.95.0, Codex 0.159.3 and Pi 0.87.1. Arch packages come from the immutable
