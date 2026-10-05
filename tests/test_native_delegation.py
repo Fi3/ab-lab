@@ -124,7 +124,7 @@ class PiDelegatedUsageTests(unittest.TestCase):
             usage = PiNestedUsage(root, root)
             self.assertFalse(usage.report(force=True)['measurement_complete'])
             rows = [{'type': 'session', 'id': 'child', 'cwd': str(root)},
-                {'type': 'message', 'id': 'response', 'message': {'role': 'assistant', 'provider': 'openai-codex',
+                {'type': 'message', 'id': 'response', 'message': {'role': 'assistant', 'provider': 'openai',
                  'model': 'child-model', 'stopReason': 'stop', 'usage': {'input': 20, 'output': 5, 'cacheRead': 10}}},
                 {'type': 'compaction', 'id': 'compact', 'usage': {'input': 4, 'output': 2, 'cacheRead': 1}}]
             path = call / 'sessions' / 'child.jsonl'

@@ -3,6 +3,7 @@ from collections import deque
 import contextlib
 import io
 import json
+import os
 from pathlib import Path
 import sys
 import tempfile
@@ -12,6 +13,7 @@ from unittest.mock import MagicMock, patch
 
 from lab.__main__ import main
 from lab.config import settings
+from lab.executor import PRIVATE_ENV
 from lab.host import Fatal
 from lab.provider import Pi, Usage
 from lab.workflow import run
@@ -24,16 +26,16 @@ class FakePi:
     transport = "pi-rpc-stdio"
     supports_compaction_tokens = True
 
-    def __init__(self, repo, folder, model, effort, deadline, max_raw, max_turns, executable="pi", *, require_git_write=False, allow_delegation=False, compaction_tokens=131072):
+    def __init__(self, repo, folder, model, effort, deadline, max_raw, max_turns, executable="pi", *, require_git_write=False, allow_delegation=False, compaction_tokens=131072, codex_executable="codex", pi_vanilla=False):
         FakePi.instances.append(self)
         self.repo = Path(repo)
         self.artifacts = Path(folder)
         self.artifacts.mkdir(parents=True, exist_ok=True)
         self.identity = {
-            "pi_version": "0.85.1",
+            "pi_version": "1.0.0",
             "harness": "pi",
-            "auth": "antigravity",
-            "model": model or "gemini-3.8-flash",
+            "auth": "openai",
+            "model": model or "gpt-5.5",
             "effort": effort,
             "effective_config_sha256": "fake_pi_hash"
         }
@@ -160,7 +162,8 @@ class PiCliTests(unittest.TestCase):
             root = Path(d)
             output = io.StringIO()
             argv = ["lab", "doctor", "--repo", str(root), "--out", str(root / "doc"), "--harness", "pi"]
-            with patch.object(sys, "argv", argv), contextlib.redirect_stdout(output):
+            with patch.object(sys, "argv", argv), patch('lab.__main__.Pi', FakePi), \
+                    patch.dict(os.environ, {PRIVATE_ENV: str(root)}), contextlib.redirect_stdout(output):
                 self.assertEqual(main(), 0)
             doc_data = json.loads(output.getvalue())
             self.assertEqual(doc_data["harness"], "pi")

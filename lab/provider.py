@@ -1280,6 +1280,7 @@ class Pi(ChildAccounting):
                                                deadline=deadline, pi_vanilla=pi_vanilla)
             self.command_env = self.commands.env
             self._private_pi_home()
+            self._validate_subscription_auth()
             if self.commands.children is not None:
                 self.pi_nested = PiNestedUsage(self.repo, self.commands.children.folder)
             self.nested = NestedUsage(self.repo, self.model, effort,
@@ -1313,7 +1314,7 @@ class Pi(ChildAccounting):
         ready = json.loads(probe.policy.with_suffix(".json.ready").read_text())
         controls = {"native_tools": ready.get("tools", []), "pi_version": version, "model": self.model, "effort": self.effort,
                     "pi_vanilla": self.pi_vanilla, "resource_policy": self.resource_policy(self.pi_vanilla),
-                    "auth": "openai-codex", "sandbox": "codex-native-tools-v1",
+                    "auth": "openai", "sandbox": "codex-native-tools-v1",
                     "host_tool_transport": "native-tools-v1", "request_guard": "pre-dispatch-v1",
                     "context_policy": ready["context_policy"],
                     "execution_policy": EXECUTION_POLICY,
@@ -1410,6 +1411,19 @@ class Pi(ChildAccounting):
                         package["source"] = rebase(location)
             settings_path.write_text(json.dumps(settings))
 
+    def _validate_subscription_auth(self):
+        # Pi 1.0's openai provider accepts both API keys and ChatGPT OAuth.
+        # Require the latter before startup; never fall back to metered API auth.
+        path = self.pi_home / "auth.json"
+        try:
+            auth = json.loads(path.read_text()) if path.is_file() else {}
+        except (OSError, ValueError) as exc:
+            raise Fatal("Pi auth.json is unreadable or invalid; no generation") from exc
+        credential = auth.get("openai") if isinstance(auth, dict) else None
+        if not isinstance(credential, dict) or credential.get("type") != "oauth":
+            raise Fatal("Pi requires an openai ChatGPT OAuth login; run /login openai in Pi 1.0.0 "
+                        "using the same PI_CODING_AGENT_DIR as the benchmark; no generation")
+
     def _configure_compaction(self, window):
         if type(window) is not int or window <= self.compaction_tokens:
             raise Fatal("Pi compaction_tokens must be below the selected model's advertised context window; no generation")
@@ -1418,7 +1432,7 @@ class Pi(ChildAccounting):
         settings = json.loads(path.read_text()) if path.is_file() else {}
         compaction = settings.setdefault("compaction", {})
         compaction.update(enabled=True, reserveTokens=reserve)
-        compaction.setdefault("modelOverrides", {}).setdefault("openai-codex/" + self.model, {}).update(reserveTokens=reserve)
+        compaction.setdefault("modelOverrides", {}).setdefault("openai/" + self.model, {}).update(reserveTokens=reserve)
         path.write_text(json.dumps(settings))
         path.chmod(0o600)
         self.context_policy = {
@@ -1429,7 +1443,7 @@ class Pi(ChildAccounting):
 
     def launch_arguments(self, *, native=False):
         vanilla = getattr(self, "pi_vanilla", False)
-        argv = [self.executable, "--mode", "rpc", "--no-approve" if vanilla else "--approve", "--provider", "openai-codex",
+        argv = [self.executable, "--mode", "rpc", "--no-approve" if vanilla else "--approve", "--provider", "openai",
                 "--model", self.model, "--thinking", self.effort]
         if vanilla or not native:
             argv += ["--no-extensions"]
@@ -1445,7 +1459,7 @@ class Pi(ChildAccounting):
     def validate_state(self, response):
         data = response.get("data") or {}
         model = data.get("model") or {}
-        if (not response.get("success") or model.get("provider") != "openai-codex"
+        if (not response.get("success") or model.get("provider") != "openai"
                 or model.get("id") != self.model or data.get("thinkingLevel") != self.effort):
             raise Fatal("Pi effective provider/model/effort differs from the benchmark; no generation")
 

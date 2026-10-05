@@ -674,7 +674,7 @@ class PiNestedUsage:
                 except ValueError as exc:
                     errors.append(f'{thread}: {exc}')
                     continue
-                if value.get('provider') not in (None, 'openai-codex'):
+                if value.get('provider') not in (None, 'openai'):
                     errors.append(f'{thread}: delegated Pi provider is outside the admitted subscription')
                 if value.get('stopReason') in ('error', 'aborted'):
                     incomplete.append(f'{thread}: delegated Pi response did not finish successfully')
