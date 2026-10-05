@@ -12,6 +12,27 @@ class CommittedMilestoneBenchmarksTests(unittest.TestCase):
     counts = {"ripgrep": 13, "dubbo": 13, "element-web": 18, "navidrome": 9,
               "nushell": 13, "scikit-learn": 12, "go-zero": 23}
 
+    def test_fresh_checkout_reports_the_project_setup_command(self):
+        with tempfile.TemporaryDirectory() as temporary:
+            checkout = Path(temporary)
+            definitions = checkout / "benchmarks"
+            definitions.mkdir()
+            for project in (*self.counts, "scikit-learn-light"):
+                with self.subTest(project=project):
+                    filename = f"swe-milestone-{project}.json"
+                    source = sm.ROOT / "benchmarks" / filename
+                    path = definitions / filename
+                    path.write_bytes(source.read_bytes())
+                    prepared_project = "scikit-learn" if project == "scikit-learn-light" else project
+                    with self.assertRaises(ValueError) as caught:
+                        load_benchmark(path)
+                    message = str(caught.exception)
+                    self.assertIn(f"prepare {prepared_project}`", message)
+                    self.assertIn("not included in Git clones", message)
+                    self.assertIn("swe-milestone-requirements.txt", message)
+                    self.assertEqual(path.read_bytes(), source.read_bytes())
+            self.assertFalse((checkout / ".benchmarks").exists())
+
     def test_every_project_has_a_complete_runner_input(self):
         self.assertEqual(set(sm.PROJECTS), set(self.counts))
         with tempfile.TemporaryDirectory() as temporary:

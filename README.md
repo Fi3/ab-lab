@@ -22,9 +22,8 @@ python3 -m lab run ./benchmarks/swe-milestone-scikit-learn-light.json \
                 --seconds 14400 \
                 --max-raw 50000000 \
                 --max-turns 100 \
-                --scb-check .venv/bin/scb-check \
                 --max-review-loops 3 \
-                --paralle 4
+                --parallel 4
 ```
 For example the above command will run the scikitlive bench usin codex with gpt-6-luna xhigh. It
 will allow a max of 3 review loops and only P0 and P1 issue will be fixed. It add a safety net, so
@@ -421,8 +420,9 @@ For example, save this definition as `benchmarks/my-example.json`:
 }
 ```
 
-Initialize the example source as a Git repository and create its first commit
-before use. To inspect the definition and selected settings, run:
+`lab run` initializes the bundled example source as a separate Git repository
+and creates its first commit when needed. Custom source repositories must
+already exist. To inspect the definition and selected settings, run:
 
 ```sh
 python3 -m lab plan benchmarks/my-example.json
@@ -480,16 +480,17 @@ The following runnable definitions are in `benchmarks/`:
 
 `swe-milestone-projects.json` is a preparation catalog, not a runnable benchmark.
 
-Prepare SlopCodeBench data and its evaluator before the first run:
+`lab run` prepares SlopCodeBench automatically. To prepare it separately, run:
 
 ```sh
 python3 -m lab.slopcodebench setup
 ```
 
-For SWE-Milestone, prepare the selected project and install its evaluator
-requirements. See [SWE-Milestone setup](docs/SWE_MILESTONE.md) for the required
-commands. Definitions alone do not include source repositories or grading
-environments.
+`lab run` also prepares the selected SWE-Milestone project and its evaluator
+automatically. See [SWE-Milestone setup](docs/SWE_MILESTONE.md) for separate
+preparation commands. Work Leaf requires an existing local checkout at the
+path and revision declared in its definition; the runner cannot download a
+custom repository whose definition has no remote URL.
 
 ## Supported harness
 For now I support only codex (is the one that I use mostly) and PI is the one that I was to use to

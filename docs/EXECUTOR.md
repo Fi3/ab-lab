@@ -19,10 +19,28 @@ explicit build command is optional. Docker caches the build locally. Changing
 any recipe input creates a new environment identity. A failed build stops the
 run; it never falls back to host execution. Build logs go to stderr.
 
-The example source repository still needs its documented Git initialization.
-Other benchmarks retain their dataset preparation and grading setup. Supply
+`lab run` initializes the bundled example repository and prepares the selected
+SWE-Milestone or SlopCodeBench data and evaluator before launching the workflow. Supply
 your own provider login; only `auth.json` is copied into temporary runtime state.
 Personal provider settings, skills, plugins and shell profiles are not imported.
+
+The ignored `.benchmarks/` directory is not present in a fresh Git clone.
+`lab run` creates the required setup automatically; `lab plan` stays read-only.
+To prepare either scikit-learn definition separately, use:
+
+```sh
+python3 benchmarks/swe_milestone.py prepare scikit-learn
+python3 -m venv .benchmarks/swe-milestone-venv
+.benchmarks/swe-milestone-venv/bin/python -m pip install \
+  -r benchmarks/swe-milestone-requirements.txt
+```
+
+This downloads the pinned benchmark inputs and prepares its separate evaluator.
+For other projects, follow [SWE-Milestone setup](SWE_MILESTONE.md).
+Use the default `--scb-check scb-check` inside the executor. Host paths such as
+`.venv/bin/scb-check` are not mounted into the coding container.
+For the default executor, the old documented `.venv/bin/scb-check` argument is
+accepted as an alias for the included `scb-check` so existing run commands work.
 
 The toolchain follows the previous host's versions: Python 3.14.7, GCC 16.2.1,
 Git 2.55.0, Node 26.9.0, npm 12.0.2, ripgrep 15.2.0, uv 0.12.16, fish 4.9.3,

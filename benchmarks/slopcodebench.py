@@ -6,6 +6,7 @@ from pathlib import Path
 import re
 import subprocess
 import tarfile
+import tempfile
 import time
 
 from lab.environment import clean_env
@@ -277,10 +278,13 @@ def setup(root):
     ):
         destination = root / name
         if not destination.exists():
-            destination.mkdir()
-            git(destination, "init", "--quiet")
-            subprocess.run(["git", "-C", str(destination), "fetch", "--depth=1", url, revision], check=True)
-            git(destination, "checkout", "--quiet", "--detach", revision)
+            with tempfile.TemporaryDirectory(dir=root, prefix="scb-fetch-") as temporary:
+                repo = Path(temporary) / "repo"
+                repo.mkdir()
+                git(repo, "init", "--quiet")
+                subprocess.run(["git", "-C", str(repo), "fetch", "--depth=1", url, revision], check=True)
+                git(repo, "checkout", "--quiet", "--detach", revision)
+                repo.rename(destination)
         pinned(destination, revision)
     runner = root / "slop-code-bench"
     subprocess.run(["uv", "sync", "--frozen", "--no-dev", "--python", "3.12"], cwd=runner, check=True)
