@@ -1,7 +1,7 @@
 # RESULT
 
-* Conditions: `all` enables every C; `native` disables every C. Record explicit overrides separately. `partial` is all without C08,C16,C17,C25.
-* priority accepted is always P0 P1 P2
+* Conditions: `all` means every C enabled. `partial` is all without C08,C16,C17,C25.
+* priority accepted is P column 2 accept P0 P1 P2, 1 accept P0 and P1 and 0 only P0
 * Control uses `--preset native`: all Cs off, no external review or loop detector; filesystem/global-budget safety, source capture and independent evaluation remain.
 
 ## Slope bench (25M token limit)
@@ -9,20 +9,20 @@
 
 ### runs
 
-* [bench1](runs/bench1/result.json)
-* [bench2](runs/bench2/result.json)
-* [bench3](runs/bench3/result.json)
-* [bench4](runs/bench4/result.json)
-* [bench5](runs/bench5/result.json)
-* [bench6](runs/bench6/result.json)
-* [bench11](runs/bench11/result.json)
-* [bench13](runs/bench13/result.json)
-* [bench14](runs/bench14/result.json)
-* [bench15](runs/bench15/result.json)
-* [bench25](runs/bench25/result.json)
-* [bench26](runs/bench26/result.json)
-* [bench27](runs/bench27/result.json)
-* [bench28](runs/bench28/result.json)
+bench1
+,bench2
+,bench3
+,bench4
+,bench5
+,bench6
+,bench11
+,bench13
+,bench14
+,bench15
+,bench25
+,bench26
+,bench27
+,bench28
 
 | model/reasoning      | test passes    | total tokens | uncached tokens | harness | conditions | maxrevs | verbosity | erosion | cognitive erosion | time       | P | compaction |
 | -------------------- | -------------- | ------------ | --------------- | ------- | ---------- | ------- | --------- | ------- | ----------------- | ---------- | - | ---------- |
@@ -43,9 +43,9 @@
 
 ### control run
 
-* [bench7](runs/bench7/result.json)
-* [bench8](runs/bench8/result.json)
-* [bench9](runs/bench9/result.json)
+ bench7
+,bench8
+,bench9
 
 | mode/reasoning       | test passes | total tokens | uncached tokens | harness | verbosity | erosion | cognitive erosion | time    | compaction |
 | -------------------- | ----------- | ------------ | --------------- | ------- | --------- | ------- | ----------------- | ------- | ---------- |
@@ -57,7 +57,7 @@
 
 ### runs
 
-* [bench12](runs/bench12/result.json)
+bench12
 
 | model/reasoning      | test passes       | total tokens | uncached tokens | harness | conditions | maxrevs | verbosity | erosion | cognitive erosion | time       | P | compaction |
 | -------------------- | ----------------- | ------------ | --------------- | ------- | ---------- | ------- | --------- | ------- | ----------------- | ---------- | - | ---------- |
@@ -72,21 +72,22 @@
 
 ### runs
 
-* [bench16](runs/bench16/result.json)
-* [bench17](runs/bench17/result.json)
-* [bench19](runs/bench19/result.json)
-* [bench20](runs/bench20/result.json)
-* [bench21](runs/bench21/result.json)
-* [bench33](runs/bench33/result.json)
-* [bench34](runs/bench34/result.json)
-* [bench34](runs/bench35/result.json)
-* [bench36](runs/bench36/result.json)
-* [bench37](runs/bench37/result.json)
-* [bench39](runs/bench39/result.json)
-* [bench41](runs/bench41/result.json)
-* [bench43](runs/bench43/result.json)
-* [bench-server1](runs/bench-server1/result.json) 
-* [bench-server2](runs/bench-server2/result.json) 
+bench16
+,bench17
+,bench19
+,bench20
+,bench21
+,bench33
+,bench34
+,bench34
+,bench36
+,bench37
+,bench39
+,bench41
+,bench43
+,bench-server1 
+,bench-server2 
+
 | model/reasoning      | test passes       | total tokens | uncached tokens | harness | conditions | maxrevs | verbosity | erosion | cognitive erosion | time       | P | compaction |
 | -------------------- | ----------------- | ------------ | --------------- | ------- | ---------- | ------- | --------- | ------- | ----------------- | ---------- | - | ---------- |
 | gpt-5.5 / xhigh      | 79235/79252       | 36,451,765   | 1,444,661       | Codex   | all        | 0       | 6.42%     | 39.64%  | 75.43%            | 2h 53m 36s | 2 | 131,072    |
@@ -109,11 +110,11 @@
 
 ### control run
 
-* [bench18](runs/bench18/result.json)
-* [bench22](runs/bench22/result.json)
-* [bench23](runs/bench23/result.json)
-* [bench38](runs/bench38/result.json)
-* [bench42](runs/bench42/result.json)
+bench18
+,bench22
+,bench23
+,bench38
+,bench42
 
 | mode/reasoning       | test passes | total tokens | uncached tokens | harness | verbosity | erosion | cognitive erosion | time       | compaction |
 | -------------------- | ----------- | ------------ | --------------- | ------- | --------- | ------- | ----------------- | ---------- | ---------- |
