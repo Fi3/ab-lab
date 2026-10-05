@@ -23,6 +23,15 @@ run; it never falls back to host execution. Build logs go to stderr.
 SWE-Milestone or SlopCodeBench data and evaluator before launching the workflow. Supply
 your own provider login; only `auth.json` is copied into temporary runtime state.
 Personal provider settings, skills, plugins and shell profiles are not imported.
+Pi uses the `openai` provider and requires a ChatGPT OAuth credential in the
+host's `~/.pi/agent/auth.json` (or `$PI_CODING_AGENT_DIR/auth.json`). Run
+`/login openai` in Pi 1.0.0 if needed. A Codex CLI login, an `openai` API key,
+or a legacy Pi `openai-codex` login does not satisfy this requirement.
+Check startup without model execution with:
+
+```sh
+python3 -m lab doctor --out runs/pi-login-check --harness pi --model gpt-6.1-sol
+```
 
 The ignored `.benchmarks/` directory is not present in a fresh Git clone.
 `lab run` creates the required setup automatically; `lab plan` stays read-only.
@@ -44,7 +53,7 @@ accepted as an alias for the included `scb-check` so existing run commands work.
 
 The toolchain follows the previous host's versions: Python 3.14.7, GCC 16.2.1,
 Git 2.55.0, Node 26.9.0, npm 12.0.2, ripgrep 15.2.0, uv 0.12.16, fish 4.9.3,
-Rust 1.95.0, Codex 0.159.3 and Pi 0.87.1. Arch packages come from the immutable
+Rust 1.95.0 and Codex 0.159.3, with Pi upgraded to 1.0.0. Arch packages come from the immutable
 2026-09-18 archive. The base image and Rust archive have explicit SHA-256 pins;
 Node and quality-checker dependencies have integrity/hash locks. The quality
 checker lives in its own virtual environment. NumPy, SciPy, Cython and pytest

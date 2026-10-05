@@ -517,7 +517,7 @@ environment independently of the host's installed tools.
 
 The container includes Python, Git, GCC, build tools, CMake, Java 17, Node,
 npm, Rust, Cargo, ripgrep, fish, uv, and bubblewrap. It includes Codex 0.159.3
-and Pi 0.87.1. The `scb-check` quality checker uses a separate Python virtual
+and Pi 1.0.0. The `scb-check` quality checker uses a separate Python virtual
 environment. The default Python does not include NumPy, SciPy, Cython, or
 pytest. Check the selected benchmark's dependency requirements before use.
 
@@ -528,7 +528,10 @@ and its reachable history into the coding environment.
 
 The executor receives authentication through temporary runtime state. The
 build does not contain credentials. Personal host files and shell profiles
-are not build inputs.
+are not build inputs. Pi runs use the `openai` provider with a ChatGPT OAuth
+login from `~/.pi/agent/auth.json` (or `$PI_CODING_AGENT_DIR/auth.json`).
+Authenticate with `/login openai` in Pi 1.0.0; API keys and legacy
+`openai-codex` credentials are not accepted for Pi benchmark generation.
 
 Use Linux x86-64 with Docker and Python 3.12 or newer. To build the default
 executor explicitly, run:

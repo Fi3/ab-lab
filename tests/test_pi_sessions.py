@@ -46,7 +46,7 @@ class PiSessionTests(unittest.TestCase):
     def response(identity):
         return {'type': 'message', 'id': identity, 'parentId': None,
             'timestamp': '2026-10-01T10:00:01.000Z', 'message': {'role': 'assistant',
-            'provider': 'openai-codex', 'model': 'test-model', 'stopReason': 'stop',
+            'provider': 'openai', 'model': 'test-model', 'stopReason': 'stop',
             'content': [{'type': 'text', 'text': 'done'}],
             'usage': {'input': 2, 'output': 1, 'cacheRead': 0, 'cacheWrite': 0, 'totalTokens': 3}}}
 

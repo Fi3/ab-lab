@@ -4,6 +4,7 @@ import io
 import json
 from pathlib import Path
 import sys
+import tempfile
 import unittest
 from unittest.mock import MagicMock, patch
 
@@ -60,21 +61,25 @@ class PiParityTests(unittest.TestCase):
     def test_primary_model_provider_and_effort_are_verified(self):
         p = self.fake_pi_provider([])
         good = {'success': True, 'data': {
-            'model': {'provider': 'openai-codex', 'id': 'test-model'}, 'thinkingLevel': 'xhigh'}}
+            'model': {'provider': 'openai', 'id': 'test-model'}, 'thinkingLevel': 'xhigh'}}
         p.validate_state(good)
         for data in ({'model': {'provider': 'other', 'id': 'test-model'}, 'thinkingLevel': 'xhigh'},
-                     {'model': {'provider': 'openai-codex', 'id': 'wrong'}, 'thinkingLevel': 'xhigh'},
-                     {'model': {'provider': 'openai-codex', 'id': 'test-model'}, 'thinkingLevel': 'low'}, {}):
+                     {'model': {'provider': 'openai-codex', 'id': 'test-model'}, 'thinkingLevel': 'xhigh'},
+                     {'model': {'provider': 'openai', 'id': 'wrong'}, 'thinkingLevel': 'xhigh'},
+                     {'model': {'provider': 'openai', 'id': 'test-model'}, 'thinkingLevel': 'low'}, {}):
             with self.subTest(data=data), self.assertRaises(Fatal):
                 p.validate_state({'success': True, 'data': data})
 
     def test_pi_and_codex_plan_default_to_same_model(self):
         outputs = []
-        for harness in ('pi', 'codex'):
-            out = io.StringIO()
-            with patch.object(sys, 'argv', ['lab', 'plan', 'benchmarks/work-leaf.json', '--harness', harness]), contextlib.redirect_stdout(out):
-                self.assertEqual(main(), 0)
-            outputs.append(json.loads(out.getvalue()))
+        with tempfile.TemporaryDirectory() as directory:
+            path = Path(directory) / 'bench.json'
+            path.write_text(json.dumps(fixtures.benchmark_at(Path(directory))))
+            for harness in ('pi', 'codex'):
+                out = io.StringIO()
+                with patch.object(sys, 'argv', ['lab', 'plan', str(path), '--harness', harness]), contextlib.redirect_stdout(out):
+                    self.assertEqual(main(), 0)
+                outputs.append(json.loads(out.getvalue()))
         self.assertEqual(outputs[0]['model'], outputs[1]['model'])
         self.assertEqual(outputs[0]['effort'], outputs[1]['effort'])
 
@@ -83,8 +88,37 @@ class PiParityTests(unittest.TestCase):
         p.executable = '/bin/pi'
         argv = p.launch_arguments()
         self.assertIn('--no-extensions', argv)
-        for key, value in (('--provider', 'openai-codex'), ('--model', 'test-model'), ('--thinking', 'xhigh')):
+        for key, value in (('--provider', 'openai'), ('--model', 'test-model'), ('--thinking', 'xhigh')):
             self.assertEqual(argv[argv.index(key) + 1], value)
+
+    def test_subscription_auth_requires_openai_oauth_not_api_keys_or_legacy_login(self):
+        p = self.fake_pi_provider([])
+        with tempfile.TemporaryDirectory() as directory:
+            p.pi_home = Path(directory)
+            path = p.pi_home / 'auth.json'
+            with self.assertRaisesRegex(Fatal, '/login openai'):
+                p._validate_subscription_auth()
+            for auth in ({}, {'openai': {'type': 'api_key', 'key': 'not-a-secret'}},
+                         {'openai-codex': {'type': 'oauth'}}, [], {'openai': 'invalid'}):
+                with self.subTest(auth=auth):
+                    path.write_text(json.dumps(auth))
+                    with self.assertRaisesRegex(Fatal, '/login openai'):
+                        p._validate_subscription_auth()
+            path.write_text('{invalid json')
+            with self.assertRaisesRegex(Fatal, 'invalid'):
+                p._validate_subscription_auth()
+            path.write_text(json.dumps({'openai': {'type': 'oauth'}}))
+            p._validate_subscription_auth()
+
+    def test_compaction_override_uses_the_selected_openai_provider(self):
+        p = self.fake_pi_provider([])
+        p.compaction_tokens = 131072
+        with tempfile.TemporaryDirectory() as directory:
+            p.pi_home = Path(directory)
+            p._configure_compaction(1048576)
+            settings = json.loads((p.pi_home / 'settings.json').read_text())
+            self.assertEqual(settings['compaction']['modelOverrides'],
+                             {'openai/test-model': {'reserveTokens': 917504}})
 
 
 if __name__ == '__main__':

@@ -43,7 +43,7 @@ children inherit the clean global Pi home; child CLI options still belong to
 the harness.
 
 `--pi-vanilla` is a lab option implemented using supported Pi switches; the
-pinned Pi 0.87.1 CLI does not provide a built-in `--vanilla` switch. Use
+pinned Pi 1.0.0 CLI does not provide a built-in `--vanilla` switch. Use
 `python3 -m lab doctor --harness pi --native --pi-vanilla --out runs/pi-vanilla-doctor`
 to check startup without a model request.
 

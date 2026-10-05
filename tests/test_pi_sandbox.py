@@ -54,7 +54,13 @@ console.log(JSON.stringify(await execute(policy, request)));
                            ('edit', {'path': 'source.txt', 'edits': [{'oldText': 'before', 'newText': 'bad'}]}),
                            ('bash', {'command': 'echo bad > source.txt'})):
             with self.subTest(name=name):
-                self.assertEqual(self.tool(name, args)['type'], 'error')
+                event = self.tool(name, args)
+                if name == 'bash':
+                    self.assertEqual(event['type'], 'result')
+                    self.assertTrue(event['value']['isError'])
+                    self.assertEqual(event['value']['structuredContent']['exit_code'], 1)
+                else:
+                    self.assertEqual(event['type'], 'error')
                 self.assertEqual((self.repo / 'source.txt').read_text(), 'before\n')
 
     def test_workspace_write_allows_source_and_git_but_not_sibling_files(self):
@@ -126,7 +132,9 @@ catch (error) { console.log(JSON.stringify({type: 'error', value: error.message}
 
     def test_shell_output_bridge_preserves_read_only_and_allows_network(self):
         denied = self.bridge_tool('bash', {'command': 'echo bad > source.txt'})
-        self.assertEqual(denied['type'], 'error', denied)
+        self.assertEqual(denied['type'], 'result', denied)
+        self.assertTrue(denied['value']['isError'])
+        self.assertEqual(denied['value']['structuredContent']['exit_code'], 1)
         self.assertEqual((self.repo / 'source.txt').read_text(), 'before\n')
         for writable in (False, True):
             with self.subTest(writable=writable):
@@ -138,7 +146,9 @@ catch (error) { console.log(JSON.stringify({type: 'error', value: error.message}
         self.assertEqual(allowed['type'], 'result', allowed)
         self.assertEqual((self.repo / 'source.txt').read_text(), 'after\n')
         denied = self.bridge_tool('bash', {'command': 'echo bad > ../outside.txt'}, True)
-        self.assertEqual(denied['type'], 'error', denied)
+        self.assertEqual(denied['type'], 'result', denied)
+        self.assertTrue(denied['value']['isError'])
+        self.assertEqual(denied['value']['structuredContent']['exit_code'], 1)
         self.assertFalse((self.root / 'outside.txt').exists())
 
     def test_shell_output_bridge_quotes_commands_without_outer_shell_expansion(self):

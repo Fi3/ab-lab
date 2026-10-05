@@ -3,6 +3,6 @@
   "private": true,
   "dependencies": {
     "@openai/codex": "0.159.3",
-    "@earendil-works/pi-coding-agent": "0.87.1"
+    "@earendil-works/pi-coding-agent": "1.0.0"
   }
 }
