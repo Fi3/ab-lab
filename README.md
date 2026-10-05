@@ -39,6 +39,18 @@ and run the harness in native mode without limitation (for example can spwan all
 that want). Of course when native mode is one there is not a patch/review loop enforced or and
 condition enforced.
 
+For Pi, add `--harness pi --pi-vanilla` to run without installed or project
+customizations. This works with both `--preset all` and `--preset native`:
+`all` still applies the runner's conditions and review loop; `native` retains
+its usual baseline workflow. Vanilla disables discovered extensions, skills,
+prompt templates, themes, and context files (including repository `AGENTS.md`
+and `CLAUDE.md`). It ignores custom system prompts and project settings, and
+uses clean private global settings with authentication and the runner's explicit
+model, effort, and compaction configuration. The required benchmark extension
+still supplies sandboxing, accounting, and any configured host/review tools.
+The mode is recorded in plans and results. `--pi-vanilla` is also available for
+`plan` and `doctor`, and requires `--harness pi`.
+
 The output is very big so in order to read it `summarize.py` can be used. For example:
 ```sh
 ./summarize.py runs/bench11/result.json
@@ -50,6 +62,9 @@ An example of an output of the summarizer is [here](summarize_example.md)
 I want to use this bench to drive build of an agent that use the patch/review loops and minimise the
 uncached-token/out-quality metrics. (I'm thinking at a nvim plugin for ui and a pi
 plugin for the engine but still have to look into it)
+
+Another nice thing about it is to see which task should be executed with what, we a can
+generalize over specific task's categories.
 
 ## Conditions
 

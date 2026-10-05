@@ -101,7 +101,7 @@ def run(benchmark, factors, output, seconds, max_raw, max_turns,
         harness=None, scb_check=None, scb_seconds=300, child_codex="codex",
         review_priorities=DEFAULT_PRIORITIES, max_review_loops=DEFAULT_MAX_REVIEW_LOOPS,
         loop_options=None, preset=None, compaction_tokens=AUTO_COMPACT_TOKENS, _base_commit=None,
-        executor=None, _admitted_output=False):
+        executor=None, _admitted_output=False, pi_vanilla=False):
     if seconds <= 0 or max_raw <= 0 or max_turns <= 0:
         raise ValueError("positive wall-time, observed-token and turn limits are required")
     if not math.isfinite(scb_seconds) or scb_seconds <= 0:
@@ -115,6 +115,8 @@ def run(benchmark, factors, output, seconds, max_raw, max_turns,
             backend = Pi
         if executable == "codex":
             executable = "pi"
+    if pi_vanilla and backend is not Pi and harness != 'pi':
+        raise ValueError('--pi-vanilla requires --harness pi')
     if getattr(backend, "supports_compaction_tokens", False) is not True:
         name = harness or getattr(backend, "__name__", type(backend).__name__)
         raise ValueError(f"harness {name!r} does not support setting compaction tokens")
@@ -130,7 +132,8 @@ def run(benchmark, factors, output, seconds, max_raw, max_turns,
             'scb_check': str(scb_check) if scb_check is not None else None,
             'scb_seconds': scb_seconds, 'child_codex': child_codex,
             'review_priorities': list(review_priorities), 'max_review_loops': max_review_loops,
-            'loop_options': loop_options, 'preset': preset, 'compaction_tokens': compaction_tokens},
+            'loop_options': loop_options, 'preset': preset, 'compaction_tokens': compaction_tokens,
+            'pi_vanilla': pi_vanilla},
             base=_base_commit)
     fixture = benchmark.get("after_read")
     if fixture and not factors["C17"]:
@@ -153,6 +156,7 @@ def run(benchmark, factors, output, seconds, max_raw, max_turns,
               "output": str(output), "benchmark": benchmark["name"], "preset": preset,
               "max_review_loops": max_review_loops,
               "compaction_tokens": compaction_tokens,
+              "pi_vanilla": pi_vanilla,
               "review_priorities": list(review_priorities), "reviews": [],
               "loop_policy": progress_policy, "loop_policy_version": POLICY_VERSION, "loop_flags": [], "workflow_version": WORKFLOW_VERSION,
               "feature_count": len(benchmark["features"]), "check_count": len(benchmark["checks"]),
@@ -184,6 +188,9 @@ def run(benchmark, factors, output, seconds, max_raw, max_turns,
         manifest["review_priorities"] = list(review_priorities)
         manifest["max_review_loops"] = max_review_loops
         manifest["compaction_tokens"] = compaction_tokens
+        manifest["pi_vanilla"] = pi_vanilla
+        if backend is Pi or harness == 'pi':
+            manifest['pi_resource_policy'] = Pi.resource_policy(pi_vanilla)
         manifest["loop_policy"] = progress_policy
         manifest["loop_policy_version"] = POLICY_VERSION
         if scb_check is not None:
@@ -230,7 +237,7 @@ def run(benchmark, factors, output, seconds, max_raw, max_turns,
         failure_origin = "provider"
         provider = backend(checkout, output / "provider", model, effort, deadline, max_raw, max_turns, executable,
                            require_git_write=True, allow_delegation=not factors["C17"], compaction_tokens=compaction_tokens,
-                           **({"codex_executable": child_codex} if backend is Pi else {}))
+                           **({"codex_executable": child_codex, "pi_vanilla": pi_vanilla} if backend is Pi else {}))
         git_context.enter_context(git_execution(checkout, getattr(provider, "git_argv", lambda argv: argv),
                                                getattr(provider, "command_env", clean_env()), deadline))
         failure_origin = "runner"

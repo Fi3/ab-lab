@@ -65,7 +65,7 @@ class NativeState:
     """Private runtime/auth copies; installed configuration/resources stay readable."""
     codex_files = ('config.toml', 'auth.json', 'models_cache.json', 'AGENTS.md', 'AGENTS.override.md')
     codex_resources = ('skills', 'plugins', 'agents', 'prompts')
-    def __init__(self, artifacts):
+    def __init__(self, artifacts, *, pi_vanilla=False):
         self.temporary = tempfile.TemporaryDirectory(prefix='agent-lab-native-state-')
         self.root = Path(self.temporary.name)
         self.environment, self.fingerprints = {}, {}
@@ -79,6 +79,8 @@ class NativeState:
         }
         self.sessions, self.sources = {}, []
         for variable, (source, name, files, resources) in sources.items():
+            if name == 'pi' and pi_vanilla:
+                files, resources = ('auth.json',), ()
             source = source.expanduser().resolve()
             self.sources.append(source)
             destination = self.root / name
@@ -120,7 +122,7 @@ class NativeState:
 
 
 class CommandEnvironment:
-    def __init__(self, repo, folder, executable, *, pi_executable=None, allow_delegation=False, deadline=None):
+    def __init__(self, repo, folder, executable, *, pi_executable=None, allow_delegation=False, deadline=None, pi_vanilla=False):
         self.bin = Path(folder).resolve()
         self.bin.mkdir(parents=True)
         resolved = shutil.which(executable)
@@ -134,7 +136,7 @@ class CommandEnvironment:
             if deadline is None:
                 raise ValueError('Native delegation requires the global deadline')
             self.children = Children(self.bin / 'children', deadline)
-            self.native_state = NativeState(self.bin)
+            self.native_state = NativeState(self.bin, pi_vanilla=pi_vanilla)
             self.sandbox = CommandSandbox(repo, self.executable,
                 (self.children.folder, self.native_state.root, *self.native_state.sessions.values()),
                 read_only_blocked_paths=[*blocked, self.native_state.root],

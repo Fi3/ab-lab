@@ -333,6 +333,7 @@ def run_pinned(benchmark, factors, output, lock_path, options, base=None):
         if not existed and output.is_dir() and not (output / 'result.json').exists():
             write_json(output / 'result.json', {'schema': 'agent-behavior-lab/v1', 'status': 'failed',
                 'benchmark': benchmark['name'], 'output': str(output), 'factors': factors,
+                'pi_vanilla': options.get('pi_vanilla', False),
                 'error': str(exc) or 'executor interrupted',
                 'failure': {'origin': 'operator' if isinstance(exc, KeyboardInterrupt) else 'environment',
                             'stage': 'executor', 'message': str(exc)},
@@ -430,9 +431,11 @@ def exec_command(lock_path, command):
         subprocess.run(['docker', 'rm', '-f', name], stdout=subprocess.DEVNULL, stderr=subprocess.DEVNULL, timeout=20)
 
 
-def doctor(lock_path, output, harness, native=False, model=None):
+def doctor(lock_path, output, harness, native=False, model=None, *, pi_vanilla=False):
     """Exercise the actual provider initialization with no model generation."""
     from .host import git
+    if pi_vanilla and harness != 'pi':
+        raise ValueError('--pi-vanilla requires --harness pi')
     lock = load_lock(lock_path)
     output = Path(output).resolve()
     output.mkdir(parents=True, exist_ok=False)
@@ -451,6 +454,7 @@ def doctor(lock_path, output, harness, native=False, model=None):
              '--out', str(output / 'provider'), '--harness', harness,
              '--codex', lock.get('harnesses', {}).get('codex', 'codex'),
              *(['--model', model] if model else []),
+             *(['--pi-vanilla'] if pi_vanilla else []),
              *(['--native'] if native else [])], private)
         try:
             with (output / 'stdout.json').open('xb') as out, (output / 'stderr.txt').open('xb') as err:
@@ -478,13 +482,14 @@ def main():
     probe.add_argument('--out', type=Path, required=True)
     probe.add_argument('--harness', choices=('codex', 'pi'), default='codex')
     probe.add_argument('--native', action='store_true', help='also qualify the native delegation configuration')
+    probe.add_argument('--pi-vanilla', action='store_true', help='qualify Pi without installed or project customizations')
     workflow = sub.add_parser('_workflow')
     workflow.add_argument('folder', type=Path)
     args = parser.parse_args()
     if args.action == '_workflow':
         return inner_workflow(args.folder)
     if args.action == 'doctor':
-        return doctor(args.lock, args.out, args.harness, args.native)
+        return doctor(args.lock, args.out, args.harness, args.native, pi_vanilla=args.pi_vanilla)
     if args.action == 'exec':
         command = args.command[1:] if args.command[:1] == ['--'] else args.command
         if not command:

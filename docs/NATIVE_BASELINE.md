@@ -21,6 +21,32 @@ and must match for comparisons. A harness that cannot enforce it stops before
 generation. The old `--skip-linearization`
 option is removed, not retained as a no-op.
 
+Add `--pi-vanilla` for a Pi baseline without installed or project customizations:
+
+```sh
+python3 -m lab run benchmarks/scb-code-search.json \
+  --out runs/pi-vanilla --harness pi --preset native --pi-vanilla \
+  --model gpt-5.5 --effort xhigh \
+  --seconds 10800 --max-raw 15000000 --max-turns 1000
+```
+
+This flag is independent of the preset and also works with `--preset all`.
+It disables discovered extensions, skills, prompt templates, themes, and
+context files, including repository `AGENTS.md` and `CLAUDE.md`. Custom
+`SYSTEM.md`/`APPEND_SYSTEM.md`, project settings, installed global settings,
+and custom model catalogs are ignored. Pi retains its built-in system prompt
+and the benchmark's explicit extension for sandboxing, accounting, and role
+tools. Authentication is copied to private state; explicit model, effort,
+compaction settings, and run limits still apply. Plans, manifests, provider
+fingerprints, and single/batch results record the mode. With native delegation,
+children inherit the clean global Pi home; child CLI options still belong to
+the harness.
+
+`--pi-vanilla` is a lab option implemented using supported Pi switches; the
+pinned Pi 0.87.1 CLI does not provide a built-in `--vanilla` switch. Use
+`python3 -m lab doctor --harness pi --native --pi-vanilla --out runs/pi-vanilla-doctor`
+to check startup without a model request.
+
 ## Audit findings and changes
 
 | Previously imposed behavior | Current behavior |

@@ -26,6 +26,7 @@ def failure(config, output, error, *, status='failed', duration=None):
         'review_priorities': list(config['options'].get('review_priorities', DEFAULT_PRIORITIES)),
         'max_review_loops': config['options'].get('max_review_loops', DEFAULT_MAX_REVIEW_LOOPS),
         'compaction_tokens': config['options']['compaction_tokens'],
+        'pi_vanilla': config['options'].get('pi_vanilla', False),
         'loop_policy': loop_policy(config['options'].get('loop_options')),
         'feature_count': len(benchmark['features']), 'check_count': len(benchmark['checks']),
         'checkpoints': [], 'checks': [], 'duration_seconds': duration, 'error': error,
@@ -55,12 +56,14 @@ def run_batch(benchmark, factors, output, repeat, parallel, *, seconds, max_raw,
               scb_check=None, scb_seconds=300, child_codex='codex',
               review_priorities=DEFAULT_PRIORITIES, max_review_loops=DEFAULT_MAX_REVIEW_LOOPS,
               loop_options=None, preset=None, compaction_tokens=AUTO_COMPACT_TOKENS,
-              _worker_command=None, executor=None):
+              _worker_command=None, executor=None, pi_vanilla=False):
     review_priorities = normalize_priorities(review_priorities)
     max_review_loops = normalize_review_loops(max_review_loops)
     compaction_tokens = validate_compaction_tokens(compaction_tokens)
     if harness not in (None, 'codex', 'pi'):
         raise ValueError(f"harness {harness!r} does not support setting compaction tokens")
+    if pi_vanilla and harness != 'pi':
+        raise ValueError('--pi-vanilla requires --harness pi')
     progress_policy = loop_policy(loop_options)
     for name, value in (('repeat', repeat), ('parallel', parallel), ('seconds', seconds),
                         ('max_raw', max_raw), ('max_turns', max_turns)):
@@ -87,6 +90,7 @@ def run_batch(benchmark, factors, output, repeat, parallel, *, seconds, max_raw,
             'review_priorities': list(review_priorities),
             'max_review_loops': max_review_loops,
             'compaction_tokens': compaction_tokens,
+            'pi_vanilla': pi_vanilla,
             'loop_options': progress_policy, 'preset': preset}}
     if executor is not None:
         config['options']['executor'] = str(Path(executor).resolve())
@@ -177,6 +181,7 @@ def run_batch(benchmark, factors, output, repeat, parallel, *, seconds, max_raw,
                 'review_priorities': list(review_priorities),
                 'max_review_loops': max_review_loops,
                 'compaction_tokens': compaction_tokens,
+                'pi_vanilla': pi_vanilla,
                 'loop_policy': progress_policy,
                 'interrupted': bool(interrupted), 'cancelled_signal': interrupted,
                 'duration_seconds': time.monotonic()-started, 'results': results}

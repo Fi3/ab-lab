@@ -1,4 +1,4 @@
-# RESULTS
+# RESULT
 
 * Conditions: `all` enables every C; `native` disables every C. Record explicit overrides separately. `partial` is all without C08,C16,C17,C25.
 * priority accepted is always P0 P1 P2
@@ -82,6 +82,9 @@
 * [bench34](runs/bench35/result.json)
 * [bench36](runs/bench36/result.json)
 * [bench37](runs/bench37/result.json)
+* [bench39](runs/bench39/result.json)
+* [bench41](runs/bench41/result.json)
+* [bench43](runs/bench43/result.json)
 
 | model/reasoning      | test passes       | total tokens | uncached tokens | harness | conditions | maxrevs | verbosity | erosion | cognitive erosion | time       | P | compaction |
 | -------------------- | ----------------- | ------------ | --------------- | ------- | ---------- | ------- | --------- | ------- | ----------------- | ---------- | - | ---------- |
@@ -96,6 +99,9 @@
 | gpt-6.1-sol / xhigh  | 79242/79252       | 18,732,192   | 1,039,264       | Codex   | all        | 3       | 6.39%     | 39.61%  | 75.20%            | 2h 42m 08s | 1 | 131,072    |
 | gpt-6.1-sol / xhigh  | 79242/79252       | 17,205,223   | 1,057,383       | Codex   | partial    | 3       | 6.39%     | 39.45%  | 75.21%            | 2h 20m 20s | 1 | 131,072    |
 | gpt-6.1-sol / xhigh  | 79243/79252       | 15,948,363   | 586,187         | Codex   | all        | 0       | 6.40%     | 39.50%  | 75.24%            | 1h 43m 17s | 2 | 131,072    |
+| gpt-6.1-sol / xhigh  | 79241/79252       | 8,614,098    | 588,498         | Pi      | all        | 0       | 6.39%     | 39.49%  | 75.21%            | 1h 34m 44s | 2 | 131,072    |
+| gpt-6.1-sol / xhigh  | 79241/79252       | 8,045,666    | 782,050         | Pi      | all        | 0       | 6.40%     | 39.45%  | 75.29%            | 1h 45m 01s | 2 | 131,072    |
+| gpt-6.1-sol / xhigh  | 79240/79252       | 15,966,900   | 1,192,500       | Pi      | all        | 3       | 6.40%     | 39.54%  | 75.27%            | 2h 48m 12s | 1 | 131,072    |
 
 
 ### control run
@@ -104,6 +110,7 @@
 * [bench22](runs/bench22/result.json)
 * [bench23](runs/bench23/result.json)
 * [bench38](runs/bench38/result.json)
+* [bench42](runs/bench42/result.json)
 
 | mode/reasoning       | test passes | total tokens | uncached tokens | harness | verbosity | erosion | cognitive erosion | time       | compaction |
 | -------------------- | ----------- | ------------ | --------------- | ------- | --------- | ------- | ----------------- | ---------- | ---------- |
@@ -111,3 +118,4 @@
 | gpt-5.5 / xhigh      | 57534/79252 | 50,029,172   | 896,628         | Pi      | 6.44%     | 39.67%  | 75.44%            | 1h 15m 38s | 255,616    |
 | gpt-5.5 / xhigh      | 57536/79252 | 50,151,058   | 1,373,330       | Pi      | 6.46%     | 39.62%  | 75.35%            | 1h 26m 29s | 131,072    |
 | gpt-6.1-sol / xhigh  | 79244/79252 | 9,194,682    | 532,282         | Codex   | 6.40%     | 39.45%  | 75.28%            | 1h 12m 36s | 131,072    |
+| gpt-6.1-sol / xhigh  | 79241/79252 | 11,109,722   | 616,666         | Pi      | 6.38%     | 39.54%  | 75.25%            | 1h 34m 48s | 131,072    |

@@ -57,6 +57,7 @@ def main():
         p = commands.add_parser(name)
         p.add_argument("benchmark", type=Path)
         p.add_argument("--preset", choices=("all", "native"), default="all")
+        p.add_argument("--pi-vanilla", action="store_true", help="disable Pi customizations and context files; works with all or native")
         p.add_argument("--on", default="", help="comma-separated C identifiers")
         p.add_argument("--off", default="", help="comma-separated C identifiers")
         p.add_argument("--model", default=None)
@@ -97,6 +98,7 @@ def main():
     doctor.add_argument("--pi", default="pi")
     doctor.add_argument("--model", default=None)
     doctor.add_argument('--native', action='store_true', help='qualify native delegation without model generation')
+    doctor.add_argument('--pi-vanilla', action='store_true', help='qualify Pi without installed or project customizations')
     doctor.add_argument('--executor', type=Path, default=DEFAULT_PROFILE)
     report = commands.add_parser("report")
     report.add_argument("results", type=Path, nargs="+")
@@ -107,6 +109,8 @@ def main():
     joint.add_argument("results", type=Path, nargs=4)
     args = parser.parse_args()
     try:
+        if getattr(args, 'pi_vanilla', False) and args.harness != 'pi':
+            raise ValueError('--pi-vanilla requires --harness pi')
         if args.command == "factors":
             value = {key: dict(zip(("description", "on", "off"), meaning)) for key, meaning in FACTORS.items()}
         elif args.command in ("run", "plan"):
@@ -119,6 +123,7 @@ def main():
                 harness = getattr(args, "harness", "codex")
                 model = args.model or "gpt-5.5"
                 value = {"benchmark": benchmark, "factors": factors, "preset": args.preset, "model": model, "effort": args.effort,
+                         "pi_vanilla": args.pi_vanilla,
                          "review_priorities": list(args.review_priorities),
                          "max_review_loops": args.max_review_loops,
                          "compaction_tokens": args.compaction_tokens,
@@ -128,6 +133,8 @@ def main():
                          "executor": str(args.executor.resolve()) if args.executor else None,
                          "scb_check": {"executable": args.scb_check, "seconds_per_check": args.scb_seconds,
                                        "phases": ["before_changes", "after_implementation"]}}
+                if harness == 'pi':
+                    value['pi_resource_policy'] = Pi.resource_policy(args.pi_vanilla)
             else:
                 if args.harness == "pi":
                     backend = Pi
@@ -146,7 +153,7 @@ def main():
                         review_priorities=args.review_priorities,
                         max_review_loops=args.max_review_loops, preset=args.preset,
                         compaction_tokens=args.compaction_tokens,
-                        loop_options=progress_policy, executor=args.executor)
+                        loop_options=progress_policy, executor=args.executor, pi_vanilla=args.pi_vanilla)
                 else:
                     value = run(benchmark, factors, args.out, args.seconds, args.max_raw, args.max_turns,
                                 model, args.effort, executable, backend=backend, harness=args.harness,
@@ -154,11 +161,11 @@ def main():
                                 review_priorities=args.review_priorities,
                                 max_review_loops=args.max_review_loops, preset=args.preset,
                                 compaction_tokens=args.compaction_tokens,
-                                loop_options=progress_policy, executor=args.executor)
+                                loop_options=progress_policy, executor=args.executor, pi_vanilla=args.pi_vanilla)
         elif args.command == "doctor":
             if not os.environ.get(PRIVATE_ENV):
                 from .executor import doctor as executor_doctor
-                return executor_doctor(args.executor, args.out, args.harness, args.native, args.model)
+                return executor_doctor(args.executor, args.out, args.harness, args.native, args.model, pi_vanilla=args.pi_vanilla)
             harness = getattr(args, "harness", "codex")
             if harness == "pi":
                 backend = Pi
@@ -170,7 +177,7 @@ def main():
                 model = getattr(args, "model", None) or "gpt-5.5"
             provider = backend(args.repo.resolve(strict=True), args.out, model, "xhigh", time.monotonic()+30, 1, 1, executable,
                                **({'allow_delegation': True} if args.native else {}),
-                               **({"codex_executable": args.codex} if backend is Pi else {}))
+                               **({"codex_executable": args.codex, "pi_vanilla": args.pi_vanilla} if backend is Pi else {}))
             try:
                 value = {**provider.identity, "generation": "none"}
             finally:

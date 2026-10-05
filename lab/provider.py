@@ -1245,7 +1245,16 @@ class Pi(ChildAccounting):
     transport = "pi-rpc-stdio"
     supports_compaction_tokens = True
 
-    def __init__(self, repo, artifacts, model, effort, deadline, max_raw, max_turns, executable="pi", *, require_git_write=False, codex_executable="codex", allow_delegation=False, compaction_tokens=AUTO_COMPACT_TOKENS):
+    @staticmethod
+    def resource_policy(vanilla=False):
+        return {"mode": "vanilla-v1" if vanilla else "configured",
+                **({"extensions": "explicit-runner-only", "skills": False,
+                    "prompt_templates": False, "themes": False, "context_files": False,
+                    "custom_system_prompts": False, "project_settings": False,
+                    "global_settings": "runner-only"} if vanilla else {})}
+
+    def __init__(self, repo, artifacts, model, effort, deadline, max_raw, max_turns, executable="pi", *, require_git_write=False, codex_executable="codex", allow_delegation=False, compaction_tokens=AUTO_COMPACT_TOKENS, pi_vanilla=False):
+        self.pi_vanilla = pi_vanilla
         self.compaction_tokens = validate_compaction_tokens(compaction_tokens)
         self.repo, self.artifacts = Path(repo).resolve(), Path(artifacts).resolve()
         self.artifacts.mkdir(parents=True, exist_ok=False)
@@ -1268,7 +1277,7 @@ class Pi(ChildAccounting):
         try:
             self.commands = CommandEnvironment(self.repo, self.artifacts / "commands", codex_executable,
                                                pi_executable=self.executable, allow_delegation=allow_delegation,
-                                               deadline=deadline)
+                                               deadline=deadline, pi_vanilla=pi_vanilla)
             self.command_env = self.commands.env
             self._private_pi_home()
             if self.commands.children is not None:
@@ -1303,6 +1312,7 @@ class Pi(ChildAccounting):
             probe.close()
         ready = json.loads(probe.policy.with_suffix(".json.ready").read_text())
         controls = {"native_tools": ready.get("tools", []), "pi_version": version, "model": self.model, "effort": self.effort,
+                    "pi_vanilla": self.pi_vanilla, "resource_policy": self.resource_policy(self.pi_vanilla),
                     "auth": "openai-codex", "sandbox": "codex-native-tools-v1",
                     "host_tool_transport": "native-tools-v1", "request_guard": "pre-dispatch-v1",
                     "context_policy": ready["context_policy"],
@@ -1321,6 +1331,28 @@ class Pi(ChildAccounting):
 
     def _private_pi_home(self):
         source = Path(os.environ.get("PI_CODING_AGENT_DIR", Path.home() / ".pi" / "agent")).expanduser().resolve()
+        if getattr(self, "pi_vanilla", False):
+            # Never import installed settings, models, prompts, or resources.
+            # Native processes need state inside their existing writable boundary.
+            source = Path(self.command_env.get("PI_CODING_AGENT_DIR", source)).expanduser().resolve()
+            state = self.commands.native_state
+            if state is not None:
+                self.pi_home = state.root / "pi-vanilla"
+                self.pi_home.mkdir(mode=0o700)
+                (self.pi_home / "sessions").symlink_to(state.sessions['pi'], target_is_directory=True)
+                state.environment["PI_CODING_AGENT_DIR"] = str(self.pi_home)
+                state.fingerprints['pi'] = {"resource_policy": self.resource_policy(True)}
+            else:
+                import tempfile
+                self.pi_temporary = tempfile.TemporaryDirectory(prefix="agent-lab-pi-vanilla-")
+                self.pi_home = Path(self.pi_temporary.name)
+                self.commands.sandbox.blocked_paths.append(str(self.pi_home))
+            auth = source / "auth.json"
+            if auth.is_file():
+                shutil.copyfile(auth, self.pi_home / "auth.json")
+                (self.pi_home / "auth.json").chmod(0o600)
+            self.command_env["PI_CODING_AGENT_DIR"] = str(self.pi_home)
+            return
         if self.commands.native_state is not None:
             self.pi_home = Path(self.command_env["PI_CODING_AGENT_DIR"])
         else:
@@ -1396,10 +1428,18 @@ class Pi(ChildAccounting):
         }
 
     def launch_arguments(self, *, native=False):
-        argv = [self.executable, "--mode", "rpc", "--approve", "--provider", "openai-codex",
+        vanilla = getattr(self, "pi_vanilla", False)
+        argv = [self.executable, "--mode", "rpc", "--no-approve" if vanilla else "--approve", "--provider", "openai-codex",
                 "--model", self.model, "--thinking", self.effort]
+        if vanilla or not native:
+            argv += ["--no-extensions"]
+        if vanilla:
+            # Explicit empty prompt inputs bypass SYSTEM.md/APPEND_SYSTEM.md
+            # discovery while leaving Pi's built-in system prompt in place.
+            argv += ["--no-skills", "--no-prompt-templates", "--no-themes", "--no-context-files",
+                     "--system-prompt", "", "--append-system-prompt", ""]
         if not native:
-            argv += ["--no-extensions", "--tools", "read,bash,edit,write"]
+            argv += ["--tools", "read,bash,edit,write"]
         return [*argv, "--extension", str(PiSandbox.extension)]
 
     def validate_state(self, response):
@@ -1508,6 +1548,8 @@ class Pi(ChildAccounting):
         replies, interrupted = [], None
         priced, last_output, last_usage = False, 0.0, 0.0
         stop_reason, stop_at = None, None
+        provider_error, retrying = None, False
+        pending_retry_calls = deque()
         stop_budget = None
         tool_stop = None
         settlement = ReviewSettlement()
@@ -1540,16 +1582,33 @@ class Pi(ChildAccounting):
                         interrupted, stop_at = reason, now
                         if stop_budget:
                             stop_reason = str(stop_budget)
-                message = buffered if buffered is not None else th.incoming(0.1)
-                buffered = None
+                if pending_retry_calls and (not retrying or interrupted is not None or settlement.error is not None):
+                    message = pending_retry_calls.popleft()
+                else:
+                    message = buffered if buffered is not None else th.incoming(0.1)
+                    buffered = None
                 if message is None:
                     continue
                 if "_transport_error" in message:
                     raise Fatal(message["_transport_error"])
+                if message.get("type") in ("auto_retry_start", "auto_retry_end"):
+                    row.setdefault("retry_events", []).append(message)
+                    retrying = message["type"] == "auto_retry_start"
+                    if not retrying:
+                        if message.get("success") is True:
+                            provider_error = None
+                        else:
+                            provider_error = message.get("finalError") or provider_error or "Pi automatic retry failed"
+                    continue
                 if message.get("type") == "lab_host_tool_call":
                     owned = (actual_tools and message.get("threadId") == thread
                              and message.get("turnId") == turn_id)
-                    if owned and interrupted is None and not stop_reason and settlement.error is None:
+                    if owned and retrying and provider_error and not stop_reason and interrupted is None and settlement.error is None:
+                        # Host calls arrive on a separate pipe and can overtake
+                        # the successful retry receipt on the RPC stream.
+                        pending_retry_calls.append(message)
+                        continue
+                    if owned and interrupted is None and not stop_reason and not provider_error and settlement.error is None:
                         try:
                             result = self.dispatch_host_tool(thread, turn_id, message.get("tool"),
                                 message.get("arguments"), message.get("callId"))
@@ -1592,7 +1651,7 @@ class Pi(ChildAccounting):
                     m = message.get("message", {})
                     if m.get("role") == "assistant":
                         if m.get("stopReason") in ("error", "aborted") and interrupted is None:
-                            stop_reason = m.get("errorMessage") or "Pi model response " + m["stopReason"]
+                            provider_error = m.get("errorMessage") or "Pi model response " + m["stopReason"]
                         text = "".join(c.get("text", "") for c in m.get("content", []) if isinstance(c, dict) and c.get("type") == "text")
                         if text and (not replies or replies[-1] != text):
                             replies.append(text)
@@ -1607,9 +1666,12 @@ class Pi(ChildAccounting):
                             if fresh:
                                 priced, last_usage = True, now
                 if message.get("type") == "agent_settled":
-                    row.update(status="interrupted" if interrupted else "failed" if stop_reason else "completed", interrupt_reason=interrupted)
+                    row.update(status="interrupted" if interrupted else "failed" if stop_reason or provider_error else "completed", interrupt_reason=interrupted)
                     break
 
+            for call in pending_retry_calls:
+                th.host_result(call.get("callId"), {"success": False,
+                    "text": "Host tool call is not owned by an active author turn."})
             release_tool_results()
             before_stats = self.usage.totals.get(thread, (0, 0, 0))
             stats = th.rpc({"type": "get_session_stats"}, timeout=5)
@@ -1644,6 +1706,8 @@ class Pi(ChildAccounting):
                 raise stop_budget
             if stop_reason:
                 raise Fatal(stop_reason)
+            if provider_error:
+                raise Fatal(provider_error)
             if not covered:
                 raise Fatal("incomplete Pi token measurement; no further generation")
             self.settle_children()
