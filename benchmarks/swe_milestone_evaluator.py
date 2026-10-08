@@ -28,7 +28,7 @@ class Evaluator(BaseEvaluator):
     @classmethod
     def expand(cls, data, path):
         config = data[cls.config_key]
-        if not isinstance(config, dict) or set(config) - {"project", "seconds"}:
+        if not isinstance(config, dict) or set(config) - {"project", "seconds", "repository_additions"}:
             raise ValueError("unknown SWE-Milestone evaluator fields")
         project = config.get("project")
         if not isinstance(project, str) or project not in sm.PROJECTS:
@@ -36,7 +36,10 @@ class Evaluator(BaseEvaluator):
         seconds = config.get("seconds", 3600)
         if type(seconds) is not int or seconds <= 0:
             raise ValueError("SWE-Milestone seconds must be a positive integer per grading invocation")
-        return {**data, cls.config_key: {"project": project, "seconds": seconds}}
+        expanded = {"project": project, "seconds": seconds}
+        if "repository_additions" in config:
+            expanded["repository_additions"] = sm.repository_addition_paths(config["repository_additions"])
+        return {**data, cls.config_key: expanded}
 
     def start(self, base, manifest, deadline):
         self.config = self.benchmark[self.config_key]
@@ -58,10 +61,12 @@ class Evaluator(BaseEvaluator):
                                            for task in tasks]:
             raise Fatal("SWE-Milestone grading sequence differs from the pinned release")
         self.imported = selected
-        if (base != self.imported["revision"]
-                or sm.git(prepared / "repo", "rev-parse", "HEAD").decode().strip() != base
+        if (base != self.benchmark["revision"]
+                or sm.git(prepared / "repo", "rev-parse", "HEAD").decode().strip() != self.imported["revision"]
                 or sm.git(prepared / "repo", "status", "--porcelain")):
             raise Fatal("SWE-Milestone prepared starting repository changed")
+        if "repository_additions" in self.imported:
+            manifest["swe_milestone_repository_additions"] = self.imported["repository_additions"]
         self.python = sm.CACHE / "swe-milestone-venv" / "bin" / "python"
         if not self.python.is_file():
             raise Fatal("SWE-Milestone evaluator Python is missing; install benchmarks/swe-milestone-requirements.txt "

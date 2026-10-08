@@ -65,6 +65,30 @@ plugin for the engine but still have to look into it)
 Another nice thing about it is to see which task should be executed with what, we a can
 generalize over specific task's categories.
 
+## Preserving evaluation and existing results
+
+**Keep evaluation tests and scoring unchanged.** Benchmark comparisons must use
+the same pinned grading tests, assertions, fixtures, parameterization, and test
+selection. Do not change already committed lab verification tests. Changing these
+inputs invalidates results measured against the changed evaluation definition.
+
+**Do not introduce any other change that invalidates existing results.** Preserve
+historical result files and their recorded inputs. Changes to benchmark requests,
+task order, baseline revisions, grading rules, quality metrics, token accounting,
+execution policy, or environment identities must not silently reinterpret old
+results or present different experiments as comparable. Keep explicitly requested
+new benchmark variants and their results separate from existing definitions.
+
+If the request or its effect on existing results is unclear, ask the user before
+changing benchmark definitions, runner behavior, evaluation, or comparison
+conditions. If a change that would invalidate existing results is strictly
+necessary, prepare a concrete, reviewable proposal, identify the affected tests
+and historical results, and
+explain why the change is unavoidable. **Explicit human permission MUST be asked
+for and received before applying that change.** Passing tests, convenience, or an
+agent's judgment do not replace permission. Preserve the original evidence after
+approval and record the resulting boundary between comparable result versions.
+
 ## Conditions
 
 Conditions are switches that let you compare agent behavior on the same
@@ -389,6 +413,10 @@ features, and final checks. The source must be an existing local Git
 repository. The runner resolves the requested revision to a commit before
 model execution.
 
+Personal benchmark definitions can remain local; they do not need to be
+committed to this repository. Pass their JSON file path to `lab plan` or
+`lab run`.
+
 ### Define a local benchmark
 
 Create a JSON file with these fields:
@@ -451,6 +479,24 @@ SlopCodeBench or `swe_milestone` for SWE-Milestone. SlopCodeBench supplies its
 feature requests from the pinned dataset. Do not add a separate `features`
 list to a SlopCodeBench definition. SWE-Milestone definitions include their
 imported feature requests.
+
+For a local SWE-Milestone variant that adds repository tooling, use
+`swe_milestone.repository_additions` to declare the added files or directories:
+
+```json
+"swe_milestone": {
+  "project": "scikit-learn",
+  "seconds": 3600,
+  "repository_additions": ["AGENTS.md", ".project-tools"]
+}
+```
+
+Set the benchmark's `revision` to a local commit directly after the project's
+pinned baseline. That commit must contain only new regular files under the
+declared paths; existing files must be unchanged. This validates the starting
+repository before authoring. The original task requests, grading baseline,
+and pinned evaluation tests remain unchanged. Without this optional field,
+SWE-Milestone continues to require its original starting revision.
 
 The runner rejects unknown fields. See the
 [evaluator contract](docs/BENCHMARK_EVALUATION.md) for evaluator configuration
