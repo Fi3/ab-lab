@@ -41,13 +41,18 @@ def author_prompt(benchmark, feature, factors, findings=None):
     return "\n\n".join(parts)
 
 
-def review_prompt(benchmark, feature, base, evidence, no_changes=False, *, review_priorities=DEFAULT_PRIORITIES, review_id=None):
+def review_prompt(benchmark, feature, base, evidence, no_changes=False, *, review_priorities=DEFAULT_PRIORITIES, review_id=None,
+                  review_issue_description=False):
     instructions = review_instructions(review_priorities)
     if no_changes:
         scope = f"There are no changes since {base}. Verify whether the requested behavior is already satisfied; an empty diff is not approval."
+        if not review_issue_description:
+            scope = f"There are no changes since {base}. Review the current code for defects; an empty diff does not establish that the requested behavior is already satisfied."
     else:
         scope = f"Inspect {base}..HEAD for defects introduced by this feature. Exclude unrelated pre-existing issues."
-    return f"Independently review the following request. The submission is read-only; use writable temporary scratch space or a scratch copy for tests that create files.\nReview target: {review_id}\n{scope}\n\n{feature['request']}\n\n{evidence}\n{instructions}"
+    task = "Independently review the following request." if review_issue_description else "Independently review the code changes."
+    context = f"\n\n{feature['request']}\n\n{evidence}" if review_issue_description else ""
+    return f"{task} The submission is read-only; use writable temporary scratch space or a scratch copy for tests that create files.\nReview target: {review_id}\n{scope}{context}\n{instructions}"
 
 
 def after_read_fixture(host, fixture, output, deadline):
@@ -100,6 +105,7 @@ def run(benchmark, factors, output, seconds, max_raw, max_turns,
         model="gpt-5.5", effort="xhigh", executable="codex", backend=Codex, *,
         harness=None, scb_check=None, scb_seconds=300, child_codex="codex",
         review_priorities=DEFAULT_PRIORITIES, max_review_loops=DEFAULT_MAX_REVIEW_LOOPS,
+        review_issue_description=False,
         loop_options=None, preset=None, compaction_tokens=AUTO_COMPACT_TOKENS, _base_commit=None,
         executor=None, _admitted_output=False, pi_vanilla=False):
     if seconds <= 0 or max_raw <= 0 or max_turns <= 0:
@@ -132,6 +138,7 @@ def run(benchmark, factors, output, seconds, max_raw, max_turns,
             'scb_check': str(scb_check) if scb_check is not None else None,
             'scb_seconds': scb_seconds, 'child_codex': child_codex,
             'review_priorities': list(review_priorities), 'max_review_loops': max_review_loops,
+            'review_issue_description': review_issue_description,
             'loop_options': loop_options, 'preset': preset, 'compaction_tokens': compaction_tokens,
             'pi_vanilla': pi_vanilla},
             base=_base_commit)
@@ -155,6 +162,7 @@ def run(benchmark, factors, output, seconds, max_raw, max_turns,
     result = {"schema": "agent-behavior-lab/v1", "status": "failed", "factors": factors,
               "output": str(output), "benchmark": benchmark["name"], "preset": preset,
               "max_review_loops": max_review_loops,
+              "review_issue_description": review_issue_description,
               "compaction_tokens": compaction_tokens,
               "pi_vanilla": pi_vanilla,
               "review_priorities": list(review_priorities), "reviews": [],
@@ -186,6 +194,7 @@ def run(benchmark, factors, output, seconds, max_raw, max_turns,
         manifest['execution_environment'] = result['execution_environment']
         manifest["workflow_version"] = WORKFLOW_VERSION
         manifest["review_priorities"] = list(review_priorities)
+        manifest["review_issue_description"] = review_issue_description
         manifest["max_review_loops"] = max_review_loops
         manifest["compaction_tokens"] = compaction_tokens
         manifest["pi_vanilla"] = pi_vanilla
@@ -398,7 +407,8 @@ def run(benchmark, factors, output, seconds, max_raw, max_turns,
                     review_id = review_tools.begin(review_label, before["head"])
                     try:
                         reply = turn(reviewer, review_prompt(benchmark, feature, feature_base, evidence, no_changes,
-                                     review_priorities=review_priorities, review_id=review_id), review_label, writable=False)
+                                     review_priorities=review_priorities, review_id=review_id,
+                                     review_issue_description=review_issue_description), review_label, writable=False)
                         if snapshot(checkout) != before:
                             failure_origin = "agent"
                             raise Fatal("reviewer changed source, index or history")
@@ -477,7 +487,8 @@ def run(benchmark, factors, output, seconds, max_raw, max_turns,
                           "repair_attempts": progress.repairs,
                           "status": "approved" if approved else "review_skipped" if max_review_loops == 0 else "review_limit_reached",
                           "review_approved": True if approved else None,
-                          "already_satisfied": no_changes and approved, "observed_raw_tokens": observed_raw() - progress.raw_start,
+                          "already_satisfied": None if no_changes and approved and not review_issue_description else no_changes and approved,
+                          "observed_raw_tokens": observed_raw() - progress.raw_start,
                           "loop_flags": [f["artifact"] for f in progress.flags]}
             if stopped_flag:
                 checkpoint.update(status="needs_attention", review_approved=stopped_flag["review_approved"],
