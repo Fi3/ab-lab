@@ -314,15 +314,78 @@ def load_prepared(project):
     return prepared, imported, json.loads((prepared / "benchmark.json").read_text())
 
 
+def repository_addition_paths(value):
+    """Normalize explicitly declared, repository-relative added files or directories."""
+    if (not isinstance(value, list) or not value
+            or any(not isinstance(item, str) or not item for item in value)):
+        raise ValueError("repository_additions needs a nonempty list of paths")
+    for item in value:
+        path = Path(item)
+        if (path.is_absolute() or path.as_posix() != item or item == "."
+                or {"..", ".git"} & set(path.parts)):
+            raise ValueError("repository_additions paths must be safe repository-relative paths")
+    if len(set(value)) != len(value) or any(
+            left != right and left.startswith(right + "/") for left in value for right in value):
+        raise ValueError("repository_additions paths must be unique and nonoverlapping")
+    return list(value)
+
+
+def verify_repository_additions(benchmark, baseline):
+    """Admit a direct child containing only declared regular-file additions.
+
+    Keep the upstream revision for grading. Existing source, tests, build inputs,
+    and reachable history cannot change through this opt-in baseline adaptation.
+    """
+    declaration = benchmark.get("swe_milestone", {}).get("repository_additions")
+    if declaration is None:
+        if benchmark.get("revision") != baseline:
+            raise ValueError("SWE-Milestone benchmark differs from its prepared revision")
+        return None
+    paths = repository_addition_paths(declaration)
+    revision, repo = benchmark.get("revision", ""), benchmark["repo"]
+    if not isinstance(revision, str) or not re.fullmatch(r"[0-9a-f]{40,64}", revision):
+        raise ValueError("repository_additions needs an immutable commit revision")
+    parents = git(repo, "rev-list", "--parents", "-n", "1", revision).decode().split()
+    if parents != [revision, baseline]:
+        raise ValueError("repository_additions must be one direct child of the prepared revision")
+    for path in paths:
+        if git(repo, "ls-tree", "-r", "--name-only", baseline, "--", path):
+            raise ValueError("repository_additions path already exists in the prepared revision: " + path)
+    changes = git(repo, "diff", "--name-status", "--no-renames", "-z", baseline, revision, "--").split(b"\0")[:-1]
+    if not changes or len(changes) % 2:
+        raise ValueError("repository_additions must add files")
+    added = []
+    for status, raw_path in zip(changes[::2], changes[1::2]):
+        path = raw_path.decode("utf-8")
+        if status != b"A" or not any(path == root or path.startswith(root + "/") for root in paths):
+            raise ValueError("repository_additions changed an existing or undeclared path: " + path)
+        added.append(path)
+    if any(not any(path == root or path.startswith(root + "/") for path in added) for root in paths):
+        raise ValueError("repository_additions contains an unused path declaration")
+    entries = []
+    for entry in git(repo, "ls-tree", "-r", "-z", revision, "--", *paths).split(b"\0")[:-1]:
+        header, path = entry.split(b"\t", 1)
+        mode, kind, blob = header.decode().split()
+        if kind != "blob" or mode not in ("100644", "100755"):
+            raise ValueError("repository_additions permits only regular files: " + path.decode("utf-8"))
+        entries.append({"path": path.decode("utf-8"), "mode": mode, "blob": blob})
+    if sorted(entry["path"] for entry in entries) != sorted(added):
+        raise ValueError("repository_additions tree differs from the declared additions")
+    return {"baseline_revision": baseline, "revision": revision, "paths": paths,
+            "files": entries, "existing_files_unchanged": True}
+
+
 def benchmark_scope(imported, expected, benchmark):
-    """Select an unchanged task prefix without modifying the prepared project."""
-    if benchmark.get("revision") != expected["revision"]:
-        raise ValueError("SWE-Milestone benchmark differs from its prepared revision")
+    """Select unchanged tasks and validate any declared repository additions."""
+    additions = verify_repository_additions(benchmark, expected["revision"])
     features = benchmark.get("features")
     if (not isinstance(features, list) or not features
             or features != expected["features"][:len(features)]):
         raise ValueError("SWE-Milestone benchmark must use an unchanged prefix of its prepared features")
-    return {**imported, "milestones": imported["milestones"][:len(features)]}
+    scoped = {**imported, "milestones": imported["milestones"][:len(features)]}
+    if additions is not None:
+        scoped["repository_additions"] = additions
+    return scoped
 
 
 def recorded_commits(run_dir, benchmark):
