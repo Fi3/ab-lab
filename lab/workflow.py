@@ -4,8 +4,9 @@ import json
 import math
 from pathlib import Path
 import subprocess
+import tempfile
 import time
-from contextlib import ExitStack
+from contextlib import ExitStack, nullcontext
 
 from .config import WORKFLOW_VERSION, author_policy
 from .context import AUTO_COMPACT_TOKENS, validate_compaction_tokens
@@ -13,7 +14,7 @@ from .exclude_integration import comparison_view
 from .host import Fatal, Host, execute_child, git, git_execution, save_json, snapshot, relative_path
 from .host_tools import HOST_TOOLS, HostTools
 from .provider import Codex, Pi, clean_env
-from .review import (DEFAULT_PRIORITIES, DEFAULT_MAX_REVIEW_LOOPS, format_findings,
+from .review import (DEFAULT_PRIORITIES, DEFAULT_MAX_REVIEW_LOOPS, BLIND_REVIEW_POLICY, BlindReview, format_findings,
                      normalize_priorities, normalize_review_loops, REVIEW_TOOLS, ReviewTools, review_instructions)
 from .loops import FeatureProgress, NeedsAttention, POLICY_VERSION, WorkLimitReached, loop_policy, work_limit_error
 from . import scb, evaluation
@@ -169,6 +170,8 @@ def run(benchmark, factors, output, seconds, max_raw, max_turns,
               "loop_policy": progress_policy, "loop_policy_version": POLICY_VERSION, "loop_flags": [], "workflow_version": WORKFLOW_VERSION,
               "feature_count": len(benchmark["features"]), "check_count": len(benchmark["checks"]),
               "stages": [], "checkpoints": [], "checks": [], "factor_activations": {}}
+    if not review_issue_description and max_review_loops:
+        result["blind_review_policy"] = BLIND_REVIEW_POLICY
     if scb_check is not None:
         result["scb_check"] = scb.pending()
     evaluator = evaluation.make_evaluator(benchmark, output, result)
@@ -195,6 +198,8 @@ def run(benchmark, factors, output, seconds, max_raw, max_turns,
         manifest["workflow_version"] = WORKFLOW_VERSION
         manifest["review_priorities"] = list(review_priorities)
         manifest["review_issue_description"] = review_issue_description
+        if "blind_review_policy" in result:
+            manifest["blind_review_policy"] = result["blind_review_policy"]
         manifest["max_review_loops"] = max_review_loops
         manifest["compaction_tokens"] = compaction_tokens
         manifest["pi_vanilla"] = pi_vanilla
@@ -364,6 +369,7 @@ def run(benchmark, factors, output, seconds, max_raw, max_turns,
             try:
                 author_stop = implement(author_prompt(benchmark, feature, factors), name+"-implement")
                 reviewer = None
+                blind = None
                 review_tools = ReviewTools(output / (name + "-reviews"), review_priorities,
                     repo=checkout, deadline=deadline,
                     command_env=getattr(provider, "command_env", None),
@@ -398,25 +404,39 @@ def run(benchmark, factors, output, seconds, max_raw, max_turns,
                                      "No further automatic repairs will follow a rejection.")
                     round_number += 1
                     provider.work_limits = progress.limits(observed_raw(), reviewing=True)
-                    if reviewer is None:
-                        reviewer = start_agent(f"{name}-review-{round_number}", writable=False,
-                                               tools=REVIEW_TOOLS, tool_handler=review_tools.execute)
+                    if not review_issue_description:
+                        if blind is None:
+                            folder = git_context.enter_context(tempfile.TemporaryDirectory(prefix="agent-lab-blind-review-"))
+                            blind = BlindReview(checkout, feature_base, Path(folder) / "checkout")
+                        blind.update(git(checkout, "rev-parse", "HEAD").decode().strip())
+                        review_tools.repo = blind.repo
+                        root = Path(__file__).resolve().parents[1]
+                        blocked_paths = [output, benchmark["repo"], root / "runs", root / "benchmarks"]
+                    with blind.activate(provider, blocked_paths) if blind else nullcontext():
+                        if reviewer is None:
+                            reviewer = start_agent(f"{name}-review-{round_number}", writable=False,
+                                                   tools=REVIEW_TOOLS, tool_handler=review_tools.execute)
                     before = snapshot(checkout)
+                    review_snapshot = snapshot(blind.repo) if blind else None
                     no_changes = git(checkout, "rev-parse", "HEAD").decode().strip() == feature_base
                     review_label = f"{name}-review-{round_number}"
-                    review_id = review_tools.begin(review_label, before["head"])
+                    review_id = review_tools.begin(f"review-{round_number}" if blind else review_label,
+                                                   blind.head if blind else before["head"])
                     try:
-                        reply = turn(reviewer, review_prompt(benchmark, feature, feature_base, evidence, no_changes,
-                                     review_priorities=review_priorities, review_id=review_id,
-                                     review_issue_description=review_issue_description), review_label, writable=False)
-                        if snapshot(checkout) != before:
+                        with blind.activate(provider, blocked_paths) if blind else nullcontext():
+                            if blind:
+                                review_tools.command_env = getattr(provider, "command_env", None)
+                            reply = turn(reviewer, review_prompt(benchmark, feature, blind.base if blind else feature_base, evidence, no_changes,
+                                         review_priorities=review_priorities, review_id=review_id,
+                                         review_issue_description=review_issue_description), review_label, writable=False)
+                        if snapshot(checkout) != before or (blind and snapshot(blind.repo) != review_snapshot):
                             failure_origin = "agent"
                             raise Fatal("reviewer changed source, index or history")
                         decision = review_tools.decision or {
                             "approved": None, "blocking_findings": [], "advisory_findings": [],
                             "incomplete_reason": "Reviewer finished without an accepted submit_review verdict"}
                     except WorkLimitReached as exc:
-                        if snapshot(checkout) != before:
+                        if snapshot(checkout) != before or (blind and snapshot(blind.repo) != review_snapshot):
                             failure_origin = "agent"
                             raise Fatal("reviewer changed source, index or history")
                         flag = author_stop or record_stop(exc.signal, review_label)
@@ -428,6 +448,8 @@ def run(benchmark, factors, output, seconds, max_raw, max_turns,
                             progress.save_flag(author_stop)
                         raise
                     review = {"feature": name, "round": round_number, "head": before["head"], **decision}
+                    if blind:
+                        review.update(blind_base=blind.base, blind_head=blind.head)
                     result["reviews"].append(review)
                     if decision["approved"] is None:
                         progress.reviews.append(review)
