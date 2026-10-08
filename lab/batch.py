@@ -97,6 +97,8 @@ def run_batch(benchmark, factors, output, repeat, parallel, *, seconds, max_raw,
             'loop_options': progress_policy, 'preset': preset}}
     if executor is not None:
         config['options']['executor'] = str(Path(executor).resolve())
+    if not review_issue_description and getattr(benchmark, 'source_path', None) is not None:
+        config['options']['_review_private_paths'] = [str(benchmark.source_path)]
     config_path = output/'batch-input.json'
     save_json(config_path, config)
     prefix = _worker_command or [sys.executable, '-m', 'lab.batch']

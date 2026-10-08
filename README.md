@@ -39,7 +39,8 @@ parallel runs.
 
 Blind reviews use a separate repository with neutral `Baseline` and `Submission`
 commits and cannot read the original checkout, benchmark definitions, or run
-artifacts. The policy is recorded as `isolated-review-trees-v1`. With
+artifacts, including custom benchmark locations, sibling runs, and runner Git
+objects. The policy is recorded as `isolated-review-trees-v2`. With
 `--review-issue-description`, the original review prompt, history, and tools are
 preserved. Historical results and their grading inputs remain unchanged; the
 new blind policy is a separate experimental condition.

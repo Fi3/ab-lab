@@ -14,7 +14,7 @@ from .exclude_integration import comparison_view
 from .host import Fatal, Host, execute_child, git, git_execution, save_json, snapshot, relative_path
 from .host_tools import HOST_TOOLS, HostTools
 from .provider import Codex, Pi, clean_env
-from .review import (DEFAULT_PRIORITIES, DEFAULT_MAX_REVIEW_LOOPS, BLIND_REVIEW_POLICY, BlindReview, format_findings,
+from .review import (DEFAULT_PRIORITIES, DEFAULT_MAX_REVIEW_LOOPS, BLIND_REVIEW_POLICY, BlindReview, blind_review_paths, format_findings,
                      normalize_priorities, normalize_review_loops, REVIEW_TOOLS, ReviewTools, review_instructions)
 from .loops import FeatureProgress, NeedsAttention, POLICY_VERSION, WorkLimitReached, loop_policy, work_limit_error
 from . import scb, evaluation
@@ -108,7 +108,7 @@ def run(benchmark, factors, output, seconds, max_raw, max_turns,
         review_priorities=DEFAULT_PRIORITIES, max_review_loops=DEFAULT_MAX_REVIEW_LOOPS,
         review_issue_description=False,
         loop_options=None, preset=None, compaction_tokens=AUTO_COMPACT_TOKENS, _base_commit=None,
-        executor=None, _admitted_output=False, pi_vanilla=False):
+        executor=None, _admitted_output=False, pi_vanilla=False, _review_private_paths=()):
     if seconds <= 0 or max_raw <= 0 or max_turns <= 0:
         raise ValueError("positive wall-time, observed-token and turn limits are required")
     if not math.isfinite(scb_seconds) or scb_seconds <= 0:
@@ -124,6 +124,10 @@ def run(benchmark, factors, output, seconds, max_raw, max_turns,
             executable = "pi"
     if pi_vanilla and backend is not Pi and harness != 'pi':
         raise ValueError('--pi-vanilla requires --harness pi')
+    if not review_issue_description:
+        _review_private_paths = list(_review_private_paths)
+        if getattr(benchmark, "source_path", None) is not None:
+            _review_private_paths.append(str(benchmark.source_path))
     if getattr(backend, "supports_compaction_tokens", False) is not True:
         name = harness or getattr(backend, "__name__", type(backend).__name__)
         raise ValueError(f"harness {name!r} does not support setting compaction tokens")
@@ -141,7 +145,8 @@ def run(benchmark, factors, output, seconds, max_raw, max_turns,
             'review_priorities': list(review_priorities), 'max_review_loops': max_review_loops,
             'review_issue_description': review_issue_description,
             'loop_options': loop_options, 'preset': preset, 'compaction_tokens': compaction_tokens,
-            'pi_vanilla': pi_vanilla},
+            'pi_vanilla': pi_vanilla,
+            **({'_review_private_paths': _review_private_paths} if not review_issue_description and _review_private_paths else {})},
             base=_base_commit)
     fixture = benchmark.get("after_read")
     if fixture and not factors["C17"]:
@@ -411,7 +416,7 @@ def run(benchmark, factors, output, seconds, max_raw, max_turns,
                         blind.update(git(checkout, "rev-parse", "HEAD").decode().strip())
                         review_tools.repo = blind.repo
                         root = Path(__file__).resolve().parents[1]
-                        blocked_paths = [output, benchmark["repo"], root / "runs", root / "benchmarks"]
+                        blocked_paths = blind_review_paths(root, benchmark, output, _review_private_paths)
                     with blind.activate(provider, blocked_paths) if blind else nullcontext():
                         if reviewer is None:
                             reviewer = start_agent(f"{name}-review-{round_number}", writable=False,
