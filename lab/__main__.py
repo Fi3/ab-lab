@@ -68,6 +68,8 @@ def main():
         p.add_argument("--review-priorities", type=review_priorities, default=DEFAULT_PRIORITIES,
                        metavar="P0,P1,P2",
                        help="comma-separated review priorities that require repairs (P0 through P3; default: P0,P1,P2)")
+        p.add_argument("--review-issue-description", action="store_true",
+                       help="include the issue description and author evidence in reviews (default: neither)")
         p.add_argument("--max-review-loops", type=review_loops, default=None,
                        metavar="N", help="maximum reviews per feature; repair blocking findings after each review, then continue (default: 3 for all, 0 for native; 0 disables review)")
         progress = p.add_mutually_exclusive_group()
@@ -135,6 +137,7 @@ def main():
                 value = {"benchmark": benchmark, "factors": factors, "preset": args.preset, "model": model, "effort": args.effort,
                          "pi_vanilla": args.pi_vanilla,
                          "review_priorities": list(args.review_priorities),
+                         "review_issue_description": args.review_issue_description,
                          "max_review_loops": args.max_review_loops,
                          "compaction_tokens": args.compaction_tokens,
                          "loop_policy": progress_policy,
@@ -161,6 +164,7 @@ def main():
                         model=model, effort=args.effort, executable=executable, harness=args.harness,
                         scb_check=args.scb_check, scb_seconds=args.scb_seconds, child_codex=args.codex,
                         review_priorities=args.review_priorities,
+                        review_issue_description=args.review_issue_description,
                         max_review_loops=args.max_review_loops, preset=args.preset,
                         compaction_tokens=args.compaction_tokens,
                         loop_options=progress_policy, executor=args.executor, pi_vanilla=args.pi_vanilla)
@@ -169,6 +173,7 @@ def main():
                                 model, args.effort, executable, backend=backend, harness=args.harness,
                                 scb_check=args.scb_check, scb_seconds=args.scb_seconds, child_codex=args.codex,
                                 review_priorities=args.review_priorities,
+                                review_issue_description=args.review_issue_description,
                                 max_review_loops=args.max_review_loops, preset=args.preset,
                                 compaction_tokens=args.compaction_tokens,
                                 loop_options=progress_policy, executor=args.executor, pi_vanilla=args.pi_vanilla)

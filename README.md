@@ -33,6 +33,18 @@ instance of the same bench.
 The above command also instruct the runner to run the bench with specific condition in
 particular all conditions but C08,C16,C17.
 
+Reviewers receive no issue description or author evidence by default. Add
+`--review-issue-description` to include both. This also applies to `plan` and
+parallel runs.
+
+Blind reviews use a separate repository with neutral `Baseline` and `Submission`
+commits and cannot read the original checkout, benchmark definitions, or run
+artifacts, including custom benchmark locations, sibling runs, and runner Git
+objects. The policy is recorded as `isolated-review-trees-v2`. With
+`--review-issue-description`, the original review prompt, history, and tools are
+preserved. Historical results and their grading inputs remain unchanged; the
+new blind policy is a separate experimental condition.
+
 In order to have a baseline `--preset native` can be used. This will remove all runner interventions
 and run the harness in native mode without limitation (for example can spwan all the sub-agent
 that want). Of course when native mode is one there is not a patch/review loop enforced or and

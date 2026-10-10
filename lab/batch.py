@@ -24,6 +24,7 @@ def failure(config, output, error, *, status='failed', duration=None):
     return {'schema': 'agent-behavior-lab/v1', 'status': status, 'output': str(output),
         'benchmark': benchmark['name'], 'factors': config['factors'], 'preset': config['options'].get('preset'),
         'review_priorities': list(config['options'].get('review_priorities', DEFAULT_PRIORITIES)),
+        'review_issue_description': config['options'].get('review_issue_description', False),
         'max_review_loops': config['options'].get('max_review_loops', DEFAULT_MAX_REVIEW_LOOPS),
         'compaction_tokens': config['options']['compaction_tokens'],
         'pi_vanilla': config['options'].get('pi_vanilla', False),
@@ -55,6 +56,7 @@ def run_batch(benchmark, factors, output, repeat, parallel, *, seconds, max_raw,
               model='gpt-5.5', effort='xhigh', executable='codex', harness=None,
               scb_check=None, scb_seconds=300, child_codex='codex',
               review_priorities=DEFAULT_PRIORITIES, max_review_loops=DEFAULT_MAX_REVIEW_LOOPS,
+              review_issue_description=False,
               loop_options=None, preset=None, compaction_tokens=AUTO_COMPACT_TOKENS,
               _worker_command=None, executor=None, pi_vanilla=False):
     review_priorities = normalize_priorities(review_priorities)
@@ -88,12 +90,15 @@ def run_batch(benchmark, factors, output, repeat, parallel, *, seconds, max_raw,
             'model': model, 'effort': effort, 'executable': executable, 'harness': harness, 'child_codex': child_codex,
             'scb_check': str(scb_check) if scb_check is not None else None, 'scb_seconds': scb_seconds,
             'review_priorities': list(review_priorities),
+            'review_issue_description': review_issue_description,
             'max_review_loops': max_review_loops,
             'compaction_tokens': compaction_tokens,
             'pi_vanilla': pi_vanilla,
             'loop_options': progress_policy, 'preset': preset}}
     if executor is not None:
         config['options']['executor'] = str(Path(executor).resolve())
+    if not review_issue_description and getattr(benchmark, 'source_path', None) is not None:
+        config['options']['_review_private_paths'] = [str(benchmark.source_path)]
     config_path = output/'batch-input.json'
     save_json(config_path, config)
     prefix = _worker_command or [sys.executable, '-m', 'lab.batch']
@@ -179,6 +184,7 @@ def run_batch(benchmark, factors, output, repeat, parallel, *, seconds, max_raw,
                 'output': str(output), 'benchmark': benchmark['name'], 'base_commit': base,
                 'factors': factors, 'preset': preset, 'repeat': repeat, 'parallel': parallel,
                 'review_priorities': list(review_priorities),
+                'review_issue_description': review_issue_description,
                 'max_review_loops': max_review_loops,
                 'compaction_tokens': compaction_tokens,
                 'pi_vanilla': pi_vanilla,

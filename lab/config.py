@@ -16,6 +16,15 @@ FACTORS = {
 }
 
 WORKFLOW_VERSION = "benchmark-native-delegation-no-integration-v5"
+
+
+class Benchmark(dict):
+    """Keep the input location out of serialized benchmark definitions."""
+    def __init__(self, data, source_path):
+        super().__init__(data)
+        self.source_path = source_path
+
+
 def settings(overrides):
     if not isinstance(overrides, dict):
         raise ValueError("factors must be an object of C identifiers and booleans")
@@ -110,4 +119,4 @@ def load_benchmark(path):
                 "See docs/SWE_MILESTONE.md."
             ) from exc
         raise
-    return data
+    return Benchmark(data, path)

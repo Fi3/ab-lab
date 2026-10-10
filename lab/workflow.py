@@ -4,8 +4,9 @@ import json
 import math
 from pathlib import Path
 import subprocess
+import tempfile
 import time
-from contextlib import ExitStack
+from contextlib import ExitStack, nullcontext
 
 from .config import WORKFLOW_VERSION, author_policy
 from .context import AUTO_COMPACT_TOKENS, validate_compaction_tokens
@@ -13,7 +14,7 @@ from .exclude_integration import comparison_view
 from .host import Fatal, Host, execute_child, git, git_execution, save_json, snapshot, relative_path
 from .host_tools import HOST_TOOLS, HostTools
 from .provider import Codex, Pi, clean_env
-from .review import (DEFAULT_PRIORITIES, DEFAULT_MAX_REVIEW_LOOPS, format_findings,
+from .review import (DEFAULT_PRIORITIES, DEFAULT_MAX_REVIEW_LOOPS, BLIND_REVIEW_POLICY, BlindReview, blind_review_paths, format_findings,
                      normalize_priorities, normalize_review_loops, REVIEW_TOOLS, ReviewTools, review_instructions)
 from .loops import FeatureProgress, NeedsAttention, POLICY_VERSION, WorkLimitReached, loop_policy, work_limit_error
 from . import scb, evaluation
@@ -41,13 +42,18 @@ def author_prompt(benchmark, feature, factors, findings=None):
     return "\n\n".join(parts)
 
 
-def review_prompt(benchmark, feature, base, evidence, no_changes=False, *, review_priorities=DEFAULT_PRIORITIES, review_id=None):
+def review_prompt(benchmark, feature, base, evidence, no_changes=False, *, review_priorities=DEFAULT_PRIORITIES, review_id=None,
+                  review_issue_description=False):
     instructions = review_instructions(review_priorities)
     if no_changes:
         scope = f"There are no changes since {base}. Verify whether the requested behavior is already satisfied; an empty diff is not approval."
+        if not review_issue_description:
+            scope = f"There are no changes since {base}. Review the current code for defects; an empty diff does not establish that the requested behavior is already satisfied."
     else:
         scope = f"Inspect {base}..HEAD for defects introduced by this feature. Exclude unrelated pre-existing issues."
-    return f"Independently review the following request. The submission is read-only; use writable temporary scratch space or a scratch copy for tests that create files.\nReview target: {review_id}\n{scope}\n\n{feature['request']}\n\n{evidence}\n{instructions}"
+    task = "Independently review the following request." if review_issue_description else "Independently review the code changes."
+    context = f"\n\n{feature['request']}\n\n{evidence}" if review_issue_description else ""
+    return f"{task} The submission is read-only; use writable temporary scratch space or a scratch copy for tests that create files.\nReview target: {review_id}\n{scope}{context}\n{instructions}"
 
 
 def after_read_fixture(host, fixture, output, deadline):
@@ -100,8 +106,9 @@ def run(benchmark, factors, output, seconds, max_raw, max_turns,
         model="gpt-5.5", effort="xhigh", executable="codex", backend=Codex, *,
         harness=None, scb_check=None, scb_seconds=300, child_codex="codex",
         review_priorities=DEFAULT_PRIORITIES, max_review_loops=DEFAULT_MAX_REVIEW_LOOPS,
+        review_issue_description=False,
         loop_options=None, preset=None, compaction_tokens=AUTO_COMPACT_TOKENS, _base_commit=None,
-        executor=None, _admitted_output=False, pi_vanilla=False):
+        executor=None, _admitted_output=False, pi_vanilla=False, _review_private_paths=()):
     if seconds <= 0 or max_raw <= 0 or max_turns <= 0:
         raise ValueError("positive wall-time, observed-token and turn limits are required")
     if not math.isfinite(scb_seconds) or scb_seconds <= 0:
@@ -117,6 +124,10 @@ def run(benchmark, factors, output, seconds, max_raw, max_turns,
             executable = "pi"
     if pi_vanilla and backend is not Pi and harness != 'pi':
         raise ValueError('--pi-vanilla requires --harness pi')
+    if not review_issue_description:
+        _review_private_paths = list(_review_private_paths)
+        if getattr(benchmark, "source_path", None) is not None:
+            _review_private_paths.append(str(benchmark.source_path))
     if getattr(backend, "supports_compaction_tokens", False) is not True:
         name = harness or getattr(backend, "__name__", type(backend).__name__)
         raise ValueError(f"harness {name!r} does not support setting compaction tokens")
@@ -132,8 +143,10 @@ def run(benchmark, factors, output, seconds, max_raw, max_turns,
             'scb_check': str(scb_check) if scb_check is not None else None,
             'scb_seconds': scb_seconds, 'child_codex': child_codex,
             'review_priorities': list(review_priorities), 'max_review_loops': max_review_loops,
+            'review_issue_description': review_issue_description,
             'loop_options': loop_options, 'preset': preset, 'compaction_tokens': compaction_tokens,
-            'pi_vanilla': pi_vanilla},
+            'pi_vanilla': pi_vanilla,
+            **({'_review_private_paths': _review_private_paths} if not review_issue_description and _review_private_paths else {})},
             base=_base_commit)
     fixture = benchmark.get("after_read")
     if fixture and not factors["C17"]:
@@ -155,12 +168,15 @@ def run(benchmark, factors, output, seconds, max_raw, max_turns,
     result = {"schema": "agent-behavior-lab/v1", "status": "failed", "factors": factors,
               "output": str(output), "benchmark": benchmark["name"], "preset": preset,
               "max_review_loops": max_review_loops,
+              "review_issue_description": review_issue_description,
               "compaction_tokens": compaction_tokens,
               "pi_vanilla": pi_vanilla,
               "review_priorities": list(review_priorities), "reviews": [],
               "loop_policy": progress_policy, "loop_policy_version": POLICY_VERSION, "loop_flags": [], "workflow_version": WORKFLOW_VERSION,
               "feature_count": len(benchmark["features"]), "check_count": len(benchmark["checks"]),
               "stages": [], "checkpoints": [], "checks": [], "factor_activations": {}}
+    if not review_issue_description and max_review_loops:
+        result["blind_review_policy"] = BLIND_REVIEW_POLICY
     if scb_check is not None:
         result["scb_check"] = scb.pending()
     evaluator = evaluation.make_evaluator(benchmark, output, result)
@@ -186,6 +202,9 @@ def run(benchmark, factors, output, seconds, max_raw, max_turns,
         manifest['execution_environment'] = result['execution_environment']
         manifest["workflow_version"] = WORKFLOW_VERSION
         manifest["review_priorities"] = list(review_priorities)
+        manifest["review_issue_description"] = review_issue_description
+        if "blind_review_policy" in result:
+            manifest["blind_review_policy"] = result["blind_review_policy"]
         manifest["max_review_loops"] = max_review_loops
         manifest["compaction_tokens"] = compaction_tokens
         manifest["pi_vanilla"] = pi_vanilla
@@ -355,6 +374,7 @@ def run(benchmark, factors, output, seconds, max_raw, max_turns,
             try:
                 author_stop = implement(author_prompt(benchmark, feature, factors), name+"-implement")
                 reviewer = None
+                blind = None
                 review_tools = ReviewTools(output / (name + "-reviews"), review_priorities,
                     repo=checkout, deadline=deadline,
                     command_env=getattr(provider, "command_env", None),
@@ -389,24 +409,39 @@ def run(benchmark, factors, output, seconds, max_raw, max_turns,
                                      "No further automatic repairs will follow a rejection.")
                     round_number += 1
                     provider.work_limits = progress.limits(observed_raw(), reviewing=True)
-                    if reviewer is None:
-                        reviewer = start_agent(f"{name}-review-{round_number}", writable=False,
-                                               tools=REVIEW_TOOLS, tool_handler=review_tools.execute)
+                    if not review_issue_description:
+                        if blind is None:
+                            folder = git_context.enter_context(tempfile.TemporaryDirectory(prefix="agent-lab-blind-review-"))
+                            blind = BlindReview(checkout, feature_base, Path(folder) / "checkout")
+                        blind.update(git(checkout, "rev-parse", "HEAD").decode().strip())
+                        review_tools.repo = blind.repo
+                        root = Path(__file__).resolve().parents[1]
+                        blocked_paths = blind_review_paths(root, benchmark, output, _review_private_paths)
+                    with blind.activate(provider, blocked_paths) if blind else nullcontext():
+                        if reviewer is None:
+                            reviewer = start_agent(f"{name}-review-{round_number}", writable=False,
+                                                   tools=REVIEW_TOOLS, tool_handler=review_tools.execute)
                     before = snapshot(checkout)
+                    review_snapshot = snapshot(blind.repo) if blind else None
                     no_changes = git(checkout, "rev-parse", "HEAD").decode().strip() == feature_base
                     review_label = f"{name}-review-{round_number}"
-                    review_id = review_tools.begin(review_label, before["head"])
+                    review_id = review_tools.begin(f"review-{round_number}" if blind else review_label,
+                                                   blind.head if blind else before["head"])
                     try:
-                        reply = turn(reviewer, review_prompt(benchmark, feature, feature_base, evidence, no_changes,
-                                     review_priorities=review_priorities, review_id=review_id), review_label, writable=False)
-                        if snapshot(checkout) != before:
+                        with blind.activate(provider, blocked_paths) if blind else nullcontext():
+                            if blind:
+                                review_tools.command_env = getattr(provider, "command_env", None)
+                            reply = turn(reviewer, review_prompt(benchmark, feature, blind.base if blind else feature_base, evidence, no_changes,
+                                         review_priorities=review_priorities, review_id=review_id,
+                                         review_issue_description=review_issue_description), review_label, writable=False)
+                        if snapshot(checkout) != before or (blind and snapshot(blind.repo) != review_snapshot):
                             failure_origin = "agent"
                             raise Fatal("reviewer changed source, index or history")
                         decision = review_tools.decision or {
                             "approved": None, "blocking_findings": [], "advisory_findings": [],
                             "incomplete_reason": "Reviewer finished without an accepted submit_review verdict"}
                     except WorkLimitReached as exc:
-                        if snapshot(checkout) != before:
+                        if snapshot(checkout) != before or (blind and snapshot(blind.repo) != review_snapshot):
                             failure_origin = "agent"
                             raise Fatal("reviewer changed source, index or history")
                         flag = author_stop or record_stop(exc.signal, review_label)
@@ -418,6 +453,8 @@ def run(benchmark, factors, output, seconds, max_raw, max_turns,
                             progress.save_flag(author_stop)
                         raise
                     review = {"feature": name, "round": round_number, "head": before["head"], **decision}
+                    if blind:
+                        review.update(blind_base=blind.base, blind_head=blind.head)
                     result["reviews"].append(review)
                     if decision["approved"] is None:
                         progress.reviews.append(review)
@@ -477,7 +514,8 @@ def run(benchmark, factors, output, seconds, max_raw, max_turns,
                           "repair_attempts": progress.repairs,
                           "status": "approved" if approved else "review_skipped" if max_review_loops == 0 else "review_limit_reached",
                           "review_approved": True if approved else None,
-                          "already_satisfied": no_changes and approved, "observed_raw_tokens": observed_raw() - progress.raw_start,
+                          "already_satisfied": None if no_changes and approved and not review_issue_description else no_changes and approved,
+                          "observed_raw_tokens": observed_raw() - progress.raw_start,
                           "loop_flags": [f["artifact"] for f in progress.flags]}
             if stopped_flag:
                 checkpoint.update(status="needs_attention", review_approved=stopped_flag["review_approved"],

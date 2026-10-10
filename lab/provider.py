@@ -199,7 +199,8 @@ class ChildAccounting:
         return self.commands.sandbox.command(True, argv)
 
     def review_command_argv(self, checkout, argv):
-        sandbox = self.commands.sandbox
+        # Blind reviews temporarily activate their own checkout and sandbox.
+        sandbox = self.sandbox.execution if isinstance(self.sandbox, PiSandbox) else self.sandbox
         isolated = CommandSandbox(checkout, sandbox.codex,
             blocked_paths=sandbox.blocked_paths, read_only_paths=[self.repo])
         return isolated.command(True, argv, protect_git=True)
@@ -521,6 +522,8 @@ class Codex(ChildAccounting):
 
     def start_thread(self, writable=False, tools=None, tool_handler=None):
         options = self.sandbox.thread_options(writable)
+        options['config'].update({"shell_environment_policy.set." + key: value
+                                  for key, value in getattr(self.sandbox, "shell_environment", {}).items()})
         if getattr(self, 'delegation_disabled', True) or not writable:
             options['config'].update({'features.multi_agent': False, 'features.multi_agent_v2': False})
         options['config']['model_reasoning_effort'] = self.effort

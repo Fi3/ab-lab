@@ -2,16 +2,22 @@
 import copy
 import hashlib
 import json
+import subprocess
 import tempfile
 import time
 from pathlib import Path
+from contextlib import contextmanager
 
 from .host import COMMAND_SECONDS, execute_child, git, render_output, snapshot, save_json
+from .sandbox import CommandSandbox
+from .pi_sandbox import PiSandbox
+from .environment import clean_env
 
 
 PRIORITIES = ("P0", "P1", "P2", "P3")
 DEFAULT_PRIORITIES = PRIORITIES[:3]
 DEFAULT_MAX_REVIEW_LOOPS = 3
+BLIND_REVIEW_POLICY = "isolated-review-trees-v2"
 REVIEW_TOOLS = [{
     "name": "submit_review",
     "description": "Submit the final review of the current review_id. The runner determines approval from the findings and configured priorities.",
@@ -48,6 +54,82 @@ def normalize_priorities(value):
     if not values or any(item not in PRIORITIES for item in values):
         raise ValueError("review priorities must be a nonempty set of P0, P1, P2, P3")
     return tuple(priority for priority in PRIORITIES if priority in values)
+
+
+class BlindReview:
+    """Copy only trees and blobs; original commit objects never enter this repo."""
+    def __init__(self, source, base, repo):
+        self.source, self.repo = source, Path(repo)
+        self.base_tree = git(source, "rev-parse", base + "^{tree}").decode().strip()
+        self.base = None
+        self.repo.mkdir()
+        object_format = git(source, "rev-parse", "--show-object-format").decode().strip()
+        self.env = {"GIT_AUTHOR_NAME": "Reviewer", "GIT_AUTHOR_EMAIL": "reviewer@example.invalid",
+                    "GIT_COMMITTER_NAME": "Reviewer", "GIT_COMMITTER_EMAIL": "reviewer@example.invalid",
+                    "GIT_AUTHOR_DATE": "2000-01-01T00:00:00+0000", "GIT_COMMITTER_DATE": "2000-01-01T00:00:00+0000",
+                    "GIT_CONFIG_NOSYSTEM": "1", "GIT_CONFIG_GLOBAL": "/dev/null", "GIT_CONFIG_COUNT": "0"}
+        git(self.repo, "init", "--quiet", "--template=", "--initial-branch=review",
+            "--object-format=" + object_format, extra_env=self.env)
+
+    def update(self, head):
+        tree = git(self.source, "rev-parse", head + "^{tree}").decode().strip()
+        objects = git(self.source, "rev-list", "--objects", "--no-object-names", self.base_tree, tree)
+        pack = git(self.source, "pack-objects", "--stdout", input=objects)
+        git(self.repo, "index-pack", "--stdin", input=pack, extra_env=self.env)
+        if self.base is None:
+            self.base = git(self.repo, "commit-tree", self.base_tree, "-m", "Baseline", extra_env=self.env).decode().strip()
+        self.head = self.base if tree == self.base_tree else git(
+            self.repo, "commit-tree", tree, "-p", self.base, "-m", "Submission", extra_env=self.env).decode().strip()
+        git(self.repo, "checkout", "--quiet", "--force", "--detach", self.head, extra_env=self.env)
+        return self.head
+
+    @contextmanager
+    def activate(self, provider, blocked_paths):
+        """Switch only the review's working directory and tool permissions."""
+        original_repo = provider.repo
+        original_sandbox = getattr(provider, "sandbox", None)
+        original_env = getattr(provider, "command_env", None)
+        try:
+            provider.repo = self.repo
+            if original_sandbox is not None:
+                execution = original_sandbox.execution if isinstance(original_sandbox, PiSandbox) else original_sandbox
+                isolated = CommandSandbox(self.repo, execution.codex,
+                    blocked_paths=[*execution.blocked_paths, *execution.read_only_blocked_paths, *blocked_paths])
+                isolated.shell_environment = {"BASH_ENV": "/dev/null"}
+                if isinstance(original_sandbox, PiSandbox):
+                    provider.sandbox = copy.copy(original_sandbox)
+                    provider.sandbox.repo, provider.sandbox.execution = self.repo, isolated
+                else:
+                    provider.sandbox = isolated
+                provider.command_env = {**(original_env or {}), "BASH_ENV": "/dev/null"}
+            yield
+        finally:
+            provider.repo = original_repo
+            if original_sandbox is not None:
+                provider.sandbox, provider.command_env = original_sandbox, original_env
+
+
+def blind_review_paths(root, benchmark, output, private_paths=()):
+    """Hide input definitions, experiment artifacts, and their Git stores."""
+    private_paths = [Path(path) for path in private_paths]
+    paths = [output, Path(benchmark["repo"]), root / "benchmarks", root / "runs",
+             root / "experiments", root / ".git", *private_paths]
+    shared = {root, *root.parents, Path.home(), *Path.home().parents, Path(tempfile.gettempdir())}
+    for folder in {output.parent, *(path.parent for path in private_paths)}:
+        if folder not in shared:
+            paths.append(folder)
+        elif folder.is_dir():
+            # Do not hide the runner, installed tools, or all temporary scratch
+            # space when outputs/inputs are directly in a shared directory.
+            paths.extend(path for path in folder.iterdir() if path.is_dir() and any(
+                (path / name).is_file() for name in ("manifest.json", "result.json", "batch-input.json")))
+    for folder in {root, Path(benchmark["repo"]), *(path.parent for path in private_paths)}:
+        if folder.is_dir():
+            probe = subprocess.run(["git", "-C", str(folder), "rev-parse", "--path-format=absolute", "--git-common-dir"],
+                                   capture_output=True, env=clean_env(), timeout=30)
+            if probe.returncode == 0:
+                paths.append(Path(probe.stdout.decode().strip()))
+    return paths
 
 
 def validate_review(arguments, review_id, priorities=DEFAULT_PRIORITIES):
