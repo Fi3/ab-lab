@@ -9,6 +9,8 @@ possible. (tooling, how to execute things, any file that should never be changed
 
 Always reuse the stile and the conventions used by the files that you are changing.
 
+Use CamelCase for branch names.
+
 ## Commit message rules
 Every commit message must clearly say what was done and why it was done. When adding new features it
 must describe which is the underling logic. Never include things that can be seen with a git diff,

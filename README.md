@@ -523,6 +523,7 @@ The following runnable definitions are in `benchmarks/`:
 | [example.json](benchmarks/example.json) | Add clamp and parity functions to a small Python project. |
 | [conflict-example.json](benchmarks/conflict-example.json) | Add an increment function after a declared source change. Requires C17. |
 | [work-leaf.json](benchmarks/work-leaf.json) | Add visual selection, command routing, and review completion behavior. Requires the specified local Work Leaf repository. |
+| [dmnd-new-sri.json](benchmarks/dmnd-new-sri.json) | Migrate the DEMAND CLI to the new SRI library. Check mining, dependency sources, original source imports, and message allocations. |
 | [scb-code-search.json](benchmarks/scb-code-search.json) | Complete the SlopCodeBench code search problem. |
 | [scb-code-search-smoke.json](benchmarks/scb-code-search-smoke.json) | Complete only the first code search checkpoint. |
 | [scb-log-query.json](benchmarks/scb-log-query.json) | Complete the SlopCodeBench log query problem. |
@@ -537,6 +538,114 @@ The following runnable definitions are in `benchmarks/`:
 | [swe-milestone-go-zero.json](benchmarks/swe-milestone-go-zero.json) | Complete the imported go-zero milestones. |
 
 `swe-milestone-projects.json` is a preparation catalog, not a runnable benchmark.
+
+### DEMAND CLI SRI migration
+
+This benchmark starts at dmnd-client commit
+`4c2a7341d3a9e1b1b46d063770a1e2c3bff005d7`. The task requires
+roles_logic_sv2 from [new-sri](https://github.com/dmnd-pool/new-sri), at commit
+`4f4fcb1d9b035ced1a77cdc020be028f2dca084f`. It requires all existing
+features, no performance regression, and a patch, cleanup, and test loop.
+Copied dependencies must use `vendor/` and enter Git as complete, unchanged upstream source
+before any modifications.
+
+Prepare the source and inspect the plan:
+
+```sh
+python3 -m benchmarks.dmnd_sri_prepare
+python3 -m lab plan benchmarks/dmnd-new-sri.json
+```
+
+Preparation needs Git and access to the pinned GitHub repositories. It stores
+source checkouts and file hashes under `.benchmarks/dmnd-new-sri/`. It does
+not contain a migration solution. The normal `lab run` command also runs
+preparation. Existing source with tracked changes is rejected, not reset.
+Use `--source PATH` with the preparation command to copy the base revision
+from a local repository. Dependency evidence always comes from upstream.
+
+Run the benchmark with the same model and conditions as your other runs:
+
+```sh
+python3 -m lab run benchmarks/dmnd-new-sri.json \
+  --out runs/dmnd-new-sri-01 \
+  --harness codex --model gpt-6-luna --effort xhigh \
+  --preset all --off C08,C16,C17 \
+  --review-priorities P0,P1 \
+  --seconds 14400 --max-raw 50000000 --max-turns 100 \
+  --max-review-loops 3
+```
+
+The coding container has no Docker socket. Its final check validates Cargo
+metadata. After the coding session ends, the independent grader runs the
+supplied `tests/Dockerfile` build and the mining container on the host. It
+uses Linux amd64, `--init`, `--network none`, the current user's UID and GID,
+and a new artifact directory. Each evaluation uses its own image tag and
+container names. Each submitted source tree has a separate Cargo build cache
+to prevent an older binary from being tested. Default limits are 3,600 seconds
+for the build and 1,800 seconds for the mining run, outside the model budget.
+
+A successful final check is insufficient. A pass requires:
+
+- An unchanged mining suite, bundled tools, build script, and Cargo test targets.
+- A successful Docker build and all 18 mining tests, with no ignored tests.
+- Complete evidence for all 17 scenarios, with matching summaries and journals.
+- No panics, failed scenarios, or unexpected process and pool errors.
+- The required new SRI source in both the default and mining-test production
+  dependency graphs, with no old SRI production dependencies. Old dependencies
+  used only by tests are allowed.
+- A complete original import commit for each copied dependency, before edits.
+  The initial supported sources are new-sri and the two DEMAND dependencies
+  pinned by the base Cargo.lock. Other copied sources need separate trusted
+  source evidence before this evaluator can accept them.
+- Zero heap allocations in 10,000 message and frame size checks, and exact
+  protocol bytes in 256 serialization checks.
+
+The grader adds a separate allocation test and a Cargo metadata export to
+its temporary build context. It does not change the submitted source or the
+existing mining tests. The allocation test measures specific operations.
+It does not prove equal latency or throughput for all workloads. The task
+still requires the author to check relevant performance and explain the
+results. Review must also check whether each copied dependency was necessary
+and whether a new local module contains copied code. The source audit checks
+known dependency names and packages under `vendor/`; it cannot determine the
+origin of arbitrary new project code.
+
+Some tests deliberately reject invalid requests or close connections. The
+grader records exact expected diagnostics separately, with scenario evidence
+and bounds on counts. The pinned template provider also logs a failed message
+type lookup before a successful protocol lookup. These known diagnostics
+do not indicate a failed test. Unknown errors and panics still fail grading.
+The report retains both expected diagnostics and rejected errors.
+An old-target share can be rejected while a target change is in progress.
+The grader accepts that rejection only between the recorded target change
+and the first accepted share at the new target, on the same channel and job.
+A valid JD block notice that the fixed test pool does not handle needs
+matching submission, target, template-provider acceptance, and new-tip evidence.
+Known connection-close messages have limits derived from the test's connection
+count. The logs do not record each child exit or shutdown time, so these checks
+cannot prove that every possible runtime fault is absent.
+
+Results are in `dmnd-sri-evaluation.json` and `dmnd-sri/evaluation/` inside
+the run directory. They include process exits, full output, dependency
+evidence, original import commits, scenario artifacts, and allocation results.
+Identical checkpoint and final commits share one evaluation. Missing final
+submissions remain incomplete. Timeouts and grader failures cannot report
+a pass.
+
+To grade an existing committed candidate without starting a model:
+
+```sh
+python3 -m benchmarks.dmnd_sri /path/to/dmnd-client COMMIT \
+  --out runs/dmnd-sri-check
+```
+
+Use a new output directory. Exit status 0 means passed, 1 means a completed
+evaluation rejected the candidate, and 2 means evaluation did not complete.
+Run the benchmark's own verification tests with:
+
+```sh
+python3 -m unittest discover -s tests -p 'test_dmnd*.py' -v
+```
 
 `lab run` prepares SlopCodeBench automatically. To prepare it separately, run:
 

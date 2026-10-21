@@ -7,4 +7,5 @@ Definitions without one of these sections keep their ordinary final checks.
 ADAPTERS = {
     "slopcodebench": "benchmarks.slopcodebench",
     "swe_milestone": "benchmarks.swe_milestone_evaluator",
+    "dmnd_sri": "benchmarks.dmnd_sri",
 }
