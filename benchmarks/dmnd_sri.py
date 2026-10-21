@@ -1,12 +1,10 @@
 """Grade the pinned SRI migration with the mining suite and its complete evidence."""
 import argparse
 import hashlib
-import io
 import json
 import os
 from pathlib import Path
 import subprocess
-import tarfile
 import tomllib
 import uuid
 
@@ -18,6 +16,7 @@ from benchmarks.dmnd_mining_logs import validate_mining
 from benchmarks.dmnd_sri_source import audit_dependencies
 from benchmarks.dmnd_sri_performance import install_harness, validate_performance
 from benchmarks.dmnd_sri_prepare import BASE_REVISION as BASE, dependency_sources, load_setup
+from benchmarks.dmnd_sri_tree import extract_tree
 
 
 VERSION = "dmnd-new-sri-evaluation/v1"
@@ -70,9 +69,7 @@ def source_context(repo, revision, folder):
             raise ValueError("The pinned Cargo targets changed: " + key)
     if manifest.get("build-dependencies", {}).get("toml") != original["build-dependencies"]["toml"]:
         raise ValueError("The pinned transport build dependency changed")
-    folder.mkdir()
-    with tarfile.open(fileobj=io.BytesIO(git(repo, "archive", revision))) as archive:
-        archive.extractall(folder, filter="data")
+    extract_tree(repo, revision, folder)
     performance = install_harness(folder)
     tree = git(repo, "rev-parse", revision + "^{tree}").decode().strip()
     instrument_metadata(folder / "tests/Dockerfile", tree)
@@ -81,7 +78,7 @@ def source_context(repo, revision, folder):
 
 
 def instrument_metadata(dockerfile, tree=None):
-    """Keep the original build and test command; retain its resolved packages."""
+    """Compile both CLI configurations and retain their resolved packages."""
     source = dockerfile.read_text()
     if tree is not None:
         mount = "--mount=type=cache,target=/workspace/target,sharing=locked"
@@ -92,6 +89,12 @@ def instrument_metadata(dockerfile, tree=None):
     marker = "    && strip /out/mining-e2e /out/dmnd-client"
     if source.count(marker) != 1:
         raise ValueError("The pinned Docker build is missing its metadata insertion point")
+    mining_build = "    && cargo test --locked --features mining-e2e --test mining_e2e --no-run -j 4"
+    if source.count(mining_build) != 1:
+        raise ValueError("The pinned mining build command changed")
+    source = source.replace(mining_build,
+                            "    && cargo build --locked --bin dmnd-client -j 4 " + chr(92) + "\n"
+                            + mining_build)
     metadata = "".join("    && cargo metadata --locked --format-version 1 "
                        "--filter-platform x86_64-unknown-linux-gnu " + features
                        + "> /out/" + filename + " " + chr(92) + "\n"

@@ -3,6 +3,8 @@ import contextlib
 import io
 import json
 from pathlib import Path
+import shutil
+import subprocess
 import tempfile
 import unittest
 from unittest.mock import patch
@@ -117,10 +119,19 @@ class SriDockerTests(unittest.TestCase):
     def receipt(self, code=0, timeout=False):
         return {"exit_code": code, "timed_out": timeout, "cancelled_signal": None}
 
-    def test_metadata_instrumentation_preserves_commands_and_valid_continuation(self):
+    def dockerfile(self):
         path = self.root / "Dockerfile"
-        original = "FROM rust AS builder\nRUN true \\\n    && strip /out/mining-e2e /out/dmnd-client\nFROM debian\nENTRYPOINT [\"mining-e2e\"]\n"
-        path.write_text(original)
+        path.write_text("FROM rust AS builder\n"
+                        "RUN --mount=type=cache,target=/workspace/target,sharing=locked true "
+                        + chr(92) + "\n"
+                        "    && cargo test --locked --features mining-e2e --test mining_e2e --no-run -j 4 "
+                        + chr(92) + "\n    && mkdir /out " + chr(92) + "\n"
+                        "    && strip /out/mining-e2e /out/dmnd-client\n"
+                        'FROM debian\nENTRYPOINT ["mining-e2e"]\n')
+        return path
+
+    def test_metadata_instrumentation_preserves_commands_and_valid_continuation(self):
+        path = self.dockerfile()
         sri.instrument_metadata(path)
         changed = path.read_text()
         self.assertNotIn("\n+", changed)
@@ -128,13 +139,51 @@ class SriDockerTests(unittest.TestCase):
         self.assertIn("--features mining-e2e > /out/cargo-mining-metadata.json", changed)
         self.assertIn('ENTRYPOINT ["mining-e2e"]', changed)
         self.assertEqual(changed.count("cargo metadata"), 2)
+        self.assertLess(changed.index("cargo build --locked --bin dmnd-client -j 4"),
+                        changed.index("cargo test --locked --features mining-e2e"))
 
     def test_build_cache_is_separate_for_each_source_tree(self):
-        path = self.root / "Dockerfile"
-        path.write_text("RUN --mount=type=cache,target=/workspace/target,sharing=locked true "
-                        + chr(92) + "\n    && strip /out/mining-e2e /out/dmnd-client\n")
+        path = self.dockerfile()
         sri.instrument_metadata(path, "a" * 40)
         self.assertIn("id=dmnd-sri-" + "a" * 40 + ",target=/workspace/target", path.read_text())
+
+    @unittest.skipUnless(shutil.which("cargo"), "Cargo is required for the compile regression")
+    def test_default_compile_failure_cannot_hide_behind_mining_feature(self):
+        (self.root / "Cargo.toml").write_text(
+            '[package]\nname = "dmnd-client"\nversion = "0.1.0"\nedition = "2021"\n'
+            '[features]\nmining-e2e = []\n')
+        (self.root / "src").mkdir()
+        main = self.root / "src/main.rs"
+        main.write_text('#[cfg(not(feature = "mining-e2e"))]\n'
+                        'compile_error!("default CLI build is broken");\nfn main() {}\n')
+        (self.root / "tests").mkdir()
+        for name in ("mining_e2e", "lab_sri_performance"):
+            (self.root / "tests" / (name + ".rs")).write_text("#[test]\nfn works() {}\n")
+
+        def cargo(*args):
+            return subprocess.run(["cargo", *args], cwd=self.root, capture_output=True,
+                                  text=True, timeout=60)
+
+        lock = cargo("generate-lockfile", "--offline")
+        self.assertEqual(lock.returncode, 0, lock.stderr)
+        metadata = cargo("metadata", "--locked", "--format-version", "1")
+        self.assertEqual(metadata.returncode, 0, metadata.stderr)
+        mining = cargo("test", "--locked", "--features", "mining-e2e",
+                       "--test", "mining_e2e", "--no-run")
+        self.assertEqual(mining.returncode, 0, mining.stderr)
+        path = self.dockerfile()
+        sri.instrument_metadata(path)
+        build = path.read_text().split("RUN ", 1)[1].split("    && mkdir /out", 1)[0]
+        build = build.replace("--mount=type=cache,target=/workspace/target,sharing=locked ", "")
+        build = build.replace(chr(92) + "\n", " ").strip()
+        failed = subprocess.run(["sh", "-c", build], cwd=self.root, capture_output=True,
+                                text=True, timeout=60)
+        self.assertNotEqual(failed.returncode, 0)
+        self.assertIn("default CLI build is broken", failed.stderr)
+        main.write_text("fn main() {}\n")
+        fixed = subprocess.run(["sh", "-c", build], cwd=self.root, capture_output=True,
+                               text=True, timeout=60)
+        self.assertEqual(fixed.returncode, 0, fixed.stderr)
 
     def test_build_failure_stops_before_container_run(self):
         with patch.object(sri, "source_context", return_value={}), \

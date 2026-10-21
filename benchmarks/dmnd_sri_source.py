@@ -163,6 +163,9 @@ def _file_changes(expected, actual):
 
 def _check_import(package, prefix, reference, repo, revision, base, errors):
     name = package["name"]
+    if not PurePosixPath(prefix).is_relative_to("vendor"):
+        errors.append(f"Copied dependency {name} must be under vendor/ at the repository root: {prefix}")
+        return {"name": name, "path": prefix, "passed": False}
     if not reference or not reference.get("files") or not reference.get("source") or not reference.get("revision"):
         errors.append(f"No trusted original source is available for local dependency {name} at {prefix}")
         return {"name": name, "path": prefix, "passed": False}

@@ -587,20 +587,25 @@ for the build and 1,800 seconds for the mining run, outside the model budget.
 A successful final check is insufficient. A pass requires:
 
 - An unchanged mining suite, bundled tools, build script, and Cargo test targets.
-- A successful Docker build and all 18 mining tests, with no ignored tests.
+- A successful default CLI build, followed by the build with `mining-e2e` and
+  all 18 mining tests, with no ignored tests. Cargo metadata alone cannot prove
+  that the default CLI compiles.
 - Complete evidence for all 17 scenarios, with matching summaries and journals.
 - No panics, failed scenarios, or unexpected process and pool errors.
 - The required new SRI source in both the default and mining-test production
   dependency graphs, with no old SRI production dependencies. Old dependencies
   used only by tests are allowed.
-- A complete original import commit for each copied dependency, before edits.
+- Copied dependencies under the repository's root `vendor/` directory, with a
+  complete original import commit for each dependency, before edits.
   The initial supported sources are new-sri and the two DEMAND dependencies
   pinned by the base Cargo.lock. Other copied sources need separate trusted
   source evidence before this evaluator can accept them.
 - Zero heap allocations in 10,000 message and frame size checks, and exact
   protocol bytes in 256 serialization checks.
 
-The grader adds a separate allocation test and a Cargo metadata export to
+The grader reads the committed Git tree directly. Git export and checkout
+attributes cannot omit or change files in the build context. The grader adds
+a default CLI build, a separate allocation test, and Cargo metadata exports to
 its temporary build context. It does not change the submitted source or the
 existing mining tests. The allocation test measures specific operations.
 It does not prove equal latency or throughput for all workloads. The task

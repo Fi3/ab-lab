@@ -160,12 +160,39 @@ class SourceAuditTests(unittest.TestCase):
         self.assertFalse(report["passed"])
         self.assertEqual(report["imports"][0]["changes"]["missing"], ["src/lib.rs"])
 
-    def test_roles_outside_vendor_still_need_original_import(self):
-        _, _, references = self.vendor_roles("crates/roles")
-        report = self.audit(references)
+    def test_pristine_roles_outside_root_vendor_fail(self):
+        for prefix in ("crates/roles", "crates/vendor/roles", "vendor-copy/roles"):
+            with self.subTest(prefix=prefix):
+                _, _, references = self.vendor_roles(prefix)
+                report = self.audit(references)
+                self.assertFalse(report["passed"])
+                self.assertEqual(report["imports"], [{"name": "roles_logic_sv2", "path": prefix, "passed": False}])
+                self.assertTrue(any("under vendor/ at the repository root" in error for error in report["errors"]))
+
+    def test_known_copied_dependencies_require_root_vendor(self):
+        for name in ("demand-sv2-connection", "demand-share-accounting-ext"):
+            for folder in ("vendor", "crates", "crates/vendor"):
+                with self.subTest(name=name, folder=folder):
+                    self.metadata = self.graph()
+                    prefix = f"{folder}/{name}"
+                    self.write(prefix + "/Cargo.toml", f'[package]\nname = "{name}"\n')
+                    self.write(prefix + "/src/lib.rs", "pub fn original() {}\n")
+                    imported = self.commit()
+                    self.add_dependency(self.package(name, path=f"/workspace/{prefix}/Cargo.toml"), alias="connection")
+                    reference = {"source": "https://github.com/demand-open-source/" + name,
+                                 "revision": "a" * 40,
+                                 "files": source.reference_files(self.repo, imported, prefix)}
+                    report = self.audit({name: reference})
+                    self.assertEqual(report["passed"], folder == "vendor", report)
+                    if folder != "vendor":
+                        self.assertTrue(any("under vendor/ at the repository root" in error for error in report["errors"]))
+
+    def test_known_git_dependency_does_not_require_vendor_path(self):
+        name = "demand-sv2-connection"
+        origin = "git+https://github.com/demand-open-source/" + name + "#" + "a" * 40
+        self.add_dependency(self.package(name, origin=origin, path="/cargo/git/checkouts/connection/Cargo.toml"))
+        report = self.audit({name: {"source": origin, "revision": "a" * 40}})
         self.assertTrue(report["passed"], report)
-        self.assertEqual(report["imports"][0]["path"], "crates/roles")
-        self.assertFalse(self.audit()["passed"])
 
     def test_unknown_vendor_source_fails(self):
         self.write("vendor/helper/Cargo.toml", '[package]\nname = "helper"\n')
@@ -191,13 +218,14 @@ class SourceAuditTests(unittest.TestCase):
         self.assertFalse(report["passed"])
 
     def test_reusing_a_base_manifest_does_not_skip_roles_import_check(self):
-        self.write("crates/existing/Cargo.toml", '[package]\nname = "existing"\n')
+        self.write("vendor/existing/Cargo.toml", '[package]\nname = "existing"\n')
         self.base = self.commit()
-        prefix, _, references = self.vendor_roles("crates/existing")
+        prefix, _, references = self.vendor_roles("vendor/existing")
         references["roles_logic_sv2"]["files"]["src/lib.rs"] = "wrong-original-hash"
         report = self.audit(references)
         self.assertFalse(report["passed"])
         self.assertEqual(report["imports"][0]["path"], prefix)
+        self.assertEqual(report["imports"][0]["changes"]["modified"], ["src/lib.rs"])
 
     def test_dev_vendor_source_still_requires_original_import(self):
         self.write("vendor/helper/Cargo.toml", '[package]\nname = "helper"\n')
