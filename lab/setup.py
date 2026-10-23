@@ -34,7 +34,16 @@ def ensure_benchmark(path):
     data = json.loads(path.read_text())
     if not isinstance(data, dict):
         return  # The ordinary loader reports invalid benchmark definitions.
-    if "swe_milestone" in data:
+    if "dmnd_sri" in data:
+        from benchmarks.dmnd_sri import Evaluator
+        from benchmarks.dmnd_sri_prepare import PUBLIC_REVISION, prepare, prepare_public
+        Evaluator.expand(data, path)
+        if not isinstance(data.get("repo"), str) or not data["repo"].strip():
+            raise ValueError("dmnd_sri needs a local source repository path")
+        repo = (path.parent / Path(data["repo"]).expanduser()).resolve()
+        preparation = prepare_public if data["revision"] == PUBLIC_REVISION else prepare
+        preparation(repo=repo)
+    elif "swe_milestone" in data:
         from benchmarks.swe_milestone_evaluator import Evaluator
         project = Evaluator.expand(data, path)["swe_milestone"]["project"]
         command([sys.executable, ROOT / "benchmarks/swe_milestone.py", "prepare", project])

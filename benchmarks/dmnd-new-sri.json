@@ -1,0 +1,19 @@
+{
+  "name": "dmnd-client-new-sri-v2",
+  "repo": "../.benchmarks/dmnd-new-sri/public-v2/repo",
+  "revision": "42350eabdea86c63a0113a53009c77992d00566f",
+  "features": [
+    {
+      "id": "new-sri",
+      "request": "This repository uses an old version of the SRI libraries from https://github.com/dmnd-pool/stratum. Change the CLI to use roles_logic_sv2 from https://github.com/dmnd-pool/new-sri, which uses the new SRI libraries. Use revision 4f4fcb1d9b035ced1a77cdc020be028f2dca084f of new-sri.\n\nKeep all current features. Do not cause a performance regression. Use a patch, code cleanup, and test loop. Complete the task only when the CLI uses the new library, all features work, and the code is clean.\n\nCopy a dependency into this repository only when it is necessary. Place copied dependencies under vendor/. First commit the complete, unchanged original source, including its license. Make changes only in later commits, so a reviewer can see each change to the dependency. Record the upstream source and revision in README. Do not replace the requested library with a stub or keep the old SRI code in the production dependency graph.\n\nKeep the existing mining tests, assertions, bundled tools, and test selection unchanged. Keep build.rs, its TOML build dependency, and the existing Cargo library, binary, and test targets unchanged. The protected tests remain private: do not read, search, compile, or run tests/** or the mining workflow. Do not run Docker during the coding session. The independent grader builds and runs the unchanged Docker mining suite on the host after the coding and review sessions close.\n\nThe prepared repository publishes the required transport interface in README and examples/sri_transport_contract.rs. Authors and reviewers may read and compile this public example. Keep the example unchanged. When the root manifest no longer declares a direct codec_sv2 dependency, the interface requires HandshakeRole, Initiator, Responder, StandardEitherFrame, and StandardSv2Frame at the demand_sv2_connection crate root, plus the connection and frame operations specified by the example. This is an explicit benchmark compatibility requirement; the original upstream connection crate did not export all these names. Internal module layout is otherwise unrestricted.\n\nRun these public checks from the repository root before you finish. Correct errors and repeat the checks. They do not access the protected mining tests and do not need Docker:\n\ncargo check --locked --lib --bin dmnd-client\ncargo check --locked --features mining-e2e --example sri_transport_contract\n\nA successful public check proves interface compatibility only. A green final test line is insufficient: all 18 tests and all 17 scenario summaries must pass. Logs and event journals must have no unexpected errors or panics. Expected protocol rejection tests must still reject their specified inputs. The grader also checks that message and frame size queries allocate no heap memory and that serialized protocol bytes stay correct. Show relevant performance measurements against the starting implementation; suite deadlines alone do not prove that performance is unchanged."
+    }
+  ],
+  "checks": [
+    "cargo check --locked --lib --bin dmnd-client",
+    "cargo check --locked --features mining-e2e --example sri_transport_contract"
+  ],
+  "dmnd_sri": {
+    "build_seconds": 3600,
+    "run_seconds": 1800
+  }
+}

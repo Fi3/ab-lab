@@ -123,3 +123,23 @@ bench18
 | gpt-5.5 / xhigh      | 57536/79252 | 50,151,058   | 1,373,330       | Pi      | 6.46%     | 39.62%  | 75.35%            | 1h 26m 29s | 131,072    |
 | gpt-6.1-sol / xhigh  | 79244/79252 | 9,194,682    | 532,282         | Codex   | 6.40%     | 39.45%  | 75.28%            | 1h 12m 36s | 131,072    |
 | gpt-6.1-sol / xhigh  | 79241/79252 | 11,109,722   | 616,666         | Pi      | 6.38%     | 39.54%  | 75.25%            | 1h 34m 48s | 131,072    |
+
+## DEMAND CLI SRI migration v2 (50M token limit)
+
+### runs
+
+dmnd-new-sri-gpt61-xhigh-no-review-02
+,dmnd-new-sri-gpt61-xhigh-review-02
+
+| model/reasoning     | test passes | total tokens | uncached tokens | harness | conditions                 | maxrevs | verbosity | erosion | cognitive erosion | time       | P | compaction |
+| ------------------  | ----------- | ------------ | --------------- | ------- | -------------------------- | ------- | --------- | ------- | ----------------- | ---------- | - | ---------- |
+| gpt-6.1-sol / xhigh | 16/18       | 16,420,295   | 722,119         | Codex   | all except C08,C16,C17     | 0       | 6.66%     | 28.15%  | 67.61%            | 1h 14m 08s | 2 | 131,072    |
+| gpt-6.1-sol / xhigh | 18/18       | 19,055,413   | 1,013,941       | Codex   | all except C08,C16,C17     | 3       | 6.20%     | 30.35%  | 68.86%            | 1h 09m 48s | 1 | 131,072    |
+
+### control run
+
+dmnd-new-sri-gpt61-xhigh-control-02
+
+| mode/reasoning       | test passes | total tokens | uncached tokens | harness | verbosity | erosion | cognitive erosion | time       | compaction |
+| -------------------- | ----------- | ------------ | --------------- | ------- | --------- | ------- | ----------------- | ---------- | ---------- |
+| gpt-6.1-sol / xhigh  | 16/18       | 15,060,240   | 764,048         | Codex   | 6.25%     | 30.74%  | 68.87%            | 1h 15m 01s | 131,072    |

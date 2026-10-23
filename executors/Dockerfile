@@ -3,7 +3,7 @@ FROM --platform=linux/amd64 archlinux@sha256:b21322c663be387c0ed9cbc7bbbfe18e416
 # A dated archive pins the complete OS dependency graph, including downgrades.
 RUN printf 'Server = https://archive.archlinux.org/repos/2026/09/18/$repo/os/$arch\n' > /etc/pacman.d/mirrorlist \
     && pacman -Syyuu --noconfirm --needed base-devel python python-pip git ripgrep fish \
-       bubblewrap cmake uv nodejs npm jre17-openjdk \
+       bubblewrap cmake capnproto uv nodejs npm jre17-openjdk \
     && pacman -Scc --noconfirm
 
 # Match the Rust toolchain used in the recorded host runs.

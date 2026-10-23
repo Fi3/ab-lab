@@ -1,3 +1,4 @@
+from copy import deepcopy
 import json
 from pathlib import Path
 import subprocess
@@ -64,6 +65,54 @@ class SummaryTests(unittest.TestCase):
         self.assertIn('123', table)
         self.assertIn('old failure', table)
         self.assertNotIn('Mean raw tokens:', table)
+
+    def test_final_check_recovery_preserves_original_measurements_and_grade(self):
+        for status in ('passed', 'failed'):
+            with self.subTest(status=status):
+                row = result(status=status)
+                row['evaluation'] = {'evaluator': 'dmnd_sri', 'status': 'completed',
+                                     'passed': status == 'passed', 'report_path': '/runs/original-grade.json'}
+                row['final_check_recovery'] = {
+                    'schema': 'agent-lab-final-check-recovery/v1', 'status': 'completed',
+                    'artifacts': '/runs/recovery',
+                    'original_result': {'path': '/runs/recovery/original/result.json',
+                                        'sha256': 'a' * 64, 'status': 'failed'},
+                    'completed_at': '2026-10-23T12:00:00Z', 'duration_seconds': 125.5,
+                    'source_unchanged': True, 'model_calls': 0}
+                before = deepcopy(row)
+                rendered = self.render(row)
+                main = next(line for line in rendered.splitlines() if line.startswith('| run-001'))
+                columns = [value.strip() for value in main.split('|')[1:-1]]
+                self.assertEqual(columns[1:6], [status, '1,000', '500', 'complete', '1m 05s'])
+                self.assertIn('Final checks were repeated after the original run.', rendered)
+                self.assertIn('Original run time, token usage, and independent evaluation results are retained.', rendered)
+                section = rendered.split('Final check recovery:', 1)[1]
+                recovery = next(line for line in section.splitlines() if line.startswith('| run-001'))
+                self.assertEqual([value.strip() for value in recovery.split('|')[1:-1]],
+                                 ['run-001', 'completed', '2m 05s', '0', 'failed',
+                                  '/runs/recovery/original/result.json', '/runs/recovery'])
+                grade = next(line for line in rendered.splitlines() if '| dmnd_sri ' in line)
+                self.assertEqual([value.strip() for value in grade.split('|')[1:-1]][3],
+                                 'pass' if status == 'passed' else 'fail')
+                self.assertEqual(row, before)
+
+    def test_report_command_preserves_recovery_metadata(self):
+        row = result()
+        row['final_check_recovery'] = {'status': 'completed', 'artifacts': '/runs/recovery', 'model_calls': 0}
+        with tempfile.TemporaryDirectory() as directory:
+            path = Path(directory) / 'result.json'
+            path.write_text(json.dumps(row))
+            command = subprocess.run([sys.executable, '-m', 'lab', 'report', str(path)],
+                                     cwd=ROOT, text=True, capture_output=True)
+        self.assertEqual(command.returncode, 0, command.stderr)
+        self.assertEqual(json.loads(command.stdout), [row])
+
+    def test_legacy_reports_do_not_show_a_recovery_note(self):
+        row = result()
+        original = self.render(row)
+        row['final_check_recovery'] = None
+        self.assertEqual(self.render(row), original)
+        self.assertNotIn('Final check recovery:', original)
 
     def test_root_script_accepts_stdin_multiple_files_and_rejects_bad_json(self):
         command = [sys.executable, str(ROOT/'summarize.py')]
