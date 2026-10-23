@@ -15,7 +15,9 @@ from lab.host import Fatal, execute_child, git, save_json
 from benchmarks.dmnd_mining_logs import validate_mining
 from benchmarks.dmnd_sri_source import audit_dependencies
 from benchmarks.dmnd_sri_performance import install_harness, validate_performance
-from benchmarks.dmnd_sri_prepare import BASE_REVISION as BASE, dependency_sources, load_setup
+from benchmarks.dmnd_sri_prepare import (BASE_REVISION as BASE, DEFAULT_REPO, PUBLIC_PATHS,
+                                        PUBLIC_REPO, PUBLIC_REVISION, dependency_sources, load_setup,
+                                        verify_public_repository)
 from benchmarks.dmnd_sri_tree import extract_tree
 
 
@@ -55,8 +57,15 @@ def capture(checkout, folder, revision="HEAD"):
             "tree": git(repo, "rev-parse", "HEAD^{tree}").decode().strip()}
 
 
-def source_context(repo, revision, folder):
+def source_context(repo, revision, folder, baseline=None):
     """Use committed source only, with the original test suite unchanged."""
+    if baseline is not None and baseline != BASE:
+        if baseline != PUBLIC_REVISION:
+            raise ValueError("Unknown SRI benchmark baseline")
+        if git(repo, "merge-base", baseline, revision).decode().strip() != baseline:
+            raise ValueError("The submission does not descend from the public SRI baseline")
+        if git(repo, "diff", "--name-only", baseline, revision, "--", *PUBLIC_PATHS):
+            raise ValueError("The public transport interface check changed")
     changed = git(repo, "diff", "--name-only", BASE, revision, "--", "tests", "build.rs").decode().splitlines()
     if changed:
         raise ValueError("The pinned mining tests changed: " + ", ".join(changed))
@@ -73,7 +82,7 @@ def source_context(repo, revision, folder):
     performance = install_harness(folder)
     tree = git(repo, "rev-parse", revision + "^{tree}").decode().strip()
     instrument_metadata(folder / "tests/Dockerfile", tree)
-    return {"performance": performance, "base": BASE,
+    return {"performance": performance, "base": BASE, "baseline": baseline or BASE,
             "dockerfile_sha256": hashlib.sha256((folder / "tests/Dockerfile").read_bytes()).hexdigest()}
 
 
@@ -196,7 +205,8 @@ def grade_submission(item, folder, config, references):
     try:
         context = folder / "source"
         try:
-            report["tests"] = source_context(Path(item["repo"]), item["commit"], context)
+            report["tests"] = source_context(Path(item["repo"]), item["commit"], context,
+                                              config.get("baseline"))
         except ValueError as exc:
             report.update(status="completed", passed=False, errors=[str(exc)])
             return report
@@ -260,16 +270,18 @@ class Evaluator(BaseEvaluator):
         config = {"build_seconds": 3600, "run_seconds": 1800, **config}
         if any(type(value) is not int or value <= 0 for value in config.values()):
             raise ValueError("dmnd_sri time limits must be positive integers")
-        if data.get("revision") != BASE or [f.get("id") for f in data.get("features", [])] != ["new-sri"]:
+        if data.get("revision") not in (BASE, PUBLIC_REVISION) or [f.get("id") for f in data.get("features", [])] != ["new-sri"]:
             raise ValueError("dmnd_sri requires the pinned base and one new-sri feature")
         return {**data, cls.config_key: config}
 
     def start(self, base, manifest, deadline):
-        if base != BASE:
+        if base != self.benchmark["revision"] or base not in (BASE, PUBLIC_REVISION):
             raise Fatal("The SRI benchmark base changed")
+        if base == PUBLIC_REVISION:
+            verify_public_repository(Path(self.benchmark["repo"]), base)
         self.references = load_references(self.benchmark["repo"])
         runtime = runtime_identity()
-        record = {"schema": VERSION, "base": BASE, "runtime": runtime,
+        record = {"schema": VERSION, "base": BASE, "baseline": base, "runtime": runtime,
                   "references": self.references, "checkpoints": [], "final": None}
         manifest["dmnd_sri"] = record.copy()
         self.result["dmnd_sri"] = record
@@ -296,7 +308,8 @@ class Evaluator(BaseEvaluator):
             key = item["commit"]
             if key not in cache:
                 folder = self.output / "dmnd-sri" / "evaluation" / item["feature"]
-                cache[key] = grade_submission(item, folder, self.benchmark["dmnd_sri"], self.references)
+                config = {**self.benchmark["dmnd_sri"], "baseline": self.benchmark["revision"]}
+                cache[key] = grade_submission(item, folder, config, self.references)
             graded.append({"feature": item["feature"], **cache[key]})
         complete = bool(record["final"]) and bool(graded)
         status = ("error" if any(row["status"] == "error" for row in graded)
@@ -317,9 +330,10 @@ def main(argv=None):
     parser.add_argument("repo", type=Path, help="Git repository with the candidate commit")
     parser.add_argument("revision")
     parser.add_argument("--out", type=Path, required=True)
-    parser.add_argument("--prepared", type=Path, default=Path(".benchmarks/dmnd-new-sri/repo"))
+    parser.add_argument("--prepared", type=Path)
     parser.add_argument("--build-seconds", type=int, default=3600)
     parser.add_argument("--run-seconds", type=int, default=1800)
+    parser.add_argument("--public", action="store_true", help="grade a version 2 public-contract submission")
     args = parser.parse_args(argv)
     if args.out.exists() or min(args.build_seconds, args.run_seconds) <= 0:
         parser.error("Use a new output directory and positive time limits")
@@ -328,9 +342,11 @@ def main(argv=None):
     report = {"schema": VERSION, "status": "incomplete", "passed": None, "errors": []}
     save_result(args.out, report)
     try:
-        references = load_references(args.prepared)
+        prepared = args.prepared or (PUBLIC_REPO if args.public else DEFAULT_REPO)
+        references = load_references(prepared)
         item = capture(args.repo.resolve(), args.out / "submission", args.revision)
-        report = grade_submission(item, args.out / "evaluation", vars(args), references)
+        config = {**vars(args), "baseline": PUBLIC_REVISION if args.public else BASE}
+        report = grade_submission(item, args.out / "evaluation", config, references)
     except (Exception, KeyboardInterrupt) as exc:
         report.update(status="error", passed=None, errors=[str(exc) or "Evaluation interrupted"])
     save_result(args.out, report)

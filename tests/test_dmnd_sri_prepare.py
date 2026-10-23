@@ -7,7 +7,9 @@ import unittest
 from unittest.mock import patch
 
 from benchmarks import dmnd_sri_prepare as prepare
+from benchmarks import dmnd_sri_baseline as baseline
 from lab.host import Fatal, git
+from lab.review import BlindReview
 
 
 class DmndPrepareTests(unittest.TestCase):
@@ -28,6 +30,8 @@ class DmndPrepareTests(unittest.TestCase):
             self.dependencies[name] = (folder, self.commit(folder))
         self.source = self.repository("client")
         (self.source / "client.rs").write_text("old_client();\n")
+        (self.source / "README.md").write_text("Original project instructions.\n")
+        (self.source / "AGENTS.md").write_text("Keep the protected tests unchanged.\n")
         self.parent = self.commit(self.source)
         lock = "version = 4\n"
         for name in ("demand-sv2-connection", "demand-share-accounting-ext"):
@@ -84,6 +88,17 @@ class DmndPrepareTests(unittest.TestCase):
 
     def setup_data(self):
         return json.loads((self.destination.parent / "setup.json").read_text())
+
+    def public_fixture(self):
+        assets = self.root / "public-assets"
+        assets.mkdir()
+        (assets / "README.md").write_text("Run the public transport example.\n")
+        (assets / "sri_transport_contract.rs").write_text("fn main() {}\n")
+        self.enterContext(patch.object(baseline, "ASSETS", assets))
+        self.enterContext(patch.object(prepare, "DEFAULT_REPO", self.destination))
+        revision = prepare.build_public_commit(self.source)
+        self.enterContext(patch.object(prepare, "PUBLIC_REVISION", revision))
+        return self.root / "public-v2" / "repo"
 
     def test_local_prepare_preserves_base_history_without_future_solution(self):
         self.assertEqual(self.local_prepare(), self.destination)
@@ -142,6 +157,8 @@ class DmndPrepareTests(unittest.TestCase):
         original = self.setup_data()
         mutations = (
             (lambda receipt: receipt.update(base="0" * 40), "source identity"),
+            (lambda receipt: receipt.update(schema="unknown", revision=None), "source identity"),
+            (lambda receipt: receipt.update(schema=[]), "source identity"),
             (lambda receipt: receipt["references"]["roles_logic_sv2"].update(revision="0" * 40),
              "dependency identity"),
             (lambda receipt: receipt["references"]["roles_logic_sv2"].update(files={}),
@@ -175,6 +192,118 @@ class DmndPrepareTests(unittest.TestCase):
             self.assertEqual(reference["evidence"]["prefix"], "")
             checkout = self.destination.parent / "sources" / name
             self.assertEqual(git(checkout, "rev-parse", "HEAD").decode().strip(), reference["revision"])
+
+    def test_public_baseline_is_an_isolated_child_with_the_same_source_evidence(self):
+        public = self.public_fixture()
+        self.local_prepare()
+        original_receipt = (self.destination.parent / "setup.json").read_bytes()
+        original_head = git(self.destination, "rev-parse", "HEAD")
+        with patch.object(prepare, "dependency_reference") as reference:
+            self.assertEqual(prepare.prepare_public(public, self.source), public)
+        reference.assert_not_called()
+        self.assertEqual(git(self.destination, "rev-parse", "HEAD"), original_head)
+        self.assertEqual((self.destination.parent / "setup.json").read_bytes(), original_receipt)
+        self.assertEqual(git(public, "rev-list", "--parents", "-n", "1", "HEAD").decode().split(),
+                         [prepare.PUBLIC_REVISION, self.base])
+        self.assertEqual(set(git(public, "diff", "--name-only", self.base, "HEAD").decode().splitlines()),
+                         {"README.md", "AGENTS.md", "examples/sri_transport_contract.rs"})
+        self.assertEqual((public / "client.rs").read_text(), "old_client();\n")
+        self.assertEqual((public / "README.md").read_bytes(),
+                         git(self.source, "show", self.base + ":README.md")
+                         + b"\n\nRun the public transport example.\n")
+        self.assertFalse((public / "private.txt").exists())
+        with self.assertRaises(Fatal):
+            git(public, "cat-file", "-e", self.future)
+        receipt = json.loads((public.parent / "setup.json").read_text())
+        self.assertEqual((receipt["schema"], receipt["base"], receipt["revision"]),
+                         (prepare.PUBLIC_SCHEMA, self.base, prepare.PUBLIC_REVISION))
+        self.assertEqual(receipt["references"], self.setup_data()["references"])
+
+    def test_public_commit_is_deterministic_and_does_not_change_the_source_index(self):
+        self.public_fixture()
+        head, index = git(self.source, "rev-parse", "HEAD"), git(self.source, "write-tree")
+        git(self.source, "config", "user.name", "Another user")
+        git(self.source, "config", "user.email", "another@example.invalid")
+        git(self.source, "config", "commit.gpgSign", "true")
+        git(self.source, "config", "core.autocrlf", "true")
+        git(self.source, "config", "i18n.commitEncoding", "ISO-8859-1")
+        self.assertEqual(prepare.build_public_commit(self.source), prepare.PUBLIC_REVISION)
+        self.assertEqual(git(self.source, "rev-parse", "HEAD"), head)
+        self.assertEqual(git(self.source, "write-tree"), index)
+        self.assertFalse(git(self.source, "status", "--porcelain", "--untracked-files=no"))
+
+    def test_existing_public_setup_needs_no_fetch_or_dependency_copy(self):
+        public = self.public_fixture()
+        prepare.prepare_public(public)
+        original = (public.parent / "setup.json").read_bytes()
+        with patch.object(prepare, "fetch_revision") as fetch, \
+                patch.object(prepare, "dependency_reference") as reference:
+            self.assertEqual(prepare.prepare_public(public), public)
+        fetch.assert_not_called()
+        reference.assert_not_called()
+        self.assertEqual((public.parent / "setup.json").read_bytes(), original)
+
+    def test_public_contract_is_available_in_the_neutral_review_tree(self):
+        public = self.public_fixture()
+        prepare.prepare_public(public)
+        (public / "client.rs").write_text("candidate_change();\n")
+        git(public, "add", "client.rs")
+        git(public, "-c", "user.name=Test", "-c", "user.email=test@example.invalid",
+            "-c", "commit.gpgSign=false", "commit", "-qm", "UPDATE candidate fixture")
+        candidate = git(public, "rev-parse", "HEAD").decode().strip()
+        review = BlindReview(public, prepare.PUBLIC_REVISION, self.root / "review")
+        head = review.update(candidate)
+        for name in ("README.md", "AGENTS.md", *prepare.PUBLIC_PATHS):
+            expected = git(public, "show", prepare.PUBLIC_REVISION + ":" + name)
+            self.assertEqual(git(review.repo, "show", review.base + ":" + name), expected)
+            self.assertEqual(git(review.repo, "show", head + ":" + name), expected)
+            self.assertEqual((review.repo / name).read_bytes(), expected)
+        self.assertNotEqual(head, candidate)
+        with self.assertRaises(Fatal):
+            git(review.repo, "cat-file", "-e", candidate)
+
+    def test_public_source_changes_are_rejected_without_reset(self):
+        public = self.public_fixture()
+        prepare.prepare_public(public)
+        (public / "client.rs").write_text("user_work();\n")
+        with self.assertRaisesRegex(ValueError, "modified tracked files"):
+            prepare.prepare_public(public)
+        self.assertEqual((public / "client.rs").read_text(), "user_work();\n")
+        git(public, "checkout", "--", "client.rs")
+        git(public, "checkout", "-q", "--detach", self.base)
+        with self.assertRaisesRegex(ValueError, "pinned revision"):
+            prepare.prepare_public(public)
+        self.assertEqual(git(public, "rev-parse", "HEAD").decode().strip(), self.base)
+
+    def test_changed_public_assets_do_not_publish_a_different_baseline(self):
+        public = self.public_fixture()
+        (baseline.ASSETS / "sri_transport_contract.rs").write_text("fn changed() {}\n")
+        with self.assertRaisesRegex(ValueError, "pinned revision"):
+            prepare.prepare_public(public)
+        self.assertFalse(public.exists())
+        self.assertFalse((public.parent / "setup.json").exists())
+        self.assertEqual(git(self.destination, "rev-parse", "HEAD").decode().strip(), self.base)
+
+    def test_existing_public_setup_rejects_changed_assets_and_wrong_receipt_version(self):
+        public = self.public_fixture()
+        prepare.prepare_public(public)
+        contract = baseline.ASSETS / "sri_transport_contract.rs"
+        original = contract.read_bytes()
+        contract.write_bytes(b"fn changed() {}\n")
+        with self.assertRaisesRegex(ValueError, "public transport contract changed"):
+            prepare.prepare_public(public)
+        contract.write_bytes(original)
+        (public.parent / "setup.json").write_bytes((self.destination.parent / "setup.json").read_bytes())
+        with self.assertRaisesRegex(ValueError, "source identity"):
+            prepare.prepare_public(public)
+
+    def test_public_prepare_rejects_dirty_source_before_creating_caches(self):
+        public = self.public_fixture()
+        (self.source / "client.rs").write_text("uncommitted_work();\n")
+        with self.assertRaisesRegex(ValueError, "modified tracked files"):
+            prepare.prepare_public(public, self.source)
+        self.assertFalse(public.exists())
+        self.assertFalse(self.destination.exists())
 
 
 if __name__ == "__main__":

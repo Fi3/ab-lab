@@ -9,6 +9,7 @@ import subprocess
 import tempfile
 import tomllib
 
+from benchmarks.dmnd_sri_baseline import PUBLIC_PATHS, build_commit
 from benchmarks.dmnd_sri_source import SRI_REVISION as ROLES_REVISION
 from benchmarks.dmnd_sri_source import SRI_SOURCE as ROLES_URL
 from benchmarks.dmnd_sri_source import reference_files
@@ -17,9 +18,12 @@ from lab.host import Fatal, git, save_json
 
 ROOT = Path(__file__).resolve().parents[1]
 DEFAULT_REPO = ROOT / ".benchmarks" / "dmnd-new-sri" / "repo"
+PUBLIC_REPO = DEFAULT_REPO.parent / "public-v2" / "repo"
 BASE_URL = "https://github.com/dmnd-pool/dmnd-client.git"
 BASE_REVISION = "4c2a7341d3a9e1b1b46d063770a1e2c3bff005d7"
 SCHEMA = "dmnd-new-sri-lab/v1"
+PUBLIC_SCHEMA = "dmnd-new-sri-lab/v2"
+PUBLIC_REVISION = "42350eabdea86c63a0113a53009c77992d00566f"
 
 
 def clean_repository(repo):
@@ -84,11 +88,14 @@ def dependency_reference(folder, name, identity):
     return {**identity, "files": files, "evidence": evidence}
 
 
-def load_setup(path, identities):
+def load_setup(path, identities, revision=None):
     setup = json.loads(path.read_text(encoding="utf-8"))
-    if not isinstance(setup, dict) or (
-            setup.get("schema"), setup.get("source"), setup.get("base"), setup.get("revision")) != (
-                SCHEMA, BASE_URL, BASE_REVISION, BASE_REVISION):
+    revisions = {SCHEMA: BASE_REVISION, PUBLIC_SCHEMA: PUBLIC_REVISION}
+    if (not isinstance(setup, dict) or not isinstance(setup.get("schema"), str)
+            or setup["schema"] not in revisions) or (
+            setup.get("source"), setup.get("base"), setup.get("revision")) != (
+                BASE_URL, BASE_REVISION, revisions.get(setup.get("schema"))) or (
+                    revision is not None and setup.get("revision") != revision):
         raise ValueError(f"prepared source identity changed: {path}")
     references = setup.get("references", {})
     if not isinstance(references, dict) or set(references) != set(identities):
@@ -119,7 +126,7 @@ def prepare(repo=DEFAULT_REPO, source=None):
     identities = dependency_sources(repo)
     receipt = repo.parent / "setup.json"
     if receipt.exists():
-        load_setup(receipt, identities)
+        load_setup(receipt, identities, BASE_REVISION)
         return repo
     references = {name: dependency_reference(repo.parent, name, identity)
                   for name, identity in identities.items()}
@@ -132,13 +139,61 @@ def prepare(repo=DEFAULT_REPO, source=None):
     return repo
 
 
+def build_public_commit(repo):
+    return build_commit(Path(repo), BASE_REVISION)
+
+
+def verify_public_repository(repo, revision=None):
+    revision = PUBLIC_REVISION if revision is None else revision
+    verify_repository(repo, revision)
+    if revision != PUBLIC_REVISION or build_public_commit(repo) != revision:
+        raise ValueError("The prepared public transport contract changed")
+
+
+def prepare_public(repo=PUBLIC_REPO, source=None):
+    repo = Path(repo).resolve()
+    if source is not None:
+        source = Path(source).resolve()
+        clean_repository(source)
+    receipt = repo.parent / "setup.json"
+    if repo.exists():
+        verify_public_repository(repo)
+        load_setup(receipt, dependency_sources(repo), PUBLIC_REVISION)
+        return repo
+    if receipt.exists():
+        raise FileExistsError(f"Prepared setup already exists without its repository: {receipt}")
+    upstream = prepare(DEFAULT_REPO, source)
+    original = load_setup(upstream.parent / "setup.json", dependency_sources(upstream), BASE_REVISION)
+    repo.parent.mkdir(parents=True, exist_ok=True)
+    with tempfile.TemporaryDirectory(dir=repo.parent, prefix="dmnd-public-") as temporary:
+        checkout = Path(temporary) / "repo"
+        pinned_repository(checkout, BASE_URL, BASE_REVISION, upstream)
+        revision = build_public_commit(checkout)
+        if revision != PUBLIC_REVISION:
+            raise ValueError("The public transport contract does not match its pinned revision")
+        git(checkout, "checkout", "-q", "--detach", revision)
+        verify_public_repository(checkout)
+        setup = {**original, "schema": PUBLIC_SCHEMA, "revision": revision}
+        pending = Path(temporary) / "setup.json"
+        save_json(pending, setup)
+        if receipt.exists():
+            raise FileExistsError(f"Prepared setup already exists without its repository: {receipt}")
+        checkout.rename(repo)
+        pending.rename(receipt)
+    return repo
+
+
 def main():
     parser = argparse.ArgumentParser(description=__doc__)
-    parser.add_argument("--repo", type=Path, default=DEFAULT_REPO)
+    parser.add_argument("--repo", type=Path)
     parser.add_argument("--source", type=Path, help="local repository with the fixed client revision")
+    parser.add_argument("--public", action="store_true", help="prepare the v2 public transport contract")
     args = parser.parse_args()
     try:
-        print(prepare(args.repo, args.source))
+        if args.public:
+            print(prepare_public(args.repo or PUBLIC_REPO, args.source))
+        else:
+            print(prepare(args.repo or DEFAULT_REPO, args.source))
     except subprocess.CalledProcessError as exc:
         parser.exit(1, exc.stderr.decode(errors="replace") + "\n")
     except (Fatal, ValueError, OSError, subprocess.TimeoutExpired) as exc:

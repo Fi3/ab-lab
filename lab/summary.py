@@ -191,6 +191,25 @@ def evaluation_tables(names, rows):
     return lines
 
 
+def final_check_recovery_table(names, rows):
+    details = []
+    for name, row in zip(names, rows):
+        recovery = row.get('final_check_recovery')
+        if not isinstance(recovery, dict):
+            continue
+        original = recovery.get('original_result') or {}
+        details.append([name, recovery.get('status'), duration(recovery.get('duration_seconds')),
+                        number(recovery.get('model_calls')), original.get('status'),
+                        original.get('path'), recovery.get('artifacts')])
+    if not details:
+        return []
+    return ['', 'Final check recovery:', '',
+            'Final checks were repeated after the original run. Original run time, token usage, '
+            'and independent evaluation results are retained.', '',
+            table(['Run', 'Recovery', 'Recovery time', 'Model calls', 'Original result',
+                   'Original report', 'Recovery records'], details)]
+
+
 def render(rows):
     if not rows:
         raise ValueError('no runs to summarize')
@@ -312,6 +331,7 @@ def render(rows):
             table(['Run', 'Checkpoint', 'Status', 'Verbosity', 'Erosion', 'Cognitive erosion'], quality_rows)]
     lines += slopcodebench_tables(names, rows)
     lines += evaluation_tables(names, rows)
+    lines += final_check_recovery_table(names, rows)
     if any('execution_environment' in row for row in rows):
         lines += ['', 'Execution environments:', '', table(['Run', 'Mode', 'Identity'], [
             [name, row.get('execution_environment', {}).get('mode', 'legacy host (unrecorded)'),

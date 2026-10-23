@@ -17,6 +17,7 @@ from .provider import Codex, Pi, clean_env
 from .review import (DEFAULT_PRIORITIES, DEFAULT_MAX_REVIEW_LOOPS, BLIND_REVIEW_POLICY, BlindReview, blind_review_paths, format_findings,
                      normalize_priorities, normalize_review_loops, REVIEW_TOOLS, ReviewTools, review_instructions)
 from .loops import FeatureProgress, NeedsAttention, POLICY_VERSION, WorkLimitReached, loop_policy, work_limit_error
+from .validation import execute_check, final_check_environment
 from . import scb, evaluation
 
 
@@ -541,19 +542,16 @@ def run(benchmark, factors, output, seconds, max_raw, max_turns,
             result["final_submission"] = {"commit": final_source["head"],
                 "tree": git(checkout, "rev-parse", "HEAD^{tree}").decode().strip()}
             evaluator.final(checkout)
-        for index, command in enumerate(benchmark["checks"], 1):
-            folder = output / f"check-{index:02d}"
-            folder.mkdir()
-            argv = getattr(provider, "command_argv", lambda argv: argv)(["/bin/sh", "-c", command])
-            receipt = execute_child(argv, checkout, None, folder / "stdout.txt", folder / "stderr.txt", min(300, deadline-time.monotonic()), getattr(provider, "command_env", clean_env()))
-            receipt["command"] = command
-            result["checks"].append(receipt)
-            save_json(folder / "result.json", receipt)
-            if hasattr(provider, "settle_children"):
-                provider.settle_children()
-            if receipt["exit_code"] or receipt["timed_out"] or receipt["cancelled_signal"]:
-                failure_origin = "validation"
-                raise Fatal(f"final check {index} failed; no automatic replacement")
+        with final_check_environment(getattr(provider, "command_env", clean_env())) as environment:
+            for index, command in enumerate(benchmark["checks"], 1):
+                receipt = execute_check(command, checkout, output / f"check-{index:02d}", deadline,
+                    command_argv=getattr(provider, "command_argv", lambda argv: argv), environment=environment)
+                result["checks"].append(receipt)
+                if hasattr(provider, "settle_children"):
+                    provider.settle_children()
+                if receipt["exit_code"] or receipt["timed_out"] or receipt["cancelled_signal"]:
+                    failure_origin = "validation"
+                    raise Fatal(f"final check {index} failed; no automatic replacement")
         if snapshot(checkout) != final_source:
             raise Fatal("final validation changed submitted source, index or history")
         if git(checkout, "status", "--porcelain"):

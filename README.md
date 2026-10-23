@@ -541,8 +541,11 @@ The following runnable definitions are in `benchmarks/`:
 
 ### DEMAND CLI SRI migration
 
-This benchmark starts at dmnd-client commit
-`4c2a7341d3a9e1b1b46d063770a1e2c3bff005d7`. The task requires
+Version 2 uses dmnd-client commit
+`4c2a7341d3a9e1b1b46d063770a1e2c3bff005d7` plus one fixed preparation
+commit. That commit adds a public transport interface example and its README
+and agent instructions. It does not change production code or protected tests.
+The task requires
 roles_logic_sv2 from [new-sri](https://github.com/dmnd-pool/new-sri), at commit
 `4f4fcb1d9b035ced1a77cdc020be028f2dca084f`. It requires all existing
 features, no performance regression, and a patch, cleanup, and test loop.
@@ -552,12 +555,13 @@ before any modifications.
 Prepare the source and inspect the plan:
 
 ```sh
-python3 -m benchmarks.dmnd_sri_prepare
+python3 -m benchmarks.dmnd_sri_prepare --public
 python3 -m lab plan benchmarks/dmnd-new-sri.json
 ```
 
 Preparation needs Git and access to the pinned GitHub repositories. It stores
-source checkouts and file hashes under `.benchmarks/dmnd-new-sri/`. It does
+source checkouts and file hashes under `.benchmarks/dmnd-new-sri/`. The version 2
+starting repository is `public-v2/repo` within that directory. Preparation does
 not contain a migration solution. The normal `lab run` command also runs
 preparation. Existing source with tracked changes is rejected, not reset.
 Use `--source PATH` with the preparation command to copy the base revision
@@ -575,8 +579,35 @@ python3 -m lab run benchmarks/dmnd-new-sri.json \
   --max-review-loops 3
 ```
 
-The coding container has no Docker socket. Its final check validates Cargo
-metadata. After the coding session ends, the independent grader runs the
+The coding container has no Docker socket. The author and reviewer must keep
+the mining tests protected. Both can read the public interface requirements in
+the prepared README and compile `examples/sri_transport_contract.rs`. The
+example is also present in the neutral source trees used for blind review.
+It does not contain mining scenarios or assertions.
+
+The public requirements state how `build.rs` selects the transport API. Without
+a direct `codec_sv2` dependency, the connection crate must export `HandshakeRole`,
+`Initiator`, `Responder`, `StandardEitherFrame`, and `StandardSv2Frame` from its
+root. The example checks those exports, constructors, connection results,
+frame conversions, and parser operations. These are benchmark compatibility
+requirements, not exports promised by the original connection dependency.
+
+Authors and reviewers run the following checks before they finish. Authors
+correct errors and repeat the checks. Reviewers report compilation failures:
+
+```sh
+cargo check --locked --lib --bin dmnd-client
+cargo check --locked --features mining-e2e --example sri_transport_contract
+```
+
+The executor includes Cap'n Proto for the Cargo example's dependencies. These
+checks do not need Docker and do not compile or run protected mining tests.
+The runner repeats them as final checks with a new temporary Cargo cache and
+build directory. Both checks share these directories. The runner removes them
+after the checks. It keeps the same command sandbox and records the cache
+policy in each check receipt. Final check failures do not start an additional
+repair loop. The full mining results remain independent of review.
+After the coding session ends, the independent grader runs the
 supplied `tests/Dockerfile` build and the mining container on the host. It
 uses Linux amd64, `--init`, `--network none`, the current user's UID and GID,
 and a new artifact directory. Each evaluation uses its own image tag and
@@ -584,9 +615,11 @@ container names. Each submitted source tree has a separate Cargo build cache
 to prevent an older binary from being tested. Default limits are 3,600 seconds
 for the build and 1,800 seconds for the mining run, outside the model budget.
 
-A successful final check is insufficient. A pass requires:
+A successful public check establishes interface compatibility, not mining
+correctness or performance. A pass requires:
 
 - An unchanged mining suite, bundled tools, build script, and Cargo test targets.
+- An unchanged public transport example for version 2 submissions.
 - A successful default CLI build, followed by the build with `mining-e2e` and
   all 18 mining tests, with no ignored tests. Cargo metadata alone cannot prove
   that the default CLI compiles.
@@ -630,6 +663,10 @@ Known connection-close messages have limits derived from the test's connection
 count. The logs do not record each child exit or shutdown time, so these checks
 cannot prove that every possible runtime fault is absent.
 
+Version 1 runs keep their original source, configuration, and results. They
+lacked a public transport interface check. Do not compare their pass rates
+directly with version 2 runs.
+
 Results are in `dmnd-sri-evaluation.json` and `dmnd-sri/evaluation/` inside
 the run directory. They include process exits, full output, dependency
 evidence, original import commits, scenario artifacts, and allocation results.
@@ -637,14 +674,23 @@ Identical checkpoint and final commits share one evaluation. Missing final
 submissions remain incomplete. Timeouts and grader failures cannot report
 a pass.
 
+Reports corrected after a runner failure include `final_check_recovery`. This
+record identifies the saved original report, the repeated check commands and
+logs, the submitted commit, and the executor image. The summary shows the
+correction separately. Original run time, token use, review records, and
+independent grading remain unchanged. A successful repeated check does not
+override a failed mining test or dependency audit. The SRI version 2 runs have
+their own section in [results.md](results.md#demand-cli-sri-migration-v2-50m-token-limit).
+
 To grade an existing committed candidate without starting a model:
 
 ```sh
 python3 -m benchmarks.dmnd_sri /path/to/dmnd-client COMMIT \
-  --out runs/dmnd-sri-check
+  --public --out runs/dmnd-sri-check
 ```
 
-Use a new output directory. Exit status 0 means passed, 1 means a completed
+Omit `--public` when you grade a version 1 candidate. Use a new output directory.
+Exit status 0 means passed, 1 means a completed
 evaluation rejected the candidate, and 2 means evaluation did not complete.
 Run the benchmark's own verification tests with:
 

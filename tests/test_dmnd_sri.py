@@ -86,6 +86,14 @@ class SriLifecycleTests(unittest.TestCase):
             ensure_benchmark(self.path)
         prepare.assert_called_once_with(repo=self.repo)
 
+    def test_public_setup_uses_a_separate_prepared_repository(self):
+        self.path.write_text(json.dumps({**self.config, "revision": sri.PUBLIC_REVISION}))
+        with patch("benchmarks.dmnd_sri_prepare.prepare") as original, \
+                patch("benchmarks.dmnd_sri_prepare.prepare_public") as public:
+            ensure_benchmark(self.path)
+        original.assert_not_called()
+        public.assert_called_once_with(repo=self.repo)
+
     def test_relative_prepared_path_is_resolved_before_git_reads(self):
         relative = Path(".benchmarks/dmnd-new-sri/repo")
         with patch.object(sri, "dependency_sources", return_value={}) as sources, \
@@ -146,6 +154,35 @@ class SriDockerTests(unittest.TestCase):
         path = self.dockerfile()
         sri.instrument_metadata(path, "a" * 40)
         self.assertIn("id=dmnd-sri-" + "a" * 40 + ",target=/workspace/target", path.read_text())
+
+    def test_public_example_is_frozen_without_changing_protected_tests(self):
+        repo = repo_at(self.root / "public-repo")
+        (repo / "Cargo.toml").write_text(
+            '[package]\nname = "dmnd-client"\nversion = "1.0.0"\n'
+            '[build-dependencies]\ntoml = "0.8.22"\n')
+        (repo / "build.rs").write_text("fn main() {}\n")
+        (repo / "tests").mkdir()
+        shutil.copyfile(self.dockerfile(), repo / "tests/Dockerfile")
+        git(repo, "add", "--all")
+        git(repo, "commit", "-qm", "ADD original source to test public baseline validation")
+        upstream = git(repo, "rev-parse", "HEAD").decode().strip()
+        example = repo / sri.PUBLIC_PATHS[0]
+        example.parent.mkdir()
+        example.write_text("fn main() {}\n")
+        git(repo, "add", "--all")
+        git(repo, "commit", "-qm", "ADD public example to expose the transport contract")
+        baseline = git(repo, "rev-parse", "HEAD").decode().strip()
+        with patch.object(sri, "BASE", upstream), patch.object(sri, "PUBLIC_REVISION", baseline):
+            result = sri.source_context(repo, baseline, self.root / "accepted", baseline)
+            self.assertEqual(result["baseline"], baseline)
+            with self.assertRaisesRegex(ValueError, "does not descend"):
+                sri.source_context(repo, upstream, self.root / "old", baseline)
+            example.write_text("fn main() { println!(\"bypass\"); }\n")
+            git(repo, "add", "--all")
+            git(repo, "commit", "-qm", "UPDATE example to test rejection of altered public checks")
+            with self.assertRaisesRegex(ValueError, "public transport interface check changed"):
+                sri.source_context(repo, "HEAD", self.root / "rejected", baseline)
+        self.assertEqual(git(repo, "diff", upstream, "HEAD", "--", "tests", "build.rs"), b"")
 
     @unittest.skipUnless(shutil.which("cargo"), "Cargo is required for the compile regression")
     def test_default_compile_failure_cannot_hide_behind_mining_feature(self):
@@ -263,6 +300,18 @@ class SriDockerTests(unittest.TestCase):
         report = json.loads((output / "result.json").read_text())
         self.assertEqual(report["status"], "error")
         self.assertIsNone(report["passed"])
+
+    def test_standalone_public_grading_uses_the_public_baseline_and_evidence(self):
+        output = self.root / "public-grade"
+        with patch.object(sri, "load_references", return_value={}) as references, \
+                patch.object(sri, "capture", return_value=self.item), \
+                patch.object(sri, "grade_submission", return_value={
+                    "status": "completed", "passed": True}) as grade, \
+                contextlib.redirect_stdout(io.StringIO()):
+            code = sri.main([str(self.root / "candidate"), "HEAD", "--public", "--out", str(output)])
+        self.assertEqual(code, 0)
+        references.assert_called_once_with(sri.PUBLIC_REPO)
+        self.assertEqual(grade.call_args.args[2]["baseline"], sri.PUBLIC_REVISION)
 
 
 if __name__ == "__main__":
