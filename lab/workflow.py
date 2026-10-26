@@ -8,7 +8,7 @@ import tempfile
 import time
 from contextlib import ExitStack, nullcontext
 
-from .config import WORKFLOW_VERSION, author_policy
+from .config import WORKFLOW_VERSION, author_policy, native_capability_policy
 from .context import AUTO_COMPACT_TOKENS, validate_compaction_tokens
 from .exclude_integration import comparison_view
 from .host import Fatal, Host, execute_child, git, git_execution, save_json, snapshot, relative_path
@@ -117,6 +117,7 @@ def run(benchmark, factors, output, seconds, max_raw, max_turns,
     review_priorities = normalize_priorities(review_priorities)
     max_review_loops = normalize_review_loops(max_review_loops)
     compaction_tokens = validate_compaction_tokens(compaction_tokens)
+    capability_policy = native_capability_policy(preset, factors)
     progress_policy = loop_policy(loop_options)
     if harness == "pi":
         if backend is Codex:
@@ -178,6 +179,8 @@ def run(benchmark, factors, output, seconds, max_raw, max_turns,
               "stages": [], "checkpoints": [], "checks": [], "factor_activations": {}}
     if not review_issue_description and max_review_loops:
         result["blind_review_policy"] = BLIND_REVIEW_POLICY
+    if capability_policy:
+        result["native_capability_policy"] = capability_policy
     if scb_check is not None:
         result["scb_check"] = scb.pending()
     evaluator = evaluation.make_evaluator(benchmark, output, result)
@@ -202,6 +205,8 @@ def run(benchmark, factors, output, seconds, max_raw, max_turns,
         manifest["checkout_policy"] = "pinned-history-no-remotes-v1"
         manifest['execution_environment'] = result['execution_environment']
         manifest["workflow_version"] = WORKFLOW_VERSION
+        if capability_policy:
+            manifest["native_capability_policy"] = capability_policy
         manifest["review_priorities"] = list(review_priorities)
         manifest["review_issue_description"] = review_issue_description
         if "blind_review_policy" in result:
@@ -257,6 +262,7 @@ def run(benchmark, factors, output, seconds, max_raw, max_turns,
         failure_origin = "provider"
         provider = backend(checkout, output / "provider", model, effort, deadline, max_raw, max_turns, executable,
                            require_git_write=True, allow_delegation=not factors["C17"], compaction_tokens=compaction_tokens,
+                           **({'native_capabilities': True} if capability_policy else {}),
                            **({"codex_executable": child_codex, "pi_vanilla": pi_vanilla} if backend is Pi else {}))
         git_context.enter_context(git_execution(checkout, getattr(provider, "git_argv", lambda argv: argv),
                                                getattr(provider, "command_env", clean_env()), deadline))
@@ -572,6 +578,8 @@ def run(benchmark, factors, output, seconds, max_raw, max_turns,
                              "stage": active_stage, "type": type(exc).__name__, "message": result["error"]}
     finally:
         if provider:
+            if capability_policy:
+                result["provider"] = provider.identity
             try:
                 provider.close()
                 result["usage"] = provider.report()

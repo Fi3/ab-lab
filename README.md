@@ -45,10 +45,51 @@ objects. The policy is recorded as `isolated-review-trees-v2`. With
 preserved. Historical results and their grading inputs remain unchanged; the
 new blind policy is a separate experimental condition.
 
-In order to have a baseline `--preset native` can be used. This will remove all runner interventions
-and run the harness in native mode without limitation (for example can spwan all the sub-agent
-that want). Of course when native mode is one there is not a patch/review loop enforced or and
-condition enforced.
+Use `--preset native` for the native baseline. It disables the conditions,
+external reviews, and loop detection by default. Access restrictions, execution
+limits, token accounting, and independent evaluation still apply.
+
+Native runs with C17 off use the separate policy `native-capabilities-v2`.
+Select any model and reasoning effort supported by the chosen agent. The runner
+passes both values unchanged and rejects a silent change by the agent.
+The default effort remains `xhigh`. Native Codex enables both subagent tool
+features. Native author tasks explicitly request subagents for independent work
+and review when useful, without another user request. The agent decides when
+to delegate; this does not require a subagent for every task. An explicit
+`--on C17` overrides native delegation: the runner uses host tools and disables
+delegation. This override retains the selected effort and does not apply the
+native capability policy. Other explicit conditions and limits also take
+precedence over preset defaults.
+
+Codex 0.159.3 ignores the deprecated `multiAgentMode` request field. Its response
+always reports `explicitRequestOnly`, including with Ultra. The task request
+permits delegation at other effort levels without changing the effort.
+The saved mode is `task-requested`; startup verification is
+`thread/start:model-effort`. The live probe checks the actual user request,
+completed review subagents, and their token records. This follows the explicit
+request method in the [OpenAI subagent documentation](https://learn.chatgpt.com/docs/agent-configuration/subagents).
+
+Pi 1.0.0 has no built-in subagent tool or proactive delegation mode. Plans and
+results report this capability as unsupported. Native Pi retains its standard
+tools and configured extensions. Command children remain permitted and measured;
+delegation through arbitrary extensions is not verified. The runner does not
+install a subagent extension or apply Codex settings to Pi.
+
+The plan records the pinned harness version, selected model, effort, and requested
+delegation mode. Verification remains pending because a plan starts no session.
+Saved native results include the actual provider version and capability record.
+`doctor --native --effort xhigh` checks Codex startup without model execution.
+Use `doctor --native --harness pi` for Pi. The explicit probe
+`python3 tests/real_native_capabilities.py --out /tmp/native-capability-check`
+also checks the author's request, a review subagent call, and its token records.
+Use `--codex` with the probe to select the supported Codex executable.
+
+The new policy is part of the experiment identity. The earlier
+`native-capabilities-v1` policy required Ultra and remains recorded in its old runs.
+Existing benchmark inputs,
+grading tests, results, and usage records remain unchanged. Earlier native runs
+and new native runs are different experimental conditions. Controlled presets
+retain their previous delegation policy.
 
 For Pi, add `--harness pi --pi-vanilla` to run without installed or project
 customizations. This works with both `--preset all` and `--preset native`:
@@ -796,7 +837,7 @@ or `--help` to show help and exit.
 | `--on IDS` | Enable condition IDs separated by commas. | Empty list. |
 | `--off IDS` | Disable condition IDs separated by commas. | Empty list. |
 | `--model ID` | Select the model for the agent. | `gpt-5.5`. |
-| `--effort LEVEL` | Select `minimal`, `low`, `medium`, `high`, or `xhigh`. | `xhigh`. |
+| `--effort LEVEL` | Select any reasoning effort supported by the agent and model. The agent validates the value. | `xhigh`. |
 | `--compaction-tokens N` | Set the positive context token threshold for harness compaction. | `131072`. |
 | `--review-priorities IDS` | Select finding priorities that require corrections. Use P0 through P3, separated by commas. | `P0,P1,P2`. |
 | `--max-review-loops N` | Set the maximum reviews per feature. A value of 0 disables reviews. | 3 for `all`; 0 for `native`. |
@@ -858,6 +899,7 @@ limit.
 | `--codex PATH` | Select the executable for a direct Codex check. The executor uses its profile path. | `codex`. |
 | `--pi PATH` | Select the executable for a direct Pi check. The executor uses Pi inside the container. | `pi`. |
 | `--model ID` | Select the model configuration to check. | `gpt-5.5`. |
+| `--effort LEVEL` | Select any reasoning effort supported by the agent and model. | `xhigh`. |
 | `--native` | Also check native delegation configuration without model execution. | Not selected. |
 | `--executor PATH` | Select the public executor build profile. | `executors/default.json`. |
 

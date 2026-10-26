@@ -18,6 +18,7 @@ from .executor import normalize_runtime
 from .nested import (CommandEnvironment, NestedUsage, PiNestedUsage, DELEGATION_POLICY,
                      NATIVE_DELEGATION_POLICY, pi_usage_tokens as nested_pi_usage_tokens)
 from .native_usage import NativeUsage
+from .config import NATIVE_CAPABILITY_POLICY, native_author_prompt
 from .codex_children import NativeChildren
 from .pi_sandbox import PiSandbox
 from .sandbox import CommandSandbox, EXECUTION_POLICY
@@ -288,7 +289,10 @@ class ChildAccounting:
 class Codex(ChildAccounting):
     supports_compaction_tokens = True
 
-    def __init__(self, repo, artifacts, model, effort, deadline, max_raw, max_turns, executable="codex", *, require_git_write=False, allow_delegation=False, compaction_tokens=AUTO_COMPACT_TOKENS):
+    def __init__(self, repo, artifacts, model, effort, deadline, max_raw, max_turns, executable="codex", *, require_git_write=False, allow_delegation=False, compaction_tokens=AUTO_COMPACT_TOKENS, native_capabilities=False):
+        if native_capabilities and not allow_delegation:
+            raise ValueError("native capabilities require delegation permission")
+        self.native_capabilities = native_capabilities
         self.auto_compact_limit = validate_compaction_tokens(compaction_tokens)
         self.repo, self.artifacts = Path(repo), Path(artifacts)
         self.artifacts.mkdir(parents=True, exist_ok=False)
@@ -363,6 +367,9 @@ class Codex(ChildAccounting):
                                        "auto_compact_tokens": self.auto_compact_limit}),
                 "delegation_policy": DELEGATION_POLICY if self.delegation_disabled else NATIVE_DELEGATION_POLICY,
                 "native_configuration": normalize_runtime(self.commands.native_state.fingerprints) if self.commands.native_state else None}
+            if native_capabilities:
+                self.identity.update(native_capability_policy=NATIVE_CAPABILITY_POLICY,
+                                     delegation_mode="unverified")
             save_json(self.artifacts / "provider.json", self.identity)
             if require_git_write:
                 self.verify_git_write()
@@ -532,11 +539,22 @@ class Codex(ChildAccounting):
             "modelProvider": "openai", "approvalPolicy": "never",
             **options,
             "experimentalRawEvents": False}
+        native = getattr(self, 'native_capabilities', False) and writable
+        if native:
+            options['config'].update({'features.multi_agent': True, 'features.multi_agent_v2': True})
         if tools:
             params["dynamicTools"] = [{"type": "function", **tool} for tool in tools]
         result = self.rpc("thread/start", params)
         self.parent_threads.add(result["thread"]["id"])
         self.register_native_thread(result["thread"])
+        if native:
+            # Delegation is requested in the task; model and effort remain independent.
+            effective = {key: result.get(key) for key in ('model', 'reasoningEffort')}
+            if effective != {'model': self.model, 'reasoningEffort': self.effort}:
+                raise Fatal(f"Codex native capabilities conflict: requested model {self.model!r}, "
+                            f"effort {self.effort!r}; received {effective}; no generation")
+            self.identity.update(delegation_mode='task-requested', native_capability_verification='thread/start:model-effort')
+            (self.artifacts / 'provider.json').write_text(json.dumps(self.identity, indent=2) + '\n')
         self.register_host_tools(result["thread"]["id"], tools, tool_handler)
         return result["thread"]["id"]
 
@@ -600,6 +618,7 @@ class Codex(ChildAccounting):
         getattr(self, "context_usage", {}).pop(thread, None)
 
     def turn(self, thread, prompt, label, writable=False):
+        prompt = native_author_prompt(prompt, writable and getattr(self, 'native_capabilities', False))
         self.settle_children()
         self.check_limits()
         if not getattr(self, "delegation_disabled", True):
@@ -1256,7 +1275,10 @@ class Pi(ChildAccounting):
                     "custom_system_prompts": False, "project_settings": False,
                     "global_settings": "runner-only"} if vanilla else {})}
 
-    def __init__(self, repo, artifacts, model, effort, deadline, max_raw, max_turns, executable="pi", *, require_git_write=False, codex_executable="codex", allow_delegation=False, compaction_tokens=AUTO_COMPACT_TOKENS, pi_vanilla=False):
+    def __init__(self, repo, artifacts, model, effort, deadline, max_raw, max_turns, executable="pi", *, require_git_write=False, codex_executable="codex", allow_delegation=False, compaction_tokens=AUTO_COMPACT_TOKENS, pi_vanilla=False, native_capabilities=False):
+        if native_capabilities and not allow_delegation:
+            raise ValueError("native capabilities require delegation permission")
+        self.native_capabilities = native_capabilities
         self.pi_vanilla = pi_vanilla
         self.compaction_tokens = validate_compaction_tokens(compaction_tokens)
         self.repo, self.artifacts = Path(repo).resolve(), Path(artifacts).resolve()
@@ -1324,6 +1346,11 @@ class Pi(ChildAccounting):
                     "delegation_policy": DELEGATION_POLICY if self.delegation_disabled else NATIVE_DELEGATION_POLICY,
                 "native_configuration": self.commands.native_state.fingerprints if self.commands.native_state else None}
         controls = normalize_runtime(controls)
+        if self.native_capabilities:
+            controls.update(native_capability_policy=NATIVE_CAPABILITY_POLICY,
+                delegation_mode='unsupported', native_capability_verification='built-in-tools',
+                delegation_limitation='Pi has no built-in subagent tool or proactive mode. '
+                    'Command children remain permitted; extension delegation is unverified.')
         self.identity = {
             **controls,
             "harness": "pi",
@@ -1539,6 +1566,7 @@ class Pi(ChildAccounting):
         return thread_id
 
     def turn(self, thread, prompt, label, writable=False):
+        prompt = native_author_prompt(prompt, writable and getattr(self, 'native_capabilities', False))
         self.settle_children()
         if len(self.turns) >= self.max_turns:
             raise Fatal("workflow turn limit reached")

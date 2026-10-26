@@ -16,6 +16,20 @@ FACTORS = {
 }
 
 WORKFLOW_VERSION = "benchmark-native-delegation-no-integration-v5"
+NATIVE_CAPABILITY_POLICY = "native-capabilities-v2"
+NATIVE_DELEGATION_REQUEST = (
+    "Use available subagents for independent work and review when useful. "
+    "You may start them without another user request. Keep all task constraints."
+)
+
+
+def native_author_prompt(prompt, enabled):
+    return prompt + "\n\n" + NATIVE_DELEGATION_REQUEST if enabled else prompt
+
+
+def native_capability_policy(preset, factors):
+    if preset == "native" and not factors["C17"]:
+        return NATIVE_CAPABILITY_POLICY
 
 
 class Benchmark(dict):
