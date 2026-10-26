@@ -431,7 +431,7 @@ def exec_command(lock_path, command):
         subprocess.run(['docker', 'rm', '-f', name], stdout=subprocess.DEVNULL, stderr=subprocess.DEVNULL, timeout=20)
 
 
-def doctor(lock_path, output, harness, native=False, model=None, *, pi_vanilla=False):
+def doctor(lock_path, output, harness, native=False, model=None, *, pi_vanilla=False, effort='xhigh'):
     """Exercise the actual provider initialization with no model generation."""
     from .host import git
     if pi_vanilla and harness != 'pi':
@@ -453,6 +453,7 @@ def doctor(lock_path, output, harness, native=False, model=None, *, pi_vanilla=F
             [lock['python'], '-m', 'lab', 'doctor', '--repo', '/tmp/agent-lab-doctor-repo',
              '--out', str(output / 'provider'), '--harness', harness,
              '--codex', lock.get('harnesses', {}).get('codex', 'codex'),
+             '--effort', effort,
              *(['--model', model] if model else []),
              *(['--pi-vanilla'] if pi_vanilla else []),
              *(['--native'] if native else [])], private)
@@ -482,6 +483,7 @@ def main():
     probe.add_argument('--out', type=Path, required=True)
     probe.add_argument('--harness', choices=('codex', 'pi'), default='codex')
     probe.add_argument('--native', action='store_true', help='also qualify the native delegation configuration')
+    probe.add_argument('--effort', default='xhigh')
     probe.add_argument('--pi-vanilla', action='store_true', help='qualify Pi without installed or project customizations')
     workflow = sub.add_parser('_workflow')
     workflow.add_argument('folder', type=Path)
@@ -489,7 +491,7 @@ def main():
     if args.action == '_workflow':
         return inner_workflow(args.folder)
     if args.action == 'doctor':
-        return doctor(args.lock, args.out, args.harness, args.native, pi_vanilla=args.pi_vanilla)
+        return doctor(args.lock, args.out, args.harness, args.native, pi_vanilla=args.pi_vanilla, effort=args.effort)
     if args.action == 'exec':
         command = args.command[1:] if args.command[:1] == ['--'] else args.command
         if not command:

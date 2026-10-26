@@ -6,7 +6,7 @@ from pathlib import Path
 import sys
 import time
 
-from .config import FACTORS, WORKFLOW_VERSION, author_policy, load_benchmark, settings
+from .config import FACTORS, WORKFLOW_VERSION, NATIVE_DELEGATION_REQUEST, author_policy, load_benchmark, settings, native_capability_policy
 from .context import AUTO_COMPACT_TOKENS
 from .provider import Codex, Pi
 from .host import Fatal
@@ -62,7 +62,7 @@ def main():
         p.add_argument("--on", default="", help="comma-separated C identifiers")
         p.add_argument("--off", default="", help="comma-separated C identifiers")
         p.add_argument("--model", default=None)
-        p.add_argument("--effort", choices=("minimal", "low", "medium", "high", "xhigh"), default="xhigh")
+        p.add_argument("--effort", default="xhigh", help="reasoning effort supported by the selected agent and model")
         p.add_argument("--compaction-tokens", type=positive_integer, default=AUTO_COMPACT_TOKENS,
                        metavar="N", help="context tokens at which the harness compacts (default: 131072 for every preset; unsupported harnesses fail)")
         p.add_argument("--review-priorities", type=review_priorities, default=DEFAULT_PRIORITIES,
@@ -100,6 +100,7 @@ def main():
     doctor.add_argument("--codex", default="codex")
     doctor.add_argument("--pi", default="pi")
     doctor.add_argument("--model", default=None)
+    doctor.add_argument("--effort", default="xhigh", help="reasoning effort supported by the selected agent and model")
     doctor.add_argument('--native', action='store_true', help='qualify native delegation without model generation')
     doctor.add_argument('--pi-vanilla', action='store_true', help='qualify Pi without installed or project customizations')
     doctor.add_argument('--executor', type=Path, default=DEFAULT_PROFILE)
@@ -118,6 +119,7 @@ def main():
             value = {key: dict(zip(("description", "on", "off"), meaning)) for key, meaning in FACTORS.items()}
         elif args.command in ("run", "plan"):
             factors = factors_from(args)
+            capability_policy = native_capability_policy(args.preset, factors)
             if args.executor.resolve() == DEFAULT_PROFILE and args.scb_check in (".venv/bin/scb-check", "./.venv/bin/scb-check"):
                 args.scb_check = "scb-check"
             if args.command == "run":
@@ -148,6 +150,14 @@ def main():
                                        "phases": ["before_changes", "after_implementation"]}}
                 if harness == 'pi':
                     value['pi_resource_policy'] = Pi.resource_policy(args.pi_vanilla)
+                if capability_policy:
+                    packages = json.loads((args.executor.parent / 'package.json').read_text())['dependencies']
+                    package = '@openai/codex' if harness == 'codex' else '@earendil-works/pi-coding-agent'
+                    value.update(harness=harness, harness_version=packages[package],
+                                 native_capability_policy=capability_policy,
+                                 delegation_mode='task-requested' if harness == 'codex' else 'unsupported',
+                                 native_delegation_request=NATIVE_DELEGATION_REQUEST,
+                                 native_capability_verification='pending')
             else:
                 if args.harness == "pi":
                     backend = Pi
@@ -180,7 +190,8 @@ def main():
         elif args.command == "doctor":
             if not os.environ.get(PRIVATE_ENV):
                 from .executor import doctor as executor_doctor
-                return executor_doctor(args.executor, args.out, args.harness, args.native, args.model, pi_vanilla=args.pi_vanilla)
+                return executor_doctor(args.executor, args.out, args.harness, args.native, args.model,
+                                       pi_vanilla=args.pi_vanilla, effort=args.effort)
             harness = getattr(args, "harness", "codex")
             if harness == "pi":
                 backend = Pi
@@ -190,10 +201,12 @@ def main():
                 backend = Codex
                 executable = getattr(args, "codex", "codex")
                 model = getattr(args, "model", None) or "gpt-5.5"
-            provider = backend(args.repo.resolve(strict=True), args.out, model, "xhigh", time.monotonic()+30, 1, 1, executable,
-                               **({'allow_delegation': True} if args.native else {}),
+            provider = backend(args.repo.resolve(strict=True), args.out, model, args.effort, time.monotonic()+30, 1, 1, executable,
+                               **({'allow_delegation': True, 'native_capabilities': True} if args.native else {}),
                                **({"codex_executable": args.codex, "pi_vanilla": args.pi_vanilla} if backend is Pi else {}))
             try:
+                if args.native and backend is Codex:
+                    provider.start_thread(writable=True)
                 value = {**provider.identity, "generation": "none"}
             finally:
                 provider.close()

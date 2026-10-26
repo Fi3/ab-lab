@@ -140,6 +140,9 @@ dmnd-new-sri-gpt61-xhigh-no-review-02
 
 dmnd-new-sri-gpt61-xhigh-control-02
 
-| mode/reasoning       | test passes | total tokens | uncached tokens | harness | verbosity | erosion | cognitive erosion | time       | compaction |
-| -------------------- | ----------- | ------------ | --------------- | ------- | --------- | ------- | ----------------- | ---------- | ---------- |
-| gpt-6.1-sol / xhigh  | 16/18       | 15,060,240   | 764,048         | Codex   | 6.25%     | 30.74%  | 68.87%            | 1h 15m 01s | 131,072    |
+| mode/reasoning       | test passes | total tokens | uncached tokens | harness | subagents spawned | verbosity | erosion | cognitive erosion | time       | compaction |
+| -------------------- | ----------- | ------------ | --------------- | ------- | ----------------- | --------- | ------- | ----------------- | ---------- | ---------- |
+| gpt-6.1-sol / xhigh  | 16/18       | 15,060,240   | 764,048         | Codex   | 0 | 6.25%     | 30.74%  | 68.87%            | 1h 15m 01s | 131,072    |
+| [gpt-6.1-sol / ultra](runs/dmnd-new-sri-gpt61-ultra-native-01/result.json) | 18/18; overall **FAIL** (dependencies) | 43,593,328 | 1,531,376 | Codex | 3 | 6.17% | 30.15% | 68.66% | 54m 03s | 131,072 |
+| [gpt-6.1-sol / xhigh](runs/dmnd-new-sri-gpt61-xhigh-native-02/result.json) | 16/18; overall **FAIL** (mining) | 43,048,831 | 1,414,783 | Codex | 3 | 6.22% | 30.26% | 68.89% | 46m 52s | 131,072 |
+| [gpt-6.1-sol / xhigh](runs/dmnd-new-sri-gpt61-xhigh-pi-native-01/result.json) | 16/18; overall **FAIL** (mining, dependencies) | 9,637,717 | 379,221 | Pi | 0 | 6.15% | 30.80% | 69.36% | 1h 01m 30s | 131,072 |
